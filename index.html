@@ -1,0 +1,3248 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Pac-Man</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&display=swap">
+<style>
+  /* Layout: one arcade screen, centered in a dark cabinet, controls tucked beneath */
+  :root {
+    --cab: #07081a;        /* cabinet surround, blue-black */
+    --screen: #000000;     /* CRT black */
+    --maze: #2a3cff;       /* maze blue */
+    --pac: #ffe600;        /* pac yellow */
+    --ink: #b9bddc;        /* muted label text */
+    --ink-dim: #6b6f93;
+    --edge: #1a1d44;
+    --display: "Press Start 2P", "Courier New", monospace;
+    --mono: "Space Mono", ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--cab);
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow: hidden;
+  }
+  main {
+    height: 100%;
+    box-sizing: border-box;
+    padding-inline: 16px;
+    padding-block: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  canvas {
+    display: block;
+    background: var(--screen);
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px var(--edge), 0 0 40px rgba(42, 60, 255, 0.18);
+    touch-action: none;
+    max-width: 100%;
+  }
+  canvas:focus-visible { outline: 2px solid var(--pac); outline-offset: 3px; }
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px 18px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .keys { color: var(--ink-dim); }
+  kbd {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink);
+    border: 1px solid var(--edge);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .btn {
+    font-family: var(--display);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--maze); color: #fff; }
+  .btn:focus-visible { outline: 2px solid var(--pac); outline-offset: 2px; }
+  .btn[aria-pressed="true"] { border-color: var(--pac); color: var(--pac); }
+  .dpad {
+    display: none;
+    grid-template-columns: repeat(3, 52px);
+    grid-template-rows: repeat(3, 52px);
+    gap: 4px;
+  }
+  .dpad button {
+    background: var(--edge);
+    border: 0;
+    border-radius: 10px;
+    color: var(--ink);
+    font-size: 18px;
+    touch-action: none;
+  }
+  .dpad button:active { background: var(--maze); color: #fff; }
+  .dpad .u { grid-area: 1 / 2; } .dpad .l { grid-area: 2 / 1; }
+  .dpad .r { grid-area: 2 / 3; } .dpad .d { grid-area: 3 / 2; }
+  .dpad .c { grid-area: 2 / 2; font-family: var(--display); font-size: 8px; letter-spacing: 0.05em; }
+  .dpad .c:disabled { opacity: 0.35; }
+  @media (pointer: coarse) {
+    .dpad { display: grid; }
+    .keys { display: none; }
+  }
+</style>
+
+<main id="main">
+  <canvas id="game" tabindex="0" aria-label="Pac-Man game. Use arrow keys to move."></canvas>
+  <div class="dpad" id="dpad" aria-label="Direction pad">
+    <button class="u" data-dir="U" aria-label="Up">▲</button>
+    <button class="l" data-dir="L" aria-label="Left">◀</button>
+    <button class="r" data-dir="R" aria-label="Right">▶</button>
+    <button class="d" data-dir="D" aria-label="Down">▼</button>
+    <button class="c" id="dashBtn" type="button" aria-label="Dash" disabled>DASH</button>
+  </div>
+  <div class="bar" id="bar">
+    <span class="keys"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> move · <kbd>Enter</kbd> select / next · <kbd>Esc</kbd> back / skip talk · <kbd>P</kbd> pause · <kbd>Space</kbd> dash · <kbd>M</kbd> sound · <kbd>I</kbd> infinite lives · <kbd>N</kbd> skip level · <kbd>U</kbd> unlock all</span>
+    <button class="btn" id="pauseBtn" type="button">PAUSE</button>
+    <button class="btn" id="soundBtn" type="button">SOUND ON</button>
+    <button class="btn" id="infBtn" type="button" aria-pressed="false">INFINITE LIVES: OFF</button>
+    <button class="btn" id="skipBtn" type="button">SKIP LEVEL</button>
+    <button class="btn" id="unlockBtn" type="button">UNLOCK ALL</button>
+  </div>
+</main>
+
+<script>
+(() => {
+'use strict';
+
+// ---------- Mazes ----------
+// Each maze is written as its left half and mirrored. '.' dot, 'o' power pellet,
+// '*' frost berry, '-' ghost-house door. Pellets and berries only appear on levels
+// that enable them; otherwise they become plain dots.
+// MAZES-START
+const mirror = rows => rows.map(r => r + [...r].reverse().join(''));
+const CLASSIC = [
+  "##############",
+  "#............#",
+  "#.####.#####.#",
+  "#o####.#####.#",
+  "#.####.#####.#",
+  "#.............",
+  "#.####.##.####",
+  "#.####.##.####",
+  "#..*...##....#",
+  "######.##### #",
+  "     #.##### #",
+  "     #.##     ",
+  "     #.## ###-",
+  "######.## #   ",
+  "      .   #   ",
+  "######.## #   ",
+  "     #.## ####",
+  "     #.##     ",
+  "     #.## ####",
+  "######.## ####",
+  "#............#",
+  "#.####.#####.#",
+  "#.####.#####.#",
+  "#o..##....... ",
+  "###.##.##.####",
+  "###.##.##.####",
+  "#......##.*..#",
+  "#.##########.#",
+  "#.##########.#",
+  "#.............",
+  "##############",
+];
+const MAZES = {
+  A: { rows: mirror([
+    "#########",
+    "#.......#",
+    "#.##.##.#",
+    "#.##.##.#",
+    "#........",
+    "#.##.####",
+    "#.##.####",
+    "#....... ",
+    "#.##.####",
+    "#.##.####",
+    "#........",
+    "#.##.##.#",
+    "#.##.##.#",
+    "#.......#",
+    "#########",
+  ]), pac: { x: 8.5, y: 7 }, fruit: { x: 8.5, y: 4 } },
+  B: { rows: mirror([
+    "############",
+    "#..........#",
+    "#.##.##.##.#",
+    "#o##.##.##.#",
+    "#......*....",
+    "#.##.##.####",
+    "#.##.##.####",
+    "#......     ",
+    "####.## ###-",
+    "####.## #   ",
+    "    .   #   ",
+    "####.## #   ",
+    "####.## ####",
+    "#.......    ",
+    "#.##.##.##.#",
+    "#o##.##.##.#",
+    "#......*... ",
+    "############",
+  ]), pac: { x: 11.5, y: 16 }, fruit: { x: 11.5, y: 13 } },
+  C: { rows: mirror([
+    "#############",
+    "#...........#",
+    "#.###.##.##.#",
+    "#o###.##.##.#",
+    "#.......*....",
+    "#.###.##.####",
+    "#.###.##.####",
+    "#.....##.####",
+    "#####.##     ",
+    "#####.## ###-",
+    "#####.## #   ",
+    "     .   #   ",
+    "#####.## #   ",
+    "#####.## ####",
+    "#.......     ",
+    "#.###.##.####",
+    "#.###.##.####",
+    "#o..#....... ",
+    "###.#.##.##.#",
+    "#.....##....#",
+    "#.#########.#",
+    "#....*......#",
+    "#############",
+  ]), pac: { x: 12.5, y: 17 }, fruit: { x: 12.5, y: 14 } },
+  D: { rows: mirror(CLASSIC.filter((_, i) => i !== 4 && i !== 17 && i !== 18)),
+    pac: { x: 13.5, y: 20 }, fruit: { x: 13.5, y: 10 } },
+  E: { rows: mirror(CLASSIC), pac: { x: 13.5, y: 23 }, fruit: { x: 13.5, y: 17 } },
+  // Throne room for the King Ghost: a hall of 2x2 pillars with an open chamber in the middle.
+  K: { rows: (() => {
+    const W = 28, H = 29, PC = [2, 3, 5, 6, 8, 9, 11, 12, 15, 16, 18, 19, 21, 22, 24, 25], PR = [2, 3, 5, 6, 8, 9, 11, 12, 16, 17, 19, 20, 22, 23, 25, 26];
+    const special = { '1,1': 'o', '26,1': 'o', '1,27': 'o', '26,27': 'o', '4,14': '*', '23,14': '*' };
+    const rows = [];
+    for (let r = 0; r < H; r++) {
+      let row = '';
+      for (let c = 0; c < W; c++) {
+        const border = (r === 0 || r === H - 1 || c === 0 || c === W - 1) && !(r === 14 && (c === 0 || c === W - 1));
+        const chamber = ([11, 12, 15, 16].includes(c) && r >= 8 && r <= 20) || ([11, 12, 16, 17].includes(r) && c >= 8 && c <= 19);
+        row += border || (PC.includes(c) && PR.includes(r) && !chamber) ? '#' : special[c + ',' + r] || ' ';
+      }
+      rows.push(row);
+    }
+    return rows;
+  })(), pac: { x: 13.5, y: 24 }, fruit: { x: 13.5, y: 24 }, throne: { x: 13.5, y: 14 } },
+  // The Sewer: the Big Blob's lair. Two-wide channels between pipe blocks, a pool in the middle,
+  // and a clockwise current running round the outer ring.
+  S: { rows: (() => {
+    const W = 28, H = 29, PC = [3, 4, 7, 8, 11, 12, 15, 16, 19, 20, 23, 24], PR = [3, 4, 7, 8, 11, 12, 16, 17, 20, 21, 24, 25];
+    const special = { '1,1': 'o', '26,1': 'o', '1,27': 'o', '26,27': 'o', '5,14': '*', '22,14': '*' };
+    const rows = [];
+    for (let r = 0; r < H; r++) {
+      let row = '';
+      for (let c = 0; c < W; c++) {
+        const border = r === 0 || r === H - 1 || c === 0 || c === W - 1;
+        const pool = [11, 12, 15, 16].includes(c) && [11, 12, 16, 17].includes(r);
+        const empty = (c >= 11 && c <= 16 && r >= 12 && r <= 16) || (r === 22 && (c === 13 || c === 14));
+        row += border || (PC.includes(c) && PR.includes(r) && !pool) ? '#' : special[c + ',' + r] || (empty ? ' ' : '.');
+      }
+      rows.push(row);
+    }
+    return rows;
+  })(), pac: { x: 13.5, y: 22 }, fruit: { x: 13.5, y: 22 }, throne: { x: 13.5, y: 14 },
+    pipes: [[9, 1], [18, 1], [9, 27], [18, 27]],
+    // Current direction for a tile, or null: top band right, right band down, bottom band left, left band up.
+    flow: (c, r) => c >= 25 && c <= 26 && r >= 1 && r <= 25 ? 'D' : r >= 26 && r <= 27 && c >= 3 && c <= 26 ? 'L'
+      : c >= 1 && c <= 2 && r >= 3 && r <= 27 ? 'U' : r >= 1 && r <= 2 && c >= 1 && c <= 24 ? 'R' : null },
+};
+// MAZES-END
+
+const SCREEN_COLS = 28, SCREEN_MAZE_ROWS = 31, TOP = 3, BOTTOM = 2, TOTAL_ROWS = SCREEN_MAZE_ROWS + TOP + BOTTOM;
+const BASE = 9.5; // tiles per second at 100% speed
+
+// ---------- Levels ----------
+const ALL4 = ['blinky', 'pinky', 'inky', 'clyde'];
+const LEVELS = [
+  { stage: 1, lv: 1, maze: 'A', ghosts: [], pellets: false, frost: false, tier: 0, fright: 0,
+    intro: ['WARM UP', 'EAT EVERY DOT. NO GHOSTS YET'] },
+  { stage: 1, lv: 2, maze: 'C', ghosts: ['blinky', 'pinky'], pellets: false, frost: false, tier: 0, fright: 0,
+    ghostMul: 0.8, schedule: [10, 12, 10, 12, 10, 12, 10, Infinity],
+    intro: ['NEW: BLINKY AND PINKY', 'THEY ARE SLOW. KEEP MOVING'] },
+  { stage: 1, lv: 3, maze: 'E', ghosts: ALL4, pellets: true, frost: false, tier: 0, fright: 6,
+    release: { pinky: 0, inky: 30, clyde: 60 }, intro: ['NEW: POWER PELLETS', 'INKY AND CLYDE JOIN. EAT THE GHOSTS'] },
+  { stage: 2, lv: 1, maze: 'B', ghosts: [], wraiths: 1, pellets: false, frost: true, tier: 1, fright: 0,
+    intro: ['NEW: WRAITH + FROST BERRY', 'IT PASSES WALLS. FREEZE IT, EAT IT'] },
+  { stage: 2, lv: 2, maze: 'D', ghosts: ['blinky', 'pinky'], wraiths: 1, pellets: false, frost: true, tier: 1, fright: 0,
+    intro: ['GHOSTS RETURN', 'BLINKY AND PINKY JOIN THE WRAITH'] },
+  { stage: 2, lv: 3, maze: 'E', ghosts: ALL4, wraiths: 2, pellets: true, frost: true, tier: 1, fright: 4,
+    release: { pinky: 0, inky: 0, clyde: 30 }, intro: ['FULL HOUSE', 'TWO WRAITHS. PELLETS WON\'T STOP THEM'] },
+  { stage: 3, lv: 1, maze: 'C', ghosts: [], slimes: 1, pellets: true, frost: false, dash: true, tier: 1, fright: 7,
+    intro: ['NEW: SLIME + DASH', 'POWER UP TO SPLIT IT. DASH_HINT'] },
+  { stage: 3, lv: 2, maze: 'D', ghosts: ['blinky', 'pinky'], wraiths: 1, slimes: 2, pellets: true, frost: true, dash: true, tier: 2, fright: 5,
+    intro: ['SLIMES MULTIPLY', 'TWO SLIMES, TWO GHOSTS, A WRAITH'] },
+  { stage: 3, lv: 3, maze: 'E', ghosts: ALL4, wraiths: 1, slimes: 2, pellets: true, frost: true, dash: true, tier: 2, fright: 3, chill: 4,
+    release: { pinky: 0, inky: 0, clyde: 0 }, intro: ['FINAL LEVEL', 'EVERYTHING AT ONCE'] },
+  { stage: 4, lv: 1, maze: 'K', boss: 'king', ghosts: [], pellets: true, frost: true, dash: true, tier: 2, fright: 6, chill: 4,
+    intro: ['KING GHOST', 'POWER UP, THEN HIT HIM. 3 PHASES x 4 HITS'] },
+  // ---- Act 2: the basement ----
+  { stage: 5, lv: 1, maze: 'C', ghosts: ['blinky', 'pinky'], pellets: true, frost: false, dash: true, tier: 1, fright: 6, ghostMul: 0.9,
+    vents: { spots: [[3, 1], [22, 1], [5, 9], [20, 9], [3, 14], [22, 14]], period: 6.5 },
+    intro: ['NEW: STEAM VENTS', 'STEAM COOKS GHOSTS - AND YOU. DASH_HINT'] },
+  { stage: 5, lv: 2, maze: 'D', ghosts: ALL4, pellets: true, frost: false, dash: true, tier: 2, fright: 5, magnets: [[9, 4], [18, 4]],
+    vents: { spots: [[4, 4], [23, 4], [6, 10], [21, 10], [3, 17], [24, 17], [7, 26], [20, 26]], period: 5.6 },
+    release: { pinky: 0, inky: 20, clyde: 45 }, intro: ['NEW: DOT MAGNET', 'NEARBY DOTS FLY TO YOU FOR A BIT'] },
+  { stage: 5, lv: 3, maze: 'E', ghosts: ALL4, slimes: 1, pellets: true, frost: false, dash: true, tier: 2, fright: 4, magnets: [[9, 20], [18, 20]],
+    vents: { spots: [[4, 5], [23, 5], [6, 11], [21, 11], [6, 17], [21, 17], [3, 20], [24, 20], [7, 29], [20, 29]], period: 4.8 },
+    release: { pinky: 0, inky: 10, clyde: 30 }, intro: ['FULL STEAM AHEAD', 'MORE VENTS, FASTER PUFFS'] },
+  { stage: 6, lv: 1, maze: 'B', ghosts: ['blinky'], hounds: 1, pellets: true, frost: false, dash: true, tier: 1, fright: 6,
+    currents: [[1, 4, 22, 4, 'R'], [1, 13, 22, 13, 'L'], [1, 16, 22, 16, 'R']], magnets: [[4, 1], [19, 1]],
+    intro: ['NEW: CURRENTS + BLOODHOUND', 'IT FOLLOWS YOUR TRAIL. KEEP TURNING'] },
+  { stage: 6, lv: 2, maze: 'D', ghosts: ['blinky', 'pinky', 'inky'], hounds: 1, pellets: true, frost: false, dash: true, tier: 2, fright: 5,
+    currents: [[1, 4, 26, 4, 'L'], [1, 26, 26, 26, 'R'], [6, 9, 6, 16, 'D'], [21, 9, 21, 16, 'U']], magnets: [[9, 17], [18, 17]],
+    release: { pinky: 0, inky: 25 }, intro: ['HOUND POUND', 'DASHING LEAVES NO SCENT'] },
+  { stage: 6, lv: 3, maze: 'E', ghosts: ALL4, hounds: 2, pellets: true, frost: false, dash: true, tier: 2, fright: 4,
+    currents: [[1, 5, 26, 5, 'R'], [1, 29, 26, 29, 'L'], [6, 9, 6, 19, 'D'], [21, 9, 21, 19, 'U'], [1, 20, 12, 20, 'R'], [15, 20, 26, 20, 'L']],
+    magnets: [[9, 20], [18, 20]], release: { pinky: 0, inky: 15, clyde: 35 }, intro: ['THE FLUME', 'TWO HOUNDS AND A FULL HOUSE'] },
+  { stage: 7, lv: 1, maze: 'D', ghosts: ['blinky', 'pinky', 'inky'], pellets: true, frost: false, dash: true, tier: 1, fright: 7, dark: 5.5, magnets: [[9, 4], [18, 4]],
+    release: { pinky: 0, inky: 30 }, intro: ['NEW: DARKNESS', 'WATCH FOR GLOWING EYES'] },
+  { stage: 7, lv: 2, maze: 'C', ghosts: ['blinky', 'pinky', 'inky'], hounds: 1, wraiths: 1, pellets: true, frost: true, dash: true, tier: 2, fright: 6, dark: 4.8, magnets: [[3, 4], [22, 4]],
+    release: { pinky: 0, inky: 15, clyde: 35 }, intro: ['BONE HALL', 'PELLETS LIGHT UP THE ROOM'] },
+  { stage: 7, lv: 3, maze: 'E', ghosts: ALL4, hounds: 1, wraiths: 1, pellets: true, frost: true, dash: true, tier: 2, fright: 5, dark: 4.2, flicker: true, magnets: [[9, 20], [18, 20]],
+    vents: { spots: [[6, 11], [21, 11], [3, 20], [24, 20]], period: 6 },
+    release: { pinky: 0, inky: 0, clyde: 20 }, intro: ['PITCH BLACK', 'THE LIGHTS ARE FLICKERING...'] },
+  { stage: 8, lv: 1, maze: 'S', boss: 'blob', ghosts: [], pellets: true, frost: true, dash: true, tier: 2, fright: 6, chill: 4, magnets: [[13, 1], [14, 27]],
+    intro: ['THE BIG BLOB', 'PHASE 1: EAT THE DOTS BEFORE IT DOES'] },
+];
+const KING_FLOOR = LEVELS.findIndex(l => l.boss === 'king'), BLOB_FLOOR = LEVELS.findIndex(l => l.boss === 'blob');
+function levelConfig(i) {
+  if (i < LEVELS.length) return LEVELS[i];
+  // Roof rounds alternate between the 3-3 free-for-all and the 5-3 steam maze, speeding up as they go.
+  const n = i - LEVELS.length + 1, base = LEVELS[n % 2 ? 8 : 12];
+  return { ...base, stage: 3, lv: n, fright: Math.max(1, base.fright - n), wraithBoost: Math.min(0.12, n * 0.02),
+    vents: base.vents && { ...base.vents, period: Math.max(3.4, base.vents.period - n * 0.1) },
+    intro: ['BONUS ROUND', 'FASTER EVERY LEVEL'] };
+}
+const TIERS = [
+  { pac: 0.8, pacF: 0.9, ghost: 0.75, ghostF: 0.5, tunnel: 0.4, wraith: 0.36, slime: 0.45, slimeS: 0.75, slimeF: 0.4 },
+  { pac: 0.9, pacF: 0.95, ghost: 0.85, ghostF: 0.55, tunnel: 0.45, wraith: 0.42, slime: 0.5, slimeS: 0.85, slimeF: 0.45 },
+  { pac: 1, pacF: 1, ghost: 0.95, ghostF: 0.6, tunnel: 0.5, wraith: 0.48, slime: 0.55, slimeS: 0.95, slimeF: 0.5 },
+];
+const SCHEDULES = [
+  [7, 20, 7, 20, 5, 20, 5, Infinity],
+  [7, 20, 7, 20, 5, 1033, 1 / 60, Infinity],
+  [5, 20, 5, 20, 5, 1037, 1 / 60, Infinity],
+];
+const FRUITS = ['cherry', 'strawberry', 'orange', 'apple', 'melon', 'grapes', 'pear', 'banana', 'peach', 'pineapple'];
+const FRUIT_PTS = { cherry: 100, strawberry: 300, orange: 500, apple: 700, melon: 1000, grapes: 2000, pear: 3000, banana: 4000, peach: 5000, pineapple: 6000 };
+const fruitFor = i => FRUITS[Math.min(i, FRUITS.length - 1)];
+const WALL_COLORS = { 1: '#2a3cff', 2: '#1fc4a3', 3: '#ff4fa3', 4: '#e8b400', 5: '#ff6a1a', 6: '#2bb5e8', 7: '#b8b094', 8: '#58b82e' };
+const STAGE_INK = { 1: '#8f9bff', 2: '#6ff0d4', 3: '#ff9bd0', 4: '#ffd86b', 5: '#ffa36b', 6: '#8fdcff', 7: '#e2dcc4', 8: '#9be86f' };
+
+// ---------- Story ----------
+const ROOF = LEVELS.length; // floor above the throne room: endless bonus rounds, opened by beating the Big Blob
+const FLOOR_NAMES = ['LOBBY', 'GIFT SHOP', 'BALLROOM', 'WALK-IN FREEZER', 'ICE RINK', 'COLD STORAGE', 'GOO LAB', 'SLIME SPA', 'SPLIT LEVEL', 'THRONE ROOM',
+  'BOILER ROOM', 'PIPE WORKS', 'STEAM TUNNELS', 'SPILLWAY', 'HOUND POUND', 'THE FLUME', 'CATACOMBS', 'BONE HALL', 'PITCH BLACK', 'THE SEWER'];
+const STAGE_NAMES = { 1: 'HAUNTED HALLS', 2: 'THE FREEZER', 3: 'GOO LABS', 4: 'PENTHOUSE', 5: 'BOILER ROOM', 6: 'FLOODED PIPES', 7: 'CATACOMBS', 8: 'THE SEWER' };
+const STAGE_SHORT = { 1: 'HALLS', 2: 'FREEZER', 3: 'LABS', 4: 'CROWN', 5: 'BOILER', 6: 'PIPES', 7: 'CRYPT', 8: 'SEWER' };
+const BASEMENT = KING_FLOOR + 1; // first floor below ground
+const underground = i => i >= BASEMENT && i < ROOF;
+const floorLabel = i => i >= ROOF ? 'ROOF' : underground(i) ? `B${i - KING_FLOOR}` : `${i + 1}F`;
+const SPEAKERS = {
+  NARR:   { name: 'NARRATOR', color: '#b9bddc', voice: 520, wave: 'triangle' },
+  PAC:    { name: 'PAC-MAN', color: '#ffe600', voice: 880, portrait: true },
+  BLINKY: { name: 'BLINKY', color: '#ff2a2a', voice: 520, portrait: true, ghost: 0 },
+  PINKY:  { name: 'PINKY', color: '#ffb8ff', voice: 720, portrait: true, ghost: 1 },
+  INKY:   { name: 'INKY', color: '#00f0ff', voice: 610, portrait: true, ghost: 2 },
+  CLYDE:  { name: 'CLYDE', color: '#ffb852', voice: 320, portrait: true, ghost: 3 },
+  WRAITH: { name: 'THE WRAITH', color: '#c9b8ff', voice: 410, wave: 'triangle', portrait: true },
+  SLIME:  { name: 'THE SLIME', color: '#5cff6b', voice: 170, wave: 'triangle', portrait: true },
+  KING:   { name: 'KING GHOST', color: '#ffd86b', voice: 140, wave: 'sawtooth', portrait: true },
+  HOUND:  { name: 'THE BLOODHOUND', color: '#e8a25c', voice: 300, portrait: true },
+  BLOB:   { name: 'THE BIG BLOB', color: '#7dff5c', voice: 85, wave: 'sawtooth', portrait: true },
+};
+// Lines are [speaker, text, mood]. Mood 'scared' shows the blue frightened face; 'angry' the King's red rage.
+const STORY = {
+  prologue: [
+    ['NARR', "PAC-LAND. A PEACEFUL KINGDOM OF DOTS AND FRUIT."],
+    ['NARR', "UNTIL ONE NIGHT, EVERY PIECE OF FRUIT IN THE LAND VANISHED."],
+    ['KING', "MWAHAHA! THE FRUIT IS MINE! ALL OF IT! FOR MY ROYAL CORONATION FRUIT SALAD!"],
+    ['KING', "COME AND GET IT, PAC-MAN. IT'S AT THE TOP OF MY SPOOKSCRAPER. ONLY TEN FLOORS. TOTALLY EASY. BYE!"],
+    ['PAC', "WAKKA."],
+    ['NARR', "PAC-MAN HAD PLANS FOR THAT CHERRY. THE CLIMB BEGINS."],
+  ],
+  pre: {
+    0: [
+      ['NARR', "FLOOR 1: THE LOBBY. THE STAFF ARE ON LUNCH BREAK. THE DOTS ARE UNGUARDED."],
+      ['PAC', "WAKKA WAKKA."],
+    ],
+    1: [
+      ['PINKY', "WELCOME TO THE GIFT SHOP! NO EATING THE MERCHANDISE."],
+      ['PAC', "WAKKA WAKKA."],
+      ['PINKY', "HE SAID IT TWICE. BLINKY, THAT MEANS HE'S SERIOUS."],
+      ['BLINKY', "WE JUST HAD A HUGE LUNCH, SO WE'RE A LITTLE SLOW TODAY. DON'T TELL THE KING."],
+    ],
+    2: [
+      ['INKY', "THE BALLROOM! FINALLY, I GET TO BE IN A LEVEL!"],
+      ['CLYDE', "WAIT, WHICH ONE IS PAC-MAN? I'LL JUST GO... THIS WAY."],
+      ['BLINKY', "CAREFUL, BOYS. THIS FLOOR HAS POWER PELLETS."],
+      ['CLYDE', "THE BLUE-MAKING DOTS?! NOT THE BLUE-MAKING DOTS!", 'scared'],
+    ],
+    3: [
+      ['NARR', "FLOOR 4: THE WALK-IN FREEZER. BRRR."],
+      ['WRAITH', "GREETINGS, YELLOW ONE. I DRIFT THROUGH WALLS AS A SAD POEM DRIFTS THROUGH THE SOUL."],
+      ['PAC', "WAKKA?"],
+      ['WRAITH', "YOUR PELLETS CANNOT HARM ME. ONLY THE FROST BERRIES CAN FREEZE ME."],
+      ['WRAITH', "...I SHOULD NOT HAVE SAID THAT."],
+    ],
+    4: [
+      ['BLINKY', "WE'RE BACK! THE KING REHIRED US. FOR LESS MONEY."],
+      ['WRAITH', "HOW TRAGIC. HOW BEAUTIFUL. LET US HAUNT TOGETHER, SMALL RED ONE."],
+      ['PINKY', "HE TALKS LIKE THIS ALL THE TIME. IT'S EXHAUSTING."],
+    ],
+    5: [
+      ['WRAITH', "I HAVE BROUGHT MY COUSIN. HE TOO IS A POET."],
+      ['WRAITH', "ROSES ARE RED. PAC-MAN IS DOOMED."],
+      ['CLYDE', "THAT DOESN'T RHYME."],
+      ['WRAITH', "SILENCE, CLYDE."],
+    ],
+    6: [
+      ['SLIME', "BLORP. BLORP BLORP."],
+      ['NARR', "TRANSLATION: \"HIT ME AND I SPLIT IN TWO. THIS IS A THREAT.\""],
+      ['NARR', "LUCKILY, PAC-MAN FOUND A PAIR OF DASHING SHOES IN THE LAB. DASH RIGHT THROUGH TROUBLE!"],
+      ['PAC', "WAKKA!"],
+    ],
+    7: [
+      ['SLIME', "BLORP?"],
+      ['BLINKY', "HE WANTS TO KNOW IF YOU'RE SCARED."],
+      ['PAC', "WAKKA."],
+      ['BLINKY', "HE SAYS NO. HONESTLY? SAME, BUDDY."],
+    ],
+    8: [
+      ['KING', "EVERYONE! ALL HANDS ON DECK! THIS IS THE LAST FLOOR BEFORE MY THRONE ROOM!", 'angry'],
+      ['CLYDE', "DO WE GET OVERTIME?"],
+      ['KING', "YOU GET TO KEEP YOUR JOB."],
+      ['CLYDE', "I'VE BEEN FIRED TWICE TODAY."],
+    ],
+    9: [
+      ['KING', "SO. YOU MADE IT. NOBODY HAS EVER MADE IT. MOSTLY BECAUSE NOBODY TRIED."],
+      ['KING', "BEHOLD MY FRUIT SALAD! TEN THOUSAND FRUITS. ONE BOWL. ALL MINE."],
+      ['PAC', "WAKKA WAKKA WAKKA."],
+      ['KING', "HOW DARE YOU. I AM MAGNIFICENT. PREPARE TO BE ROYALLY SPOOKED!", 'angry'],
+    ],
+    10: [
+      ['NARR', "B1: THE BOILER ROOM. HOT, LOUD, AND SLIGHTLY ON FIRE."],
+      ['PINKY', "OH! HI, PAC-MAN! WE WORK DOWN HERE NOW!"],
+      ['BLINKY', "THE BIG BLOB HIRED US. HE PAYS IN SNACKS. SO... SORRY IN ADVANCE."],
+      ['CLYDE', "CAREFUL! THOSE VENTS PUFF STEAM. IT COOKS GHOSTS!", 'scared'],
+      ['PAC', "WAKKA."],
+      ['NARR', "TIP: LURE GHOSTS INTO THE STEAM. DASH TO SLIP THROUGH IT YOURSELF."],
+    ],
+    11: [
+      ['INKY', "WELCOME TO THE PIPE WORKS! EVERY PIPE DOWN HERE DRAINS INTO THE SEWER."],
+      ['INKY', "THAT'S WHERE YOUR FRUIT SALAD WENT. RIGHT INTO THE BIG BLOB'S MOUTH."],
+      ['PAC', "WAKKA?!"],
+      ['CLYDE', "HE MADE ALL THE SLIMES, YOU KNOW. HE'S LIKE... THEIR DAD."],
+      ['NARR', "PAC-MAN FOUND A DOT MAGNET IN THE PIPES! GRAB ONE AND NEARBY DOTS FLY RIGHT INTO HIS MOUTH."],
+    ],
+    12: [
+      ['SLIME', "BLORP!"],
+      ['NARR', "TRANSLATION: \"MY DAD IS BIGGER THAN YOUR DAD.\""],
+      ['PAC', "WAKKA WAKKA."],
+      ['NARR', "PAC-MAN HAS NEVER MET HIS DAD. NOW IS NOT THE TIME."],
+    ],
+    13: [
+      ['NARR', "B4: THE SPILLWAY. THE PIPES BURST YEARS AGO. NOBODY CALLED A PLUMBER."],
+      ['INKY', "CAREFUL, THE WATER CARRIES YOU. SWIM WITH IT AND YOU'RE FAST. AGAINST IT? NOT SO MUCH."],
+      ['HOUND', "ARF! SNIFF SNIFF... SNIFF. SMELLS LIKE WAKKA."],
+      ['CLYDE', "THAT'S THE BLOB'S BLOODHOUND! HE FOLLOWS YOUR EXACT TRAIL!", 'scared'],
+      ['NARR', "TIP: HOUNDS SKID ON EVERY CORNER, SO KEEP TURNING. A DASH LEAVES NO SCENT AT ALL."],
+    ],
+    14: [
+      ['HOUND', "ARF ARF! I FOUND A BALL! ...WAIT, THIS IS A POWER PELLET."],
+      ['PINKY', "DROP IT! BAD DOG!"],
+      ['HOUND', "ARF."],
+      ['NARR', "THE BLOODHOUND IS A VERY GOOD BOY. HE IS ALSO TRYING TO EAT YOU."],
+    ],
+    15: [
+      ['HOUND', "AROOOOO! I CALLED MY BROTHER!"],
+      ['CLYDE', "TWO DOGS. GREAT. I'M MORE OF A CAT GHOST, HONESTLY."],
+    ],
+    16: [
+      ['NARR', "B7: THE CATACOMBS. SOMEBODY FORGOT TO PAY THE LIGHT BILL."],
+      ['INKY', "I CAN'T SEE A THING! ...IS THAT YOU, PINKY?"],
+      ['PINKY', "THAT'S A SKELETON, INKY."],
+      ['NARR', "TIP: GHOST EYES GLOW IN THE DARK. POWER PELLETS LIGHT UP THE ROOM."],
+    ],
+    17: [
+      ['WRAITH', "AH, DARKNESS. MY OLD FRIEND. I HAVE COME TO HAUNT IN YOU AGAIN."],
+      ['CLYDE', "HE'S NEVER GOING TO STOP DOING THIS, IS HE."],
+    ],
+    18: [
+      ['KING', "PAC-MAN! IT'S ME, THE KING! I CLIMBED ALL THE WAY DOWN TO WARN YOU!"],
+      ['KING', "THE BLOB IS RIGHT BELOW US. HE ATE MY FRUIT SALAD. AND MY SPARE CROWN."],
+      ['KING', "ALSO, I'M SCARED OF THE DARK. CAN I HOLD YOUR HAND?", 'scared'],
+      ['PAC', "WAKKA."],
+      ['KING', "YOU DON'T HAVE HANDS. RIGHT. SORRY."],
+    ],
+    19: [
+      ['NARR', "B10: THE SEWER. EVEN THE SMELL HAS A SMELL."],
+      ['BLOB', "OH. HELLO. YOU MUST BE THE SNACK EVERYONE'S BEEN TALKING ABOUT."],
+      ['PAC', "WAKKA WAKKA!"],
+      ['BLOB', "YOUR FRUIT SALAD? DELICIOUS. THANK YOU FOR ASKING."],
+      ['BLOB', "I EAT DOTS. I EAT GHOSTS. I EAT EVERYTHING. THE MORE I EAT, THE BIGGER I GET.", 'angry'],
+      ['NARR', "TIP: EAT THE DOTS BEFORE IT DOES. NO DOTS, NO BLOB."],
+    ],
+  },
+  post: {
+    0: [
+      ['BLINKY', "HEY! WHO ATE ALL THE LOBBY DOTS?!"],
+      ['PINKY', "THOSE WERE DECORATIVE!"],
+      ['BLINKY', "GET HIM, PINKY! ...AFTER WE DIGEST."],
+    ],
+    2: [
+      ['CLYDE', "I'M TELLING THE KING!", 'scared'],
+      ['KING', "I SAW. YOU FOUR ARE FIRED. SEND IN THE WRAITH."],
+      ['BLINKY', "CAN WE STILL COME TO THE FRUIT SALAD?"],
+      ['KING', "NO."],
+    ],
+    5: [
+      ['KING', "UGH, FINE. TIME FOR MY SECRET WEAPON. TO THE LAB!"],
+      ['SLIME', "BLORP."],
+      ['KING', "HIT HIM AND HE SPLITS IN TWO. TWICE THE SLIME. TWICE THE BLORP."],
+    ],
+    8: [
+      ['BLINKY', "HE'S HEADED FOR THE PENTHOUSE!", 'scared'],
+      ['KING', "NOBODY PANIC! I'M DOING MY HAIR!", 'angry'],
+    ],
+    9: [
+      ['KING', "NOOOO! MY BEAUTIFUL CROWN! MY BEAUTIFUL FACE!", 'scared'],
+      ['KING', "FINE. TAKE YOUR FRUIT. I WAS ON A DIET ANYWAY.", 'scared'],
+      ['NARR', "*RUMBLE*"],
+      ['KING', "UH-OH. ALL THAT FIGHTING WAS VERY BAD FOR THE FLOOR."],
+      ['NARR', "CRACK! THE THRONE ROOM FLOOR GIVES WAY. PAC-MAN AND THE FRUIT SALAD PLUMMET INTO THE DARK..."],
+      ['KING', "NOT THE BASEMENT! NOBODY GOES IN THE BASEMENT!", 'scared'],
+    ],
+    12: [
+      ['BLINKY', "NEXT FLOOR DOWN IS FLOODED. HOPE YOU BROUGHT A TOWEL."],
+      ['PAC', "WAKKA."],
+    ],
+    15: [
+      ['WRAITH', "BEYOND LIES THE CATACOMBS. WHERE LIGHT GOES TO DIE. AND ALSO THE BATTERIES."],
+    ],
+    18: [
+      ['NARR', "A HUNGRY GURGLE ECHOES UP FROM THE SEWER BELOW..."],
+      ['KING', "THAT'S HIM. OR MY STOMACH. HONESTLY, IT COULD BE EITHER.", 'scared'],
+    ],
+    19: [
+      ['BLOB', "BLUUURGH... I DON'T FEEL SO GOOD...", 'scared'],
+      ['NARR', "THE BIG BLOB BURPS. TEN THOUSAND FRUITS COME FLYING OUT."],
+      ['BLOB', "...PARDON ME."],
+      ['SLIME', "BLORP!"],
+      ['NARR', "TRANSLATION: \"DAD, YOU PROMISED YOU'D STOP EATING THE BUILDING.\""],
+      ['KING', "MY FRUIT SALAD! SLIGHTLY USED!"],
+      ['PAC', "WAKKA."],
+      ['NARR', "AND SO THE FRUIT CAME HOME. AGAIN. THE BLOB JOINED A GYM. AND UP ON THE ROOF, SOMETHING WAITS..."],
+    ],
+  },
+};
+
+// ---------- Current maze ----------
+let M = MAZES.E.rows, W = 28, H = 31, meta = MAZES.E, ox = 0, oy = TOP;
+const house = { doorC: 13, doorX: 13.5, exitY: 11, homeY: 14 };
+let tunnelRows = new Map(), openMask = new Uint8Array(0);
+
+function setMaze(key) {
+  meta = MAZES[key]; M = meta.rows; W = M[0].length; H = M.length;
+  ox = (SCREEN_COLS - W) / 2;
+  oy = TOP + Math.floor((SCREEN_MAZE_ROWS - H) / 2);
+  for (let r = 0; r < H; r++) {
+    const c = M[r].indexOf('-');
+    if (c >= 0) Object.assign(house, { doorC: c, doorX: c + 0.5, exitY: r - 1, homeY: r + 2 });
+  }
+  // Tiles Pac-Man can reach; a frozen Wraith gets pushed onto the nearest one.
+  openMask = new Uint8Array(W * H);
+  const q = [[Math.floor(meta.pac.x), meta.pac.y]];
+  openMask[meta.pac.y * W + Math.floor(meta.pac.x)] = 1;
+  while (q.length) {
+    const [c, r] = q.pop();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = c + dx, nr = r + dy;
+      if (nc < 0 || nc >= W || nr < 0 || nr >= H || openMask[nr * W + nc]) continue;
+      const t = M[nr][nc];
+      if (t === '#' || t === '-') continue;
+      openMask[nr * W + nc] = 1; q.push([nc, nr]);
+    }
+  }
+  tunnelRows = new Map();
+  for (let r = 1; r < H - 1; r++) {
+    if (M[r][0] === '#' || M[r][W - 1] === '#') continue;
+    let e = 0;
+    while (e < W && M[r][e] !== '#' && M[r - 1][e] === '#' && M[r + 1][e] === '#') e++;
+    if (e > 0) tunnelRows.set(r, e);
+  }
+}
+const tile = (c, r) => {
+  if (r < 0 || r >= H) return '#';
+  if (c < 0 || c >= W) return tunnelRows.has(r) ? ' ' : '#';
+  return M[r][c];
+};
+const pacOK = (c, r) => { const t = tile(c, r); return t !== '#' && t !== '-'; };
+const ghostOK = pacOK;
+const inTunnel = (x, y) => { const e = tunnelRows.get(y); return e !== undefined && (x < e || x > W - 1 - e); };
+// Water currents: the Sewer's ring (maze data) or a level's pipes (level data), one direction per tile.
+let flowMap = [], hasFlow = false;
+function buildFlow() {
+  flowMap = new Array(W * H).fill(null);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (meta.flow && M[r][c] !== '#') flowMap[r * W + c] = DIR_BY_NAME[meta.flow(c, r)] || null;
+  for (const [c0, r0, c1, r1, d] of G.cfg.currents || []) for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (M[r][c] !== '#') flowMap[r * W + c] = DIR_BY_NAME[d];
+  hasFlow = flowMap.some(Boolean);
+}
+const flowAt = (c, r) => { c = Math.round(c); r = Math.round(r); return c < 0 || c >= W || r < 0 || r >= H ? null : flowMap[r * W + c] || null; };
+// Speed factor for moving with (or against) a sewer current.
+const flowMul = e => { const f = flowAt(e.x, e.y); return !f || !e.dir ? 1 : e.dir === f ? 1.45 : e.dir === f.o ? 0.6 : 1; };
+
+// ---------- Directions ----------
+const U = { x: 0, y: -1, a: -Math.PI / 2 }, D = { x: 0, y: 1, a: Math.PI / 2 };
+const L = { x: -1, y: 0, a: Math.PI }, R = { x: 1, y: 0, a: 0 };
+U.o = D; D.o = U; L.o = R; R.o = L;
+const ORDER = [U, L, D, R]; // arcade tie-break order
+const DIR_BY_NAME = { U, D, L, R };
+
+// ---------- Canvas & maze art ----------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let px = 16; // device pixels per tile
+
+function buildMaze(rows, color) {
+  const w = rows[0].length, h = rows.length;
+  const wallAt = (c, r) => c >= 0 && c < w && r >= 0 && r < h && rows[r][c] === '#';
+  const N = 8, PW = w * N, PH = h * N, m = 0.375, rr = 0.25;
+  const solid = new Uint8Array(PW * PH);
+  const solidAt = (c, r, x, y) => {
+    const wl = (dc, dr) => wallAt(c + dc, r + dr);
+    const oL = !wl(-1, 0), oR = !wl(1, 0), oU = !wl(0, -1), oD = !wl(0, 1);
+    if ((oL && x < m) || (oR && x > 1 - m) || (oU && y < m) || (oD && y > 1 - m)) return false;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const qx = sx < 0 ? x : 1 - x, qy = sy < 0 ? y : 1 - y;
+      const oxs = sx < 0 ? oL : oR, oys = sy < 0 ? oU : oD;
+      if (oxs && oys) {
+        const k = m + rr;
+        if (qx < k && qy < k && Math.hypot(qx - k, qy - k) > rr) return false;
+      } else if (!oxs && !oys && !wl(sx, sy) && qx < m && qy < m) {
+        const k = m - rr;
+        if (!(qx > k && qy > k && Math.hypot(qx - k, qy - k) > rr)) return false;
+      }
+    }
+    return true;
+  };
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+    if (!wallAt(c, r)) continue;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      if (solidAt(c, r, (i + 0.5) / N, (j + 0.5) / N)) solid[(r * N + j) * PW + c * N + i] = 1;
+    }
+  }
+  const off = document.createElement('canvas');
+  off.width = PW; off.height = PH;
+  const octx = off.getContext('2d');
+  const img = octx.createImageData(PW, PH);
+  const [cr, cg, cb] = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
+  const at = (x, y) => x >= 0 && y >= 0 && x < PW && y < PH && solid[y * PW + x];
+  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+    if (!solid[y * PW + x]) continue;
+    let edge = false;
+    for (let dy = -1; dy <= 1 && !edge; dy++) for (let dx = -1; dx <= 1; dx++) if (!at(x + dx, y + dy)) { edge = true; break; }
+    if (!edge) continue;
+    const k = (y * PW + x) * 4;
+    img.data[k] = cr; img.data[k + 1] = cg; img.data[k + 2] = cb; img.data[k + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  return off;
+}
+const artCache = {};
+function mazeArt(key, color) {
+  const k = key + color;
+  return artCache[k] || (artCache[k] = buildMaze(MAZES[key].rows, color));
+}
+
+// ---------- Sound ----------
+const AC = window.AudioContext || window.webkitAudioContext;
+let ac = null, master = null, muted = false;
+function audioOn() {
+  if (!AC) return;
+  try {
+    if (!ac) { ac = new AC(); master = ac.createGain(); master.gain.value = 0.3; master.connect(ac.destination); }
+    if (ac.state === 'suspended') ac.resume();
+  } catch (e) { ac = null; }
+}
+function beep(f0, f1, dur, type = 'square', vol = 0.15, delay = 0) {
+  if (!ac || muted) return;
+  const t = ac.currentTime + delay;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+const SFX = {
+  waka: false,
+  dot() { this.waka = !this.waka; this.waka ? beep(560, 280, 0.09, 'triangle', 0.35) : beep(280, 560, 0.09, 'triangle', 0.35); },
+  power() { beep(160, 900, 0.3, 'sawtooth', 0.08); },
+  frost() { beep(2400, 700, 0.5, 'triangle', 0.18); beep(3200, 1600, 0.3, 'sine', 0.1, 0.08); },
+  shatter() { beep(1800, 180, 0.22, 'sawtooth', 0.09); beep(2600, 900, 0.12, 'square', 0.05, 0.05); },
+  wraith() { beep(330, 110, 0.9, 'sine', 0.2); beep(349, 117, 0.9, 'sine', 0.12); },
+  ghost() { beep(200, 1600, 0.4, 'square', 0.09); },
+  orb() { beep(1100, 520, 0.09, 'square', 0.035); },
+  bossHit() { beep(140, 55, 0.45, 'sawtooth', 0.16); beep(900, 260, 0.22, 'square', 0.08); },
+  roar() { beep(95, 55, 0.9, 'sawtooth', 0.2); beep(100, 50, 0.9, 'square', 0.08); beep(190, 90, 0.7, 'sawtooth', 0.08, 0.1); },
+  bossDie() {
+    for (let i = 0; i < 10; i++) beep(260 - i * 18, 40, 0.3, 'sawtooth', 0.14, i * 0.22);
+    [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => beep(f, f, 0.2, 'square', 0.08, 2.6 + i * 0.14));
+  },
+  dash() { beep(260, 1500, 0.2, 'sawtooth', 0.07); beep(180, 900, 0.25, 'triangle', 0.2); },
+  split() { beep(520, 140, 0.25, 'square', 0.1); beep(760, 200, 0.22, 'square', 0.08, 0.07); },
+  fruit() { beep(700, 1400, 0.12, 'square', 0.1); beep(1000, 2000, 0.16, 'square', 0.1, 0.1); },
+  tick() { beep(660, 660, 0.04, 'square', 0.05); },
+  climb() { [392, 523, 659, 784, 1047].forEach((f, i) => beep(f, f * 1.02, 0.07, 'square', 0.06, i * 0.07)); },
+  fall() { beep(1400, 90, 1.3, 'square', 0.07); beep(110, 40, 0.5, 'sawtooth', 0.14, 1.3); },
+  steam() { for (let i = 0; i < 5; i++) beep(3200 - i * 260, 1500 - i * 150, 0.09, 'sawtooth', 0.025, i * 0.05); },
+  magnet() { [523, 784, 1047, 1568].forEach((f, i) => beep(f, f * 1.5, 0.1, 'square', 0.06, i * 0.05)); },
+  pull() { beep(1800, 2600, 0.03, 'triangle', 0.08); },
+  howl() { beep(420, 700, 0.35, 'triangle', 0.14); beep(700, 520, 0.5, 'triangle', 0.12, 0.35); },
+  burp() { beep(120, 70, 0.35, 'sawtooth', 0.18); beep(95, 60, 0.3, 'square', 0.07, 0.05); },
+  slurp() { beep(260, 700, 0.12, 'triangle', 0.14); },
+  blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
+  life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
+  clear() { [523, 659, 784, 1047].forEach((f, i) => beep(f, f, 0.14, 'square', 0.07, i * 0.1)); },
+  death() {
+    for (let i = 0; i < 9; i++) beep(900 - i * 70, 320 - i * 25, 0.13, 'square', 0.09, i * 0.13);
+    beep(180, 60, 0.12, 'square', 0.1, 1.3); beep(180, 60, 0.12, 'square', 0.1, 1.45);
+  },
+  jingle() {
+    const B4 = 494, B5 = 988, Fs5 = 740, Ds5 = 622, C5 = 523, C6 = 1047, G5 = 784, E5 = 659, F5 = 698, Gs5 = 831, A5 = 880;
+    const J = [[B4, 1], [B5, 1], [Fs5, 1], [Ds5, 1], [B5, .5], [Fs5, 1.5], [Ds5, 2],
+      [C5, 1], [C6, 1], [G5, 1], [E5, 1], [C6, .5], [G5, 1.5], [E5, 2],
+      [B4, 1], [B5, 1], [Fs5, 1], [Ds5, 1], [B5, .5], [Fs5, 1.5], [Ds5, 2],
+      [Ds5, .5], [E5, .5], [F5, 1], [F5, .5], [Fs5, .5], [G5, 1], [G5, .5], [Gs5, .5], [A5, 1], [B5, 2]];
+    const u = 0.125; let t = 0;
+    for (const [f, d] of J) { beep(f, f, d * u * 0.9, 'square', 0.07, t); t += d * u; }
+    const bass = [123, 185, 131, 196, 123, 185, 156, 247];
+    bass.forEach((f, i) => { beep(f, f, 0.22, 'triangle', 0.25, i * 0.5); beep(f * 1.5, f * 1.5, 0.18, 'triangle', 0.18, i * 0.5 + 0.25); });
+  },
+};
+
+// ---------- Game state ----------
+let hi = 0, infinite = false;
+try { hi = parseInt(localStorage.getItem('pacman.hi') || '0', 10) || 0; } catch (e) {}
+const saveHi = () => { try { localStorage.setItem('pacman.hi', String(hi)); } catch (e) {} };
+
+const G = {
+  state: 'menu', paused: false, t: 0, timer: 0,
+  lvIndex: 0, cfg: LEVELS[2], score: 0, lives: 3, extraGiven: false,
+  dots: new Uint8Array(40 * 40), dotsTotal: 0, dotsLeft: 0, dotsEaten: 0,
+  want: null, fright: 0, chill: 0, combo: 0, modeIdx: 0, modeTime: 0,
+  idle: 0, globalMode: false, globalDots: 0, bannerFull: true,
+  fruit: null, popups: [], eatenGhost: null,
+  ghosts: [], wraiths: [], slimes: [], dashCharge: 1,
+  boss: null, orbs: [], minions: [], respawns: [], shake: 0,
+  menu: { sel: 0, confirm: false }, tower: null, dlg: null, freshFloor: -1,
+  bossSay: null, bossLast: null, pendingPhase: 0, phaseTo: 0,
+  vents: [], ventT: 0, hounds: [], magnet: 0, flyDots: [], light: 0,
+  buddies: [], blobules: [], waveT: 0, slurpT: 0,
+};
+const pac = { x: 13.5, y: 23, dir: L, face: L, anim: 0, dash: 0, grace: 0, trail: [] };
+const ghosts = [
+  { name: 'blinky', color: '#ff2a2a', off: 0 },
+  { name: 'pinky', color: '#ffb8ff', off: 0 },
+  { name: 'inky', color: '#00f0ff', off: -2 },
+  { name: 'clyde', color: '#ffb852', off: 2 },
+];
+const [blinky, pinky, inky, clyde] = ghosts;
+const corner = g => ({ blinky: { x: W - 3, y: -4 }, pinky: { x: 2, y: -4 }, inky: { x: W - 1, y: H + 3 }, clyde: { x: 0, y: H + 3 } })[g.name];
+
+function resetDots() {
+  G.dotsLeft = 0; G.dotsEaten = 0;
+  G.dots.fill(0);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const ch = M[r][c];
+    let v = 0;
+    if (ch === '.') v = 1;
+    else if (ch === 'o') v = G.cfg.pellets ? 2 : 1;
+    else if (ch === '*') v = G.cfg.frost ? 3 : 1;
+    G.dots[r * W + c] = v;
+    if (v) G.dotsLeft++;
+  }
+  for (const [c, r] of G.cfg.magnets || []) { if (!G.dots[r * W + c]) G.dotsLeft++; G.dots[r * W + c] = 5; }
+  G.dotsTotal = G.dotsLeft;
+  ghosts.forEach(g => { g.dotCount = 0; });
+}
+function resetActors() {
+  Object.assign(pac, { x: meta.pac.x, y: meta.pac.y, dir: L, face: L, anim: 0, dash: 0, grace: 0, trail: [] });
+  G.dashCharge = 1;
+  G.want = null; G.fright = 0; G.chill = 0; G.combo = 0; G.modeIdx = 0; G.modeTime = 0; G.idle = 0;
+  G.fruit = null; G.popups = []; G.eatenGhost = null;
+  G.ghosts = ghosts.filter(g => G.cfg.ghosts.includes(g.name));
+  for (const g of G.ghosts) {
+    Object.assign(g, { x: house.doorX + g.off, y: house.homeY, dir: U, mode: 'house', bob: -1, frightened: false, eaten: false, reverse: false, decided: -1 });
+  }
+  if (G.ghosts.includes(blinky)) Object.assign(blinky, { x: house.doorX, y: house.exitY, dir: L, mode: 'active' });
+  pinky.dir = D; pinky.bob = 1;
+  G.wraiths = [];
+  for (let i = 0; i < (G.cfg.wraiths || 0); i++) {
+    const hx = house.doorX + (i ? 1 : -1);
+    G.wraiths.push({ hx, x: hx, y: house.homeY, dir: U, bob: i ? 1 : -1, state: 'house', t: 2 + i * 6, reforming: false, tx: 0 });
+  }
+  G.slimes = [];
+  for (let i = 0; i < (G.cfg.slimes || 0); i++) G.slimes.push(makeSlime(i, 3 + i * 7));
+  G.orbs = []; G.minions = []; G.buddies = []; G.blobules = []; G.waveT = 1.5;
+  G.ventT = 0; G.light = G.cfg.dark || 0;
+  G.hounds = [];
+  for (let i = 0; i < (G.cfg.hounds || 0); i++) G.hounds.push(makeHound(i));
+  G.magnet = 0; G.flyDots = []; G.pacKey = -1;
+  if (G.cfg.boss) {
+    if (!G.boss) G.boss = { kind: G.cfg.boss, hp: BOSSES[G.cfg.boss].hp, eaten: [] };
+    Object.assign(G.boss, { x: meta.throne.x, y: meta.throne.y, dir: D, state: 'chase', inv: 1.5, fire: 2.5, burst: 5,
+      summon: bossPhase(G.boss) > 1 ? 2.5 : 8, dead: 0, tgt: null, retarget: 0, flash: 0 });
+    G.pendingPhase = 0;
+  } else G.boss = null;
+}
+function loadLevel(i) {
+  G.lvIndex = i;
+  G.cfg = levelConfig(i);
+  G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
+  setMaze(G.cfg.maze);
+  buildFlow(); buildVents();
+  resetDots(); resetActors();
+  G.globalMode = false; G.globalDots = 0; G.bannerFull = true;
+}
+function newGame(startIndex) {
+  audioOn();
+  Object.assign(G, { score: 0, lives: 3, extraGiven: false, paused: false });
+  loadLevel(startIndex);
+  G.state = 'ready'; G.timer = 4.3;
+  SFX.jingle();
+}
+function addScore(n) {
+  G.score += n;
+  if (!G.extraGiven && G.score >= 10000) { G.extraGiven = true; G.lives++; SFX.life(); }
+  if (G.score > hi && !infinite) { hi = G.score; saveHi(); } // test runs don't set records
+}
+// ---------- Story progress (saved per browser) ----------
+const SAVE_KEY = 'pacman.story';
+// unlocked: highest floor you may enter. won: the Big Blob is beaten (opens the roof).
+// ck: boss checkpoints, the HP a retry starts from, keyed by floor.
+const freshSave = () => ({ v: 2, unlocked: 0, won: false, best: [], ck: {} });
+let save = freshSave();
+try {
+  const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+  if (s && typeof s.unlocked === 'number') {
+    save = { v: 2, unlocked: Math.min(s.unlocked, LEVELS.length - 1), won: !!s.won, best: Array.isArray(s.best) ? s.best : [],
+      ck: s.ck && typeof s.ck === 'object' ? s.ck : {} };
+    if (!s.v) { // saves from before the basement: 'won' meant the King was beaten, so open B1 instead of the roof
+      if (s.won) save.unlocked = Math.max(save.unlocked, BASEMENT);
+      save.won = false;
+      if (s.bossCk > 0) save.ck[KING_FLOOR] = s.bossCk;
+    }
+  }
+} catch (e) {}
+const writeSave = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} };
+const hasProgress = () => save.unlocked > 0 || save.won;
+const topFloor = () => save.won ? ROOF : Math.min(save.unlocked, LEVELS.length - 1);
+const isCleared = i => i < ROOF && (i < save.unlocked || (i === BLOB_FLOOR && save.won));
+function recordClear(i, score) {
+  if (i >= ROOF) return;
+  save.unlocked = Math.max(save.unlocked, Math.min(i + 1, LEVELS.length - 1));
+  if (i === BLOB_FLOOR) save.won = true;
+  if (save.ck) delete save.ck[i];
+  if (score > (save.best[i] || 0)) save.best[i] = score;
+  writeSave();
+}
+function unlockAll() {
+  save.unlocked = LEVELS.length - 1; save.won = true; writeSave();
+  if (G.state === 'tower') G.tower.fresh = -1;
+  SFX.life();
+}
+
+// ---------- Screens and flow ----------
+const MENU_STATES = new Set(['menu', 'cast', 'tower', 'dialog', 'ending']);
+function toMenu() {
+  G.state = 'menu'; G.timer = 0; G.paused = false;
+  G.menu = { sel: 0, confirm: false };
+}
+function menuItems() { return [...(hasProgress() ? ['CONTINUE'] : []), 'NEW GAME', 'CAST']; }
+function menuMove(d) {
+  const n = menuItems().length;
+  G.menu.sel = (G.menu.sel + d + n) % n; G.menu.confirm = false;
+  SFX.tick();
+}
+function menuSelect() {
+  const item = menuItems()[G.menu.sel];
+  if (item === 'CONTINUE') toTower(topFloor());
+  else if (item === 'CAST') toCast();
+  else {
+    if (hasProgress() && !G.menu.confirm) { G.menu.confirm = true; SFX.tick(); return; }
+    save = freshSave(); writeSave();
+    startLevel(0, true);
+  }
+}
+function toCast() {
+  G.state = 'cast'; G.timer = 0;
+  G.cfg = LEVELS[2];
+  setMaze('E'); resetDots();
+}
+
+const FLOOR_H = 2.3, GROUND = 31.5, TOWER_X = 8, TOWER_W = 12, VIEW_TOP = 2.3, VIEW_BOT = 31.3;
+// World rows: the tower stands on the ground line; the basement floors stack downward beneath it.
+const floorTop = i => underground(i) ? GROUND + 0.6 + (i - BASEMENT) * FLOOR_H : GROUND - (i + 1) * FLOOR_H;
+const floorMid = i => i >= ROOF ? floorTop(KING_FLOOR) - 1.7 : floorTop(i) + FLOOR_H / 2;
+const floorStage = i => i >= ROOF ? 0 : LEVELS[i].stage;
+const basementOpen = () => save.unlocked >= BASEMENT;
+const canEnter = i => i === ROOF ? save.won : i >= 0 && i <= save.unlocked;
+// The map scrolls to follow Pac-Man down the basement shaft; above ground it all fits on one screen.
+function towerCam(py) {
+  if (!basementOpen()) return 0;
+  return Math.max(0, Math.min(floorTop(ROOF - 1) + FLOOR_H + 1.4 - VIEW_BOT, py - 17));
+}
+// sel: floor Pac-Man ends on. from: floor the trip starts at. fresh: a just-unlocked floor to flag.
+function toTower(sel, from = sel, fresh = -1) {
+  sel = Math.max(0, Math.min(sel, topFloor()));
+  G.state = 'tower'; G.timer = 0; G.paused = false;
+  G.tower = { sel, py: floorMid(Math.min(from, ROOF)), fresh, fall: from === KING_FLOOR && sel === BASEMENT };
+  if (from !== sel) G.tower.fall ? SFX.fall() : SFX.climb();
+}
+// Up/down move to the floor physically above/below, so the basement reads downward.
+function towerMove(up) {
+  const list = [...Array(ROOF + 1).keys()].filter(canEnter).sort((a, b) => floorMid(b) - floorMid(a));
+  const n = list[list.indexOf(G.tower.sel) + (up ? 1 : -1)];
+  if (n !== undefined) { G.tower.sel = n; SFX.tick(); }
+}
+function towerEnter() { startLevel(G.tower.sel); }
+function floorAt(row) { // row in world space
+  const ry = floorTop(KING_FLOOR);
+  if (row >= ry - 4.4 && row < ry) return ROOF;
+  for (let i = 0; i < ROOF; i++) if (row >= floorTop(i) && row < floorTop(i) + FLOOR_H) return i;
+  return null;
+}
+
+function startLevel(i, prologue = false) {
+  audioOn();
+  Object.assign(G, { score: 0, lives: 3, extraGiven: false, paused: false });
+  loadLevel(i);
+  let pre = STORY.pre[i] || [];
+  const ck = save.ck && save.ck[i], def = G.boss && BOSSES[G.boss.kind];
+  if (def && ck > 0 && ck < def.hp) { // retrying a boss: pick up from the last phase reached
+    G.boss.hp = ck;
+    G.boss.summon = 2.5;
+    const ph = bossPhase(G.boss);
+    pre = [[def.speaker, def.retry(ph), ph === 3 ? 'angry' : undefined]];
+  }
+  const lines = [...(prologue ? STORY.prologue : []), ...pre];
+  if (lines.length) openDialog(lines, 'ready'); else goReady();
+}
+function goReady() { G.state = 'ready'; G.timer = 4.3; SFX.jingle(); }
+// After the clear flash: save progress, play the outro (if any), then climb the tower.
+function finishLevel() {
+  const i = G.lvIndex;
+  if (i >= ROOF) { loadLevel(i + 1); G.state = 'ready'; G.timer = 3.5; return; } // endless roof rounds roll on
+  const before = topFloor();
+  recordClear(i, G.score);
+  G.freshFloor = topFloor() > before ? topFloor() : -1;
+  const then = i === BLOB_FLOOR ? 'ending' : 'tower';
+  if (STORY.post[i]) openDialog(STORY.post[i], then); else afterDialog(then);
+}
+
+function openDialog(lines, then) {
+  G.fright = 0; G.chill = 0; G.paused = false;
+  G.dlg = { lines, i: 0, chars: 0, then };
+  G.state = 'dialog';
+}
+function dialogUpdate(dt) {
+  const d = G.dlg, line = d.lines[d.i];
+  if (d.chars >= line[1].length) return;
+  const before = Math.floor(d.chars);
+  d.chars = Math.min(line[1].length, d.chars + dt * 42);
+  const n = Math.floor(d.chars);
+  if (n !== before && n % 2 === 0 && line[1][n - 1] !== ' ') SFX.blip(SPEAKERS[line[0]]);
+}
+function dialogNext() {
+  const d = G.dlg, line = d.lines[d.i];
+  if (d.chars < line[1].length) { d.chars = line[1].length; return; }
+  if (++d.i >= d.lines.length) endDialog();
+  else { d.chars = 0; SFX.tick(); }
+}
+function endDialog() {
+  const then = G.dlg.then;
+  G.dlg = null;
+  afterDialog(then);
+}
+function afterDialog(then) {
+  if (then === 'ready') goReady();
+  else if (then === 'ending') { G.state = 'ending'; G.timer = 0; SFX.clear(); }
+  else toTower(G.lvIndex + 1, G.lvIndex, G.freshFloor);
+}
+
+function menuUpdate(dt) {
+  G.timer += dt;
+  if (G.state === 'tower') {
+    const T = G.tower, target = floorMid(T.sel), d = target - T.py, v = (10 + Math.abs(d) * 1.6) * dt;
+    T.py = Math.abs(d) <= v ? target : T.py + Math.sign(d) * v;
+  }
+}
+
+function popup(text, x, y, color, t = 1.2, freeze = false) { G.popups.push({ text, x, y, t, color, freeze }); }
+
+// ---------- Movement ----------
+function onCenter(e) { return Math.abs(e.x - Math.round(e.x)) < 1e-6 && Math.abs(e.y - Math.round(e.y)) < 1e-6; }
+function step(e, dist, atCenter, always) {
+  let moved = 0, guard = 0;
+  while (dist > 1e-7 && guard++ < 8) {
+    if (onCenter(e)) {
+      e.x = Math.round(e.x); e.y = Math.round(e.y);
+      const key = e.x * 100 + e.y;
+      if (always || e.decided !== key) {
+        e.decided = key;
+        if (!atCenter(e) || !e.dir) break;
+      }
+    }
+    const axis = e.dir.x ? 'x' : 'y', d = e.dir.x || e.dir.y, pos = e[axis];
+    const next = d > 0 ? Math.floor(pos + 1e-9) + 1 : Math.ceil(pos - 1e-9) - 1;
+    const toNext = Math.abs(next - pos);
+    if (dist >= toNext) { e[axis] = next; dist -= toNext; moved += toNext; }
+    else { e[axis] += d * dist; moved += dist; dist = 0; }
+    if (e.x < -1) e.x += W + 2;
+    if (e.x > W) e.x -= W + 2;
+    if (!onCenter(e)) e.decided = -1;
+  }
+  return moved;
+}
+function moveToward(g, axis, target, dist) {
+  const diff = target - g[axis];
+  if (Math.abs(diff) <= dist) g[axis] = target;
+  else g[axis] += Math.sign(diff) * dist;
+  if (diff) g.dir = axis === 'x' ? (diff > 0 ? R : L) : (diff > 0 ? D : U);
+}
+
+function pacAtCenter(p) {
+  const w = G.want;
+  if (w && pacOK(p.x + w.x, p.y + w.y)) p.dir = w;
+  else if (p.dir && !pacOK(p.x + p.dir.x, p.y + p.dir.y)) p.dir = null;
+  if (!p.dir) { const f = flowAt(p.x, p.y); if (f && pacOK(p.x + f.x, p.y + f.y)) p.dir = f; } // a stopped Pac-Man drifts with the current
+  if (p.dir) p.face = p.dir;
+  return !!p.dir;
+}
+
+function targetFor(g) {
+  if (g.eaten) return { x: house.doorC, y: house.exitY };
+  if (G.modeIdx % 2 === 0) return corner(g);
+  const px_ = Math.round(pac.x), py_ = Math.round(pac.y), f = pac.dir || pac.face;
+  switch (g.name) {
+    case 'blinky': return { x: px_, y: py_ };
+    case 'pinky': return { x: px_ + f.x * 4 - (f === U ? 4 : 0), y: py_ + f.y * 4 };
+    case 'inky': {
+      const vx = px_ + f.x * 2 - (f === U ? 2 : 0), vy = py_ + f.y * 2;
+      return { x: 2 * vx - Math.round(blinky.x), y: 2 * vy - Math.round(blinky.y) };
+    }
+    case 'clyde': {
+      const d = Math.hypot(Math.round(g.x) - px_, Math.round(g.y) - py_);
+      return d > 8 ? { x: px_, y: py_ } : corner(g);
+    }
+  }
+}
+function ghostAtCenter(g) {
+  const c = g.x, r = g.y;
+  if (g.eaten && r === house.exitY && (c === house.doorC || c === house.doorC + 1)) { g.mode = 'enter'; return false; }
+  const opts = ORDER.filter(d => d !== g.dir.o && ghostOK(c + d.x, r + d.y));
+  if (!opts.length) { g.dir = g.dir.o; return true; }
+  if (g.frightened) { g.dir = opts[(Math.random() * opts.length) | 0]; return true; }
+  const t = targetFor(g);
+  let best = opts[0], bd = Infinity;
+  for (const d of opts) {
+    const dd = (c + d.x - t.x) ** 2 + (r + d.y - t.y) ** 2;
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  g.dir = best;
+  return true;
+}
+function ghostUpdate(g, dt, sp) {
+  if (G.chill > 0 && !g.eaten) return; // frozen solid
+  let v;
+  if (g.eaten) v = 1.7;
+  else if (g.mode === 'house' || g.mode === 'leave') v = 0.5;
+  else if (inTunnel(g.x, g.y)) v = sp.tunnel;
+  else if (g.frightened) v = sp.ghostF;
+  else v = sp.ghost * (G.cfg.ghostMul || 1);
+  if (g.mode === 'active' && !g.eaten) v *= flowMul(g);
+  const dist = v * BASE * dt;
+  switch (g.mode) {
+    case 'house':
+      g.y += g.bob * dist;
+      if (g.y < house.homeY - 0.5) { g.y = house.homeY - 0.5; g.bob = 1; }
+      if (g.y > house.homeY + 0.5) { g.y = house.homeY + 0.5; g.bob = -1; }
+      g.dir = g.bob < 0 ? U : D;
+      return;
+    case 'leave':
+      if (Math.abs(g.x - house.doorX) > 1e-6) {
+        if (Math.abs(g.y - house.homeY) > 1e-6) moveToward(g, 'y', house.homeY, dist);
+        else moveToward(g, 'x', house.doorX, dist);
+      } else {
+        g.x = house.doorX;
+        moveToward(g, 'y', house.exitY, dist);
+        if (g.y === house.exitY) { g.mode = 'active'; g.dir = L; g.decided = -1; }
+      }
+      return;
+    case 'enter':
+      if (Math.abs(g.x - house.doorX) > 1e-6) moveToward(g, 'x', house.doorX, dist);
+      else {
+        moveToward(g, 'y', house.homeY, dist);
+        if (g.y === house.homeY) { g.eaten = false; g.frightened = false; g.mode = 'leave'; }
+      }
+      return;
+    default:
+      if (g.reverse) { g.reverse = false; g.dir = g.dir.o; g.decided = -1; }
+      step(g, dist, ghostAtCenter, false);
+  }
+}
+
+// Wraiths live in the ghost house like ghosts, but once out they move tile by tile
+// straight through walls, always stepping along the axis with the bigger gap to Pac-Man.
+// Returns true when the Wraith is standing on the target tile.
+function wraithStep(w, dist, tx, ty) {
+  let guard = 0;
+  while (dist > 1e-7 && guard++ < 8) {
+    if (onCenter(w)) {
+      w.x = Math.round(w.x); w.y = Math.round(w.y);
+      const dx = tx - w.x, dy = ty - w.y;
+      if (!dx && !dy) return true;
+      w.dir = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? R : L) : (dy > 0 ? D : U);
+    }
+    const axis = w.dir.x ? 'x' : 'y', d = w.dir.x || w.dir.y, pos = w[axis];
+    const next = d > 0 ? Math.floor(pos + 1e-9) + 1 : Math.ceil(pos - 1e-9) - 1;
+    const toNext = Math.abs(next - pos);
+    if (dist >= toNext) { w[axis] = next; dist -= toNext; }
+    else { w[axis] += d * dist; dist = 0; }
+  }
+  return onCenter(w) && Math.round(w.x) === tx && Math.round(w.y) === ty;
+}
+function wraithUpdate(w, dt, sp) {
+  const speed = (sp.wraith + (G.cfg.wraithBoost || 0)) * BASE * dt;
+  if (w.state === 'eaten') {
+    // Eyes fly home fast, straight through walls, even while everything else is frozen.
+    if (wraithStep(w, 1.7 * BASE * dt, Math.floor(w.hx), house.homeY)) {
+      Object.assign(w, { x: w.hx, y: house.homeY, state: 'house', t: 4, reforming: true, dir: U });
+    }
+    return;
+  }
+  if (G.chill > 0) return; // frozen solid
+  if (w.state === 'house') {
+    const bob = 0.5 * BASE * dt;
+    w.y += w.bob * bob;
+    if (w.y < house.homeY - 0.5) { w.y = house.homeY - 0.5; w.bob = 1; }
+    if (w.y > house.homeY + 0.5) { w.y = house.homeY + 0.5; w.bob = -1; }
+    w.dir = w.bob < 0 ? U : D;
+    w.t -= dt;
+    if (w.t <= 0) { w.state = 'leave'; w.reforming = false; w.tx = Math.round(w.x); SFX.wraith(); }
+    return;
+  }
+  if (w.state === 'leave') {
+    // Rise straight up through the roof of the house.
+    if (Math.abs(w.x - w.tx) > 1e-6) moveToward(w, 'x', w.tx, speed);
+    else {
+      moveToward(w, 'y', house.exitY, speed);
+      if (w.y === house.exitY) w.state = 'active';
+    }
+    return;
+  }
+  const tx = Math.max(0, Math.min(W - 1, Math.round(pac.x)));
+  wraithStep(w, speed, tx, Math.round(pac.y));
+}
+// A Wraith frozen inside a wall stays there. Pac-Man can still eat it from the nearest
+// path tiles beside it, which get marked with a small ice glint while the freeze lasts.
+function reachTiles(w) {
+  const sx = Math.max(0, Math.min(W - 1, Math.round(w.x))), sy = Math.max(0, Math.min(H - 1, Math.round(w.y)));
+  if (openMask[sy * W + sx] && (Number.isInteger(w.x) || Number.isInteger(w.y))) return null; // already on a path
+  const dist = new Int16Array(W * H).fill(-1), q = [[sx, sy]], found = [];
+  dist[sy * W + sx] = 0;
+  for (let i = 0; i < q.length; i++) {
+    const [c, r] = q[i], d = dist[r * W + c];
+    if (found.length && d > dist[found[0].y * W + found[0].x]) break;
+    if (openMask[r * W + c]) { found.push({ x: c, y: r }); continue; }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = c + dx, nr = r + dy;
+      if (nc < 0 || nc >= W || nr < 0 || nr >= H || dist[nr * W + nc] >= 0) continue;
+      dist[nr * W + nc] = d + 1; q.push([nc, nr]);
+    }
+  }
+  return found;
+}
+
+// Slimes crawl the corridors out of the ghost house. Eaten while you're powered up or while
+// they're frozen, a big slime splits into two small, fast ones. Eat both and it re-forms at home.
+function makeSlime(group, t) {
+  const hx = house.doorX + (group % 2 ? 1.5 : -1.5);
+  return { kind: 'big', group, x: hx, y: house.homeY, dir: U, bob: group % 2 ? 1 : -1, state: 'house', t, decided: -1, fresh: 0 };
+}
+function slimeAtCenter(s) {
+  const opts = ORDER.filter(d => d !== s.dir.o && ghostOK(s.x + d.x, s.y + d.y));
+  if (!opts.length) { s.dir = s.dir.o; return true; }
+  if (G.fright > 0 || Math.random() < (s.kind === 'big' ? 0.3 : 0.12)) { s.dir = opts[(Math.random() * opts.length) | 0]; return true; }
+  const tx = Math.round(pac.x), ty = Math.round(pac.y);
+  let best = opts[0], bd = Infinity;
+  for (const d of opts) {
+    const dd = (s.x + d.x - tx) ** 2 + (s.y + d.y - ty) ** 2;
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  s.dir = best;
+  return true;
+}
+function slimeUpdate(s, dt, sp) {
+  if (s.fresh > 0) s.fresh -= dt;
+  if (G.chill > 0) return; // frozen solid
+  if (s.state === 'house') {
+    s.y += s.bob * 0.5 * BASE * dt;
+    if (s.y < house.homeY - 0.5) { s.y = house.homeY - 0.5; s.bob = 1; }
+    if (s.y > house.homeY + 0.5) { s.y = house.homeY + 0.5; s.bob = -1; }
+    s.dir = s.bob < 0 ? U : D;
+    s.t -= dt;
+    if (s.t <= 0) s.state = 'leave';
+    return;
+  }
+  const v = (G.fright > 0 ? sp.slimeF : s.kind === 'big' ? sp.slime : sp.slimeS) * (s.state === 'active' ? flowMul(s) : 1);
+  const dist = v * BASE * dt;
+  if (s.state === 'leave') {
+    if (Math.abs(s.x - house.doorX) > 1e-6) {
+      if (Math.abs(s.y - house.homeY) > 1e-6) moveToward(s, 'y', house.homeY, dist);
+      else moveToward(s, 'x', house.doorX, dist);
+    } else {
+      s.x = house.doorX;
+      moveToward(s, 'y', house.exitY, dist);
+      if (s.y === house.exitY) { s.state = 'active'; s.dir = s.group % 2 ? R : L; s.decided = -1; }
+    }
+    return;
+  }
+  step(s, dist, slimeAtCenter, false);
+}
+function eatSlime(s) {
+  const i = G.slimes.indexOf(s);
+  if (s.kind === 'big') {
+    const kids = (s.dir.x ? [L, R] : [U, D]).map(d => ({ kind: 'small', group: s.group, x: s.x, y: s.y, dir: d, state: 'active', decided: -1, fresh: 0.6 }));
+    G.slimes.splice(i, 1, ...kids);
+    addScore(400); SFX.split();
+    popup('400', s.x, s.y, '#8dff9a');
+  } else {
+    G.slimes.splice(i, 1);
+    addScore(300); SFX.ghost();
+    popup('300', s.x, s.y, '#8dff9a');
+    if (!G.slimes.some(o => o.group === s.group)) G.slimes.push(makeSlime(s.group, 10));
+  }
+}
+
+// Dash: 4 tiles at high speed along the corridor, passing through enemies unharmed.
+const DASH_TILES = 4, DASH_SPEED = 2.6, DASH_RECHARGE = 6;
+function triggerDash() {
+  if (G.state !== 'play' || G.paused || !G.cfg.dash || G.dashCharge < 1 || pac.dash > 0) return;
+  if (!pac.dir) {
+    const f = pac.face;
+    if (onCenter(pac) && pacOK(Math.round(pac.x) + f.x, Math.round(pac.y) + f.y)) pac.dir = f;
+    else return;
+  }
+  pac.dash = DASH_TILES; G.dashCharge = 0;
+  SFX.dash();
+}
+
+// ---------- Basement hazards ----------
+// Steam vents loop: idle, a rumbling warning, then a blast over the vent and the tiles beside it.
+// Steam kills Pac-Man (unless dashing) and cooks any ghost caught in it back to eyes.
+const VENT_WARN = 1.1, VENT_BLAST = 1.3;
+function buildVents() {
+  const v = G.cfg.vents;
+  G.vents = !v ? [] : v.spots.map(([c, r], k) => ({
+    c, r, was: 'idle', off: ((k >> 1) * 1.9) % (v.period - VENT_WARN - VENT_BLAST - 0.3), // mirrored pairs puff together
+    tiles: [[c, r], ...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [c + dx, r + dy]).filter(([x, y]) => pacOK(x, y))],
+  }));
+}
+function ventState(v) {
+  const per = G.cfg.vents.period, p = (G.ventT + v.off) % per;
+  return p >= per - VENT_BLAST ? 'blast' : p >= per - VENT_BLAST - VENT_WARN ? 'warn' : 'idle';
+}
+const inSteam = (x, y) => G.vents.some(v => ventState(v) === 'blast' && v.tiles.some(([c, r]) => Math.abs(c - x) < 0.6 && Math.abs(r - y) < 0.6));
+function ventsUpdate(dt) {
+  G.ventT += dt;
+  let hiss = false;
+  for (const v of G.vents) { const s = ventState(v); if (s === 'blast' && v.was !== 'blast') hiss = true; v.was = s; }
+  if (hiss) SFX.steam();
+  for (const g of G.ghosts) {
+    if (g.mode !== 'active' || g.eaten || !inSteam(g.x, g.y)) continue;
+    g.eaten = true; g.frightened = false;
+    addScore(200); SFX.ghost(); popup('COOKED', g.x, g.y, '#ffa36b');
+  }
+  for (const s of [...G.slimes]) if (s.state === 'active' && s.fresh <= 0 && inSteam(s.x, s.y)) eatSlime(s);
+  for (const h of G.hounds) if (h.state === 'hunt' && inSteam(h.x, h.y)) { h.state = 'eaten'; addScore(300); SFX.ghost(); popup('COOKED', h.x, h.y, '#ffa36b'); }
+}
+
+// Bloodhounds leave the ghost house on your scent and follow your exact trail, tile by tile.
+// They're quicker than ghosts on the straights but skid at every corner, and a dash leaves no
+// scent, so they stop to sniff before picking your trail up again.
+const HOUND_SKID = 0.2, HOUND_SNIFF = 1.5;
+function bfsPath(sx, sy, tx, ty) {
+  const key = (c, r) => r * W + c, prev = new Map([[key(sx, sy), -1]]), q = [[sx, sy]];
+  while (q.length) {
+    const [c, r] = q.shift();
+    if (c === tx && r === ty) break;
+    for (const d of ORDER) {
+      let nc = c + d.x; const nr = r + d.y;
+      if (tunnelRows.has(nr)) nc = (nc + W) % W;
+      if (nc < 0 || nc >= W || !pacOK(nc, nr) || prev.has(key(nc, nr))) continue;
+      prev.set(key(nc, nr), key(c, r)); q.push([nc, nr]);
+    }
+  }
+  const path = [];
+  for (let k = key(tx, ty); prev.has(k) && prev.get(k) !== -1; k = prev.get(k)) path.unshift({ x: k % W, y: Math.floor(k / W) });
+  return path;
+}
+function makeHound(i) {
+  const hx = house.doorX + (i ? 1.5 : -1.5);
+  return { hx, x: hx, y: house.homeY, dir: U, bob: i ? 1 : -1, state: 'house', t: 3 + i * 7, trail: [], skid: 0, sniff: 0, lost: false, decided: -1 };
+}
+const pacTile = () => ({ x: Math.max(0, Math.min(W - 1, Math.round(pac.x))), y: Math.round(pac.y) });
+function reScent(h) {
+  const p = pacTile();
+  h.trail = bfsPath(Math.round(h.x), Math.round(h.y), p.x, p.y); h.lost = false;
+}
+// Called whenever Pac-Man steps onto a new tile.
+function houndsTrack(dashing) {
+  for (const h of G.hounds) {
+    if (h.state !== 'hunt') continue;
+    if (dashing) {
+      if (h.sniff <= 0) { h.sniff = HOUND_SNIFF; popup('?', h.x, h.y - 1, '#ffd23f', HOUND_SNIFF); }
+      h.trail = [];
+    } else if (h.sniff <= 0 && !h.lost) {
+      const p = pacTile(), last = h.trail[h.trail.length - 1];
+      if (!last || last.x !== p.x || last.y !== p.y) h.trail.push(p);
+      if (h.trail.length > 45) reScent(h); // too far behind: cut across to the fresh scent
+    }
+  }
+}
+function houndUpdate(h, dt, sp) {
+  if (h.state === 'eaten') {
+    if (wraithStep(h, 1.7 * BASE * dt, Math.floor(h.hx), house.homeY)) Object.assign(h, { x: h.hx, y: house.homeY, state: 'house', t: 3, dir: U });
+    return;
+  }
+  if (G.chill > 0) return;
+  if (h.state === 'house') {
+    h.y += h.bob * 0.5 * BASE * dt;
+    if (h.y < house.homeY - 0.5) { h.y = house.homeY - 0.5; h.bob = 1; }
+    if (h.y > house.homeY + 0.5) { h.y = house.homeY + 0.5; h.bob = -1; }
+    h.dir = h.bob < 0 ? U : D;
+    if ((h.t -= dt) <= 0) h.state = 'leave';
+    return;
+  }
+  const v = sp.ghost * 1.2 * BASE * dt;
+  if (h.state === 'leave') {
+    if (Math.abs(h.x - house.doorX) > 1e-6) {
+      if (Math.abs(h.y - house.homeY) > 1e-6) moveToward(h, 'y', house.homeY, v * 0.5);
+      else moveToward(h, 'x', house.doorX, v * 0.5);
+    } else {
+      h.x = house.doorX;
+      moveToward(h, 'y', house.exitY, v * 0.5);
+      if (h.y === house.exitY) {
+        h.state = 'hunt'; SFX.howl();
+        const p = pacTile();
+        h.trail = [{ x: house.doorC, y: house.exitY }, ...bfsPath(house.doorC, house.exitY, p.x, p.y)];
+      }
+    }
+    return;
+  }
+  // Frightened, or lost after being frightened: wander tile to tile until the scent is found again.
+  if (G.fright > 0 || h.lost) {
+    h.lost = true;
+    step(h, (G.fright > 0 ? sp.ghostF : sp.ghost) * BASE * dt, slimeAtCenter, false);
+    if (G.fright <= 0 && onCenter(h)) reScent(h);
+    return;
+  }
+  if (h.sniff > 0) { if ((h.sniff -= dt) <= 0) { h.sniff = 0; reScent(h); } return; }
+  if (h.skid > 0) { h.skid -= dt; return; }
+  let dist = v;
+  while (dist > 1e-7) {
+    if (!h.trail.length) { // caught up with the scent: go straight for Pac-Man
+      const p = pacTile();
+      if (Math.abs(p.x - h.x) + Math.abs(p.y - h.y) > 1.01) reScent(h);
+      if (!h.trail.length) h.trail = [p];
+    }
+    const t = h.trail[0];
+    if (Math.abs(t.x - h.x) > 2) { h.x = t.x; h.y = t.y; h.trail.shift(); continue; } // through the tunnel
+    const dx = t.x - h.x, dy = t.y - h.y;
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
+      h.x = t.x; h.y = t.y; h.trail.shift();
+      const n = h.trail[0];
+      if (n && Math.abs(n.x - h.x) <= 1) {
+        const nd = n.x > h.x ? R : n.x < h.x ? L : n.y > h.y ? D : U;
+        if (nd !== h.dir && nd !== h.dir.o) { h.dir = nd; h.skid = HOUND_SKID; return; } // skid round the corner
+        h.dir = nd;
+      }
+      continue;
+    }
+    const axis = Math.abs(dx) > 1e-6 ? 'x' : 'y', d = axis === 'x' ? dx : dy, mv = Math.min(dist, Math.abs(d));
+    h[axis] += Math.sign(d) * mv; dist -= mv;
+    h.dir = axis === 'x' ? (d > 0 ? R : L) : (d > 0 ? D : U);
+  }
+}
+
+// Dot Magnet: for a few seconds every dot near Pac-Man flies straight into his mouth.
+// It reels them in one at a time, nearest first, about 14 a second.
+const MAGNET_TIME = 6, MAGNET_R = 2.8, MAGNET_RATE = 14;
+function magnetUpdate(dt) {
+  G.magnet = Math.max(0, G.magnet - dt);
+  G.pull = Math.min(1, (G.pull || 0) + dt * MAGNET_RATE);
+  while (G.pull >= 1) {
+    const pc = Math.round(pac.x), pr = Math.round(pac.y), k = Math.ceil(MAGNET_R);
+    let best = null, bd = MAGNET_R;
+    for (let r = pr - k; r <= pr + k; r++) for (let c = pc - k; c <= pc + k; c++) {
+      if (c < 0 || c >= W || r < 0 || r >= H || G.dots[r * W + c] !== 1) continue;
+      const d = Math.hypot(c - pac.x, r - pac.y);
+      if (d <= bd) { bd = d; best = [c, r]; }
+    }
+    if (!best) return;
+    G.pull -= 1;
+    eatDot(best[0], best[1], true);
+    if (G.state !== 'play') return;
+  }
+}
+
+// ---------- Bosses ----------
+// King Ghost: a 3x3 ghost that floats through pillars on a half-tile-offset grid. Power pellets make
+// it flee; touching it while powered costs it one hit (and uses up your power). Phases change
+// at 8 and 4 hits left: summoned ghostlings, then four-way orb bursts.
+const BOSS_COLORS = ['', '#9b3dff', '#e02cae', '#ff2a2a'], MINION_COLORS = ['#ff2a2a', '#ffb8ff', '#00f0ff', '#ffb852'];
+// What the King blurts out in his speech bubble: a line per hit, drawn from the current phase's pool.
+const KING_LINES = {
+  hit: {
+    1: ["OW! MY ROYAL FOREHEAD!", "HOW RUDE!", "THAT WAS A PRACTICE HIT!", "I BRUISE EASILY, YOU KNOW!"],
+    2: ["STOP THAT THIS INSTANT!", "MY CROWN IS CROOKED!", "GUARDS! GUAAARDS!", "RIGHT IN THE EGO!"],
+    3: ["NOT THE FACE!", "I'M TELLING MY MOTHER!", "OKAY, THAT ONE HURT.", "MERCY! ...ALSO, MERCY!"],
+  },
+  last: "ONE MORE AND I... NO. DON'T.",
+  phase: {
+    2: "ENOUGH! MINIONS, ATTACK! ...PLEASE?",
+    3: "YOU RUINED MY HAIR! NOW I'M REALLY MAD!",
+  },
+  start: "COME AT ME, YELLOW!",
+  taunt: ["HA! ROYALLY SPOOKED!", "BOW BEFORE ME! OR JUST LIE THERE.", "CROWN: 1. PAC-MAN: 0.", "WAS THAT YOUR BEST? ADORABLE."],
+};
+const BLOB_LINES = {
+  hit: { // mass lost to starving (phase 1) or rescues (phase 2)
+    1: ["HEY! THOSE WERE MY DOTS!", "RUDE. I WAS GOING TO EAT THAT.", "STOP EATING MY FOOD, FOOD!", "MY TUMMY IS RUMBLING...", "I'M WASTING AWAY HERE!"],
+    2: ["HEY! THAT GHOST WAS MINE!", "NO FAIR! THEY WERE FREE-RANGE!", "SO HUNGRY... SO VERY HUNGRY...", "YOU'RE EATING MY DINNER!"],
+    3: ["OW! OW! OW!"],
+  },
+  bite: {
+    1: ["OW! NO BITING! THAT'S MY THING!", "YOU BIT ME! HOW DO I TASTE?", "HEY! I'M NOT ON THE MENU!"],
+    2: ["QUIT NIBBLING ME!", "THAT'S MY GOOD SIDE!", "I'M A BLOB, NOT A BUFFET!"],
+    3: ["MY BITS! COME BACK, BITS!", "GET BACK IN HERE, LITTLE ME!", "OW! I'M FALLING APART!", "PIECES! REGROUP!"],
+  },
+  absorb: ["BURP! PARDON ME.", "MMM. TASTES LIKE SHEETS.", "THAT ONE WAS SPICY.", "DELICIOUS EMPLOYEE."],
+  merge: ["WELCOME HOME, LITTLE ME!", "SLURP! GOOD AS NEW."],
+  starving: ["SO... HUNGRY...", "NOT ONE CRUMB LEFT?!", "I'M SHRINKING! I'M SHRINKING!"],
+  last: "WAIT! I CAN CHANGE! I CAN BE A SMOOTHIE!",
+  phase: {
+    2: "I'M STARVING! GHOSTS, DINNER IS SERVED. YOU'RE THE DINNER.",
+    3: "YOU MADE ME SMALL. SMALL AND ANGRY. MOSTLY ANGRY.",
+  },
+  start: "OOH. A SNACK THAT FIGHTS BACK.",
+  taunt: ["SLURP! ...PTOO. TOO YELLOW.", "MORE DOTS FOR ME!", "DELICIOUS DEFEAT.", "YOU WERE SNACK-SIZED ANYWAY."],
+};
+const BOSSES = {
+  king: { name: 'KING GHOST', hp: 12, per: 4, colors: BOSS_COLORS, lines: KING_LINES, speaker: 'KING',
+    tips: { 2: 'MINIONS JOIN THE FIGHT', 3: 'ORB BURSTS + FASTER KING' },
+    retry: ph => `YOU AGAIN?! FINE. WE PICK UP FROM PHASE ${ph}. I'VE BEEN PRACTICING MY EVIL LAUGH.` },
+  blob: { name: 'BIG BLOB', hp: 60, per: 20, colors: ['', '#4fe35d', '#c6e83a', '#ff5a7a'], lines: BLOB_LINES, speaker: 'BLOB',
+    tips: { 1: 'STARVE IT', 2: 'EAT THE GHOSTS', 3: 'BITE + EAT BITS' },
+    retry: ph => `BACK FOR SECONDS? FINE. WE START AT PHASE ${ph}. I SAVED YOU A SEAT. IN MY STOMACH.` },
+};
+const bossPhase = b => { const d = BOSSES[b.kind]; return b.hp > d.per * 2 ? 1 : b.hp > d.per ? 2 : 3; };
+const phaseStartHp = (b, ph) => BOSSES[b.kind].hp - (ph - 1) * BOSSES[b.kind].per;
+function bossTalk(text, t = 2.6) { G.bossSay = { text, t }; }
+function bossLine(pool) {
+  const pick = pool.filter(l => l !== G.bossLast);
+  G.bossLast = pick[Math.floor(Math.random() * pick.length)] || pool[0];
+  bossTalk(G.bossLast);
+}
+function clearCheckpoint() { if (save.ck && save.ck[G.lvIndex]) { delete save.ck[G.lvIndex]; writeSave(); } }
+function bossStep(b, dist, tx, ty) {
+  const p = { x: b.x - 0.5, y: b.y, dir: b.dir };
+  const done = wraithStep(p, dist, Math.max(1, Math.min(W - 3, tx)), Math.max(2, Math.min(H - 3, ty)));
+  b.x = p.x + 0.5; b.y = p.y; b.dir = p.dir;
+  return done;
+}
+function fireOrb(b, d, lane) {
+  const x = d.x ? b.x + d.x * 1.6 : lane ?? Math.round(b.x), y = d.y ? b.y + d.y * 1.6 : lane ?? Math.round(b.y);
+  G.orbs.push({ x, y, dir: d, armed: false, goo: b.kind === 'blob' });
+  SFX.orb();
+}
+function spawnMinion() {
+  const spot = (reachTiles({ x: Math.round(G.boss.x), y: G.boss.y + 0.5 }) || [{ x: Math.round(G.boss.x), y: G.boss.y }])[0];
+  const n = G.minions.length + G.boss.hp;
+  G.minions.push({ kind: 'small', x: spot.x, y: spot.y, dir: ORDER[n % 4], color: MINION_COLORS[n % 4], decided: -1, state: 'active', fresh: 0.8 });
+}
+// Flee to whichever corner is farthest from Pac-Man.
+function fleeCorner() {
+  const corners = [[1, 2], [W - 3, 2], [1, H - 3], [W - 3, H - 3]];
+  return corners.reduce((a, c) => Math.hypot(c[0] - pac.x, c[1] - pac.y) > Math.hypot(a[0] - pac.x, a[1] - pac.y) ? c : a);
+}
+function bossUpdate(dt, sp) {
+  const b = G.boss;
+  if (b.inv > 0) b.inv -= dt;
+  if (G.chill > 0) return; // frozen on the spot, no shots
+  const ph = bossPhase(b);
+  if (b.state === 'recoil') {
+    if (bossStep(b, 1.6 * BASE * dt, Math.round(meta.throne.x - 0.5), meta.throne.y)) b.state = 'chase';
+    return;
+  }
+  if (G.fright > 0) {
+    const [tx, ty] = fleeCorner();
+    bossStep(b, 0.42 * BASE * dt, tx, ty);
+    return;
+  }
+  bossStep(b, [0, 0.34, 0.4, 0.47][ph] * BASE * dt, Math.round(pac.x - 0.5), Math.round(pac.y));
+  aimOrbs(b, dt, [0, 2.4, 1.7, 1.1][ph]);
+  if (ph === 3 && (b.burst -= dt) <= 0) { for (const d of ORDER) fireOrb(b, d); b.burst = 5; }
+  if (ph >= 2 && (b.summon -= dt) <= 0) { if (G.minions.length < (ph === 3 ? 3 : 2)) spawnMinion(); b.summon = 10; }
+}
+// Fire along Pac-Man's row or column once lined up and the cooldown is done.
+function aimOrbs(b, dt, cooldown) {
+  b.fire -= dt;
+  const row = Math.abs(pac.y - b.y) < 1.2, col = Math.abs(pac.x - b.x) < 1.2;
+  if (b.fire > 0 || !(row || col)) return;
+  if (row) fireOrb(b, pac.x > b.x ? R : L, Math.round(pac.y));
+  else fireOrb(b, pac.y > b.y ? D : U, Math.round(pac.x));
+  b.fire = cooldown;
+}
+function bossDie() {
+  const b = G.boss;
+  b.state = 'dead'; b.dead = 0;
+  G.orbs = []; G.minions = []; G.blobules = []; G.buddies = []; G.bossSay = null;
+  clearCheckpoint();
+  addScore(10000); SFX.bossDie();
+}
+function hitBoss() {
+  const b = G.boss, before = bossPhase(b);
+  b.hp--; b.inv = 2.2;
+  G.fright = 0; G.shake = 0.45;
+  addScore(1000);
+  popup('1000', b.x, b.y - 2, '#ffd86b', 1.5);
+  if (b.hp <= 0) { bossDie(); return; }
+  SFX.bossHit();
+  b.state = 'recoil';
+  if (bossPhase(b) !== before) G.pendingPhase = bossPhase(b); // the phase cut-in starts once this frame settles
+  else if (b.hp === 1) bossTalk(KING_LINES.last);
+  else bossLine(KING_LINES.hit[before]);
+}
+
+// The Big Blob: its mass is its health (60, in three phases of 20) and sets its size.
+// Phase 1 is a race for the dots (they never come back): every dot Pac-Man eats starves it, every
+// dot it slurps feeds it, and once the dots are gone it wastes away.
+// Phase 2 the ghosts turn up scared blue: eat them before it swallows them.
+// Phase 3 it's small and fast: bite it while powered up, then eat the bits before they crawl home.
+const BLOB_DOT = 0.075, BLOB_SLURP = 0.06, BLOB_BITES = [0, 1.5, 2, 5], BLOB_BITE3 = 5, BLOB_SAVE = 2.5, BLOB_GHOST = 3, BLOB_MERGE = 2;
+const blobR = b => 0.8 + Math.max(0, b.hp) / BOSSES.blob.hp * 2; // 2.8 tiles at full health, 0.8 near the end
+const blobTouch = (e, k = 0.8) => Math.hypot(e.x - G.boss.x, e.y - G.boss.y) < blobR(G.boss) * k;
+// Heal, but never back up into an earlier phase.
+function blobFeed(n) { const b = G.boss; b.hp = Math.min(phaseStartHp(b, bossPhase(b)), b.hp + n); }
+function blobHurt(n, quiet) {
+  const b = G.boss, before = bossPhase(b), notch = Math.ceil(b.hp / 4);
+  b.hp = Math.max(0, b.hp - n);
+  if (b.hp <= 0) { bossDie(); return; }
+  if (bossPhase(b) !== before) { G.pendingPhase = bossPhase(b); return; }
+  if (!quiet && Math.ceil(b.hp / 4) < notch && (!G.bossSay || G.bossSay.t < 1)) bossLine(BLOB_LINES.hit[before]);
+}
+// Somewhere with lots of dots, for the Blob to waddle over to.
+function richestSpot() {
+  let best = null, bs = -1;
+  for (let k = 0; k < 24; k++) {
+    const c = 1 + Math.floor(Math.random() * (W - 3)), r = 2 + Math.floor(Math.random() * (H - 4));
+    let s = 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const x = c + dx, y = r + dy;
+      if (x >= 0 && x < W && y >= 0 && y < H && G.dots[y * W + x] === 1) s++;
+    }
+    if (s > bs) { bs = s; best = { x: c, y: r }; }
+  }
+  return best;
+}
+function blobUpdate(dt, sp) {
+  const b = G.boss;
+  if (b.inv > 0) b.inv -= dt;
+  if (b.flash > 0) b.flash -= dt;
+  if (b.hitT > 0) b.hitT -= dt;
+  const ph = bossPhase(b);
+  if (ph === 2 && !G.buddies.some(s => s.state === 'active') && (G.waveT -= dt) <= 0) { spawnWave(); G.waveT = 2.5; }
+  if (G.chill > 0) return;
+  if (b.state === 'recoil') { // knocked back by a bite
+    b.rt -= dt;
+    bossStep(b, 1.1 * BASE * dt, b.tgt.x, b.tgt.y);
+    if (b.rt <= 0) { b.state = 'chase'; b.tgt = null; }
+    return;
+  }
+  let tx = Math.round(pac.x - 0.5), ty = Math.round(pac.y), v = [0, 0.3, 0.36, 0.5][ph];
+  if (G.fright > 0) { [tx, ty] = fleeCorner(); v = 0.34; }
+  else if (ph === 1 && Math.hypot(pac.x - b.x, pac.y - b.y) > 5) { // wander off to the food
+    if ((b.retarget -= dt) <= 0 || !b.tgt) { b.tgt = richestSpot(); b.retarget = 2.5; }
+    tx = b.tgt.x; ty = b.tgt.y;
+  } else if (ph === 2) {
+    const prey = G.buddies.filter(s => s.state === 'active').sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))[0];
+    if (prey) { tx = Math.round(prey.x - 0.5); ty = Math.round(prey.y); }
+  }
+  bossStep(b, v * BASE * dt, tx, ty);
+  if (ph === 1) { // slurp the dots under its mouth: the bigger it is, the wider it eats
+    const r = Math.round(b.y), half = blobR(b) * 0.5;
+    for (let c = Math.round(b.x - half); c <= Math.round(b.x + half); c++) {
+      const i = r * W + c;
+      if (c < 0 || c >= W || r < 0 || r >= H || G.dots[i] !== 1) continue;
+      G.dots[i] = 0; G.dotsLeft--;
+      blobFeed(BLOB_SLURP);
+      if ((G.slurpT -= 1) <= 0) { SFX.slurp(); G.slurpT = 4; }
+    }
+    let left = 0;
+    for (let i = 0; i < W * H; i++) if (G.dots[i] === 1) left++;
+    b.dots0 = b.dots0 || left;
+    const scarce = 1 - left / (b.dots0 * 0.35); // food running low: it starts wasting away, faster as the last dots go
+    if (scarce > 0) {
+      blobHurt((0.3 + scarce * 1.3) * dt, true);
+      if (b.state !== 'dead' && !G.bossSay && Math.random() < dt * 0.4) bossLine(BLOB_LINES.starving);
+    }
+  }
+  if (ph === 3 && G.fright === 0) aimOrbs(b, dt, 1.5);
+}
+function biteBlob() {
+  const b = G.boss, ph = bossPhase(b);
+  G.fright = 0; G.shake = 0.45;
+  b.inv = 1.8; b.hitT = 1.2; b.state = 'recoil'; b.rt = 0.8;
+  b.tgt = { x: Math.round(b.x - 0.5 + Math.sign(b.x - pac.x || 1) * 5), y: Math.round(b.y + Math.sign(b.y - pac.y || 1) * 4) };
+  addScore(1000); SFX.bossHit();
+  popup('1000', b.x, b.y - blobR(b) - 0.5, '#ffd86b', 1.5);
+  if (ph === 3) { // chunks fly off and try to crawl back
+    const spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
+    for (const [k, d] of [[0, L], [1, R]]) {
+      const s = spots[k % spots.length];
+      G.blobules.push({ x: s.x, y: s.y, dir: d, decided: -1, t: 0, kind: 'small', state: 'active', group: k, fresh: 0.5 });
+    }
+    SFX.split();
+  }
+  blobHurt(BLOB_BITES[ph], true); // early bites only nibble: starving is the real weapon
+  if (b.state === 'dead' || G.pendingPhase) return;
+  if (ph === 3 && b.hp <= BLOB_BITE3) bossTalk(BLOB_LINES.last);
+  else bossLine(BLOB_LINES.bite[ph]);
+}
+// Phase 2: the four ghosts pour out of the pipes, scared blue, and the Blob wants them for dinner.
+function spawnWave() {
+  G.buddies = ghosts.map((g, k) => {
+    const [c, r] = meta.pipes[k];
+    return { name: g.name, color: g.color, x: c, y: r, dir: r < H / 2 ? D : U, decided: -1, state: 'active', t: 0 };
+  });
+  for (const s of G.buddies) popup('EEK!', s.x, s.y - 1, '#8fdcff', 1.4);
+  SFX.wraith();
+}
+function budAtCenter(s) {
+  const opts = ORDER.filter(d => d !== s.dir.o && ghostOK(s.x + d.x, s.y + d.y));
+  if (!opts.length) { s.dir = s.dir.o; return true; }
+  const b = G.boss;
+  if (Math.hypot(s.x - b.x, s.y - b.y) > 7 || Math.random() < 0.25) { s.dir = opts[(Math.random() * opts.length) | 0]; return true; }
+  let best = opts[0], bd = -1;
+  for (const d of opts) {
+    const dd = Math.hypot(s.x + d.x - b.x, s.y + d.y - b.y);
+    if (dd > bd) { bd = dd; best = d; }
+  }
+  s.dir = best;
+  return true;
+}
+// Bits of Blob scatter for a moment, then crawl straight back to the big one.
+function bitAtCenter(s) {
+  const opts = ORDER.filter(d => d !== s.dir.o && ghostOK(s.x + d.x, s.y + d.y));
+  if (!opts.length) { s.dir = s.dir.o; return true; }
+  const b = G.boss, away = s.t < 1.2;
+  let best = opts[0], bd = away ? -1 : Infinity;
+  for (const d of opts) {
+    const dd = Math.hypot(s.x + d.x - b.x, s.y + d.y - b.y);
+    if (away ? dd > bd : dd < bd) { bd = dd; best = d; }
+  }
+  s.dir = best;
+  return true;
+}
+function blobCrewUpdate(dt) {
+  const b = G.boss;
+  for (const s of G.buddies) {
+    s.t += dt;
+    if (s.state === 'saved') { s.y -= 7 * dt; continue; } // eyes zip off home
+    if (G.chill > 0) continue;
+    step(s, 0.4 * BASE * dt * flowMul(s), budAtCenter, false);
+    if (b.state !== 'dead' && blobTouch(s, 0.7)) {
+      s.state = 'eaten';
+      b.eaten = [...(b.eaten || []), s.color].slice(-4);
+      b.flash = 0.5; b.flashColor = s.color;
+      blobFeed(BLOB_GHOST); SFX.burp();
+      popup('BURP!', s.x, s.y, s.color);
+      bossLine(BLOB_LINES.absorb);
+    }
+  }
+  G.buddies = G.buddies.filter(s => s.state === 'active' || (s.state === 'saved' && s.t < 3));
+  for (const s of G.blobules) {
+    s.t += dt;
+    if (s.fresh > 0) s.fresh -= dt;
+    if (G.chill > 0) continue;
+    step(s, 0.55 * BASE * dt * flowMul(s), bitAtCenter, false);
+    if (s.t > 1.2 && b.state !== 'dead' && blobTouch(s, 0.75)) {
+      s.state = 'merged';
+      blobFeed(BLOB_MERGE); SFX.slurp();
+      popup('SLURP', s.x, s.y, '#9be86f');
+      if (!G.bossSay) bossLine(BLOB_LINES.merge);
+    }
+  }
+  G.blobules = G.blobules.filter(s => s.state === 'active');
+}
+
+// Freeze the action for a phase change: the boss rages, the bar turns over, and the save checkpoints.
+function startPhase(ph) {
+  const b = G.boss;
+  G.pendingPhase = 0;
+  G.state = 'phase'; G.timer = 3.4; G.phaseTo = ph;
+  G.orbs = []; G.fright = 0; G.shake = 1.2; G.popups = [];
+  if (b.kind === 'blob') { b.hp = Math.min(b.hp, phaseStartHp(b, ph)); G.blobules = []; }
+  bossTalk(BOSSES[b.kind].lines.phase[ph], 3.4);
+  SFX.roar();
+  if (G.lvIndex < ROOF) { save.ck = { ...save.ck, [G.lvIndex]: phaseStartHp(b, ph) }; writeSave(); }
+}
+function endPhase() {
+  const b = G.boss, ph = G.phaseTo;
+  G.state = 'play';
+  b.fire = 1.5;
+  if (b.kind === 'king') { for (let i = 1; i < ph; i++) spawnMinion(); b.summon = 10; b.burst = 3; }
+  else if (ph === 2) { spawnWave(); G.waveT = 2.5; }
+  else G.buddies = [];
+}
+function orbsUpdate(dt) {
+  const d = 0.85 * BASE * dt;
+  G.orbs = G.orbs.filter(o => {
+    o.x += o.dir.x * d; o.y += o.dir.y * d;
+    if (o.x < -1 || o.x > W || o.y < -1 || o.y > H) return false;
+    const wall = tile(Math.round(o.x), Math.round(o.y)) === '#';
+    if (!wall) o.armed = true; // orbs leave the boss through pillars, then stop at the first wall
+    return !(wall && o.armed);
+  });
+}
+
+function releaseCheck(dt) {
+  const g = [pinky, inky, clyde].find(g => G.ghosts.includes(g) && g.mode === 'house');
+  if (!g) { G.globalMode = false; return; }
+  if (G.chill > 0) return;
+  G.idle += dt;
+  const limits = G.cfg.release || { pinky: 0, inky: 20, clyde: 40 };
+  const limit = G.globalMode ? { pinky: 7, inky: 17, clyde: 32 }[g.name] : limits[g.name];
+  const count = G.globalMode ? G.globalDots : g.dotCount;
+  if (count >= limit || G.idle >= 4) { g.mode = 'leave'; G.idle = 0; }
+}
+
+// ---------- Play loop ----------
+// Eat the dot at (c, r): under Pac-Man, or pulled in by the magnet.
+function eatDot(c = Math.round(pac.x), r = Math.round(pac.y), pulled = false) {
+  if (c < 0 || c >= W) return;
+  const i = r * W + c, v = G.dots[i];
+  if (!v) return;
+  G.dots[i] = 0; G.dotsLeft--; G.dotsEaten++; G.idle = 0;
+  if (G.globalMode) G.globalDots++;
+  else { const h = [pinky, inky, clyde].find(g => G.ghosts.includes(g) && g.mode === 'house'); if (h) h.dotCount++; }
+  if (pulled) { G.flyDots.push({ x: c, y: r, t: 0 }); if (G.flyDots.length % 3 === 1) SFX.pull(); }
+  else SFX.dot();
+  if (v === 1) {
+    addScore(10);
+    if (G.boss && G.boss.kind === 'blob' && G.boss.state !== 'dead' && bossPhase(G.boss) === 1) blobHurt(BLOB_DOT);
+  } else if (v === 5) {
+    addScore(100); SFX.magnet();
+    G.magnet = MAGNET_TIME;
+    popup('MAGNET!', c, r - 1, '#ff4f4f', 1.4);
+  } else if (v === 2) {
+    addScore(50);
+    SFX.power();
+    const ft = G.cfg.fright;
+    G.fright = ft; G.combo = 0;
+    for (const g of G.ghosts) {
+      if (g.eaten) continue;
+      if (g.mode === 'active') g.reverse = true;
+      if (ft > 0) g.frightened = true;
+    }
+  } else if (v === 3) {
+    addScore(50);
+    SFX.frost();
+    G.chill = G.cfg.chill || 5;
+    for (const w of G.wraiths) w.reach = w.state === 'active' || w.state === 'leave' ? reachTiles(w) : null;
+  }
+  if (G.cfg.boss) { if (v === 2 || v === 3) G.respawns.push({ i, v, t: v === 2 ? (G.cfg.boss === 'blob' ? 20 : 12) : 20 }); G.orbs = v === 3 ? [] : G.orbs; return; }
+  const f1 = Math.round(G.dotsTotal * 0.3), f2 = Math.round(G.dotsTotal * 0.7);
+  if (G.dotsEaten === f1 || G.dotsEaten === f2) G.fruit = { kind: fruitFor(G.lvIndex), timer: 9.5 };
+  if (G.dotsLeft === 0) { G.state = 'clear'; G.timer = 0; SFX.clear(); }
+}
+
+function play(dt) {
+  const sp = TIERS[G.cfg.tier];
+  if (G.boss && G.boss.state === 'dead') {
+    G.boss.dead += dt;
+    if (G.boss.dead >= 2.8) { G.state = 'clear'; G.timer = 0; SFX.clear(); }
+    return;
+  }
+  if (G.want && pac.dir && G.want === pac.dir.o) { pac.dir = G.want; pac.face = G.want; }
+  const dashing = pac.dash > 0;
+  const moved = step(pac, dt * BASE * (G.fright > 0 ? sp.pacF : sp.pac) * (dashing ? DASH_SPEED : flowMul(pac)), pacAtCenter, true);
+  pac.anim += moved;
+  if (dashing) {
+    pac.trail.unshift({ x: pac.x, y: pac.y });
+    if (pac.trail.length > 8) pac.trail.pop();
+    pac.dash -= moved;
+    if (pac.dash <= 0 || !pac.dir) { pac.dash = 0; pac.grace = 0.25; }
+  } else {
+    if (pac.trail.length) pac.trail.pop();
+    if (G.cfg.dash) G.dashCharge = Math.min(1, G.dashCharge + dt / DASH_RECHARGE);
+  }
+  if (pac.grace > 0) pac.grace -= dt;
+  const safe = pac.dash > 0 || pac.grace > 0;
+  eatDot();
+  if (G.state !== 'play') return;
+  if (G.magnet > 0) { magnetUpdate(dt); if (G.state !== 'play') return; }
+  for (const f of G.flyDots) f.t += dt;
+  G.flyDots = G.flyDots.filter(f => f.t < 0.25);
+  if (G.hounds.length) {
+    const p = pacTile(), k = p.y * W + p.x;
+    if (k !== G.pacKey && pac.x > -0.5 && pac.x < W - 0.5) { G.pacKey = k; houndsTrack(dashing); }
+  }
+  if (G.cfg.dark) { // light swells while powered up, and gutters on the flickering floor
+    const want = G.cfg.dark + (G.fright > 0 ? 3.5 : 0);
+    G.light += (want - G.light) * Math.min(1, dt * 3);
+  }
+
+  if (G.chill > 0) G.chill = Math.max(0, G.chill - dt);
+  if (G.fright > 0) {
+    G.fright -= dt;
+    if (G.fright <= 0) { G.fright = 0; G.ghosts.forEach(g => { g.frightened = false; }); }
+  } else if (G.chill === 0) {
+    G.modeTime += dt;
+    if (G.modeTime >= (G.cfg.schedule || SCHEDULES[G.cfg.tier])[G.modeIdx]) {
+      G.modeTime = 0; G.modeIdx++;
+      G.ghosts.forEach(g => { if (g.mode === 'active' && !g.eaten) g.reverse = true; });
+    }
+  }
+  releaseCheck(dt);
+  for (const g of G.ghosts) ghostUpdate(g, dt, sp);
+  for (const w of G.wraiths) wraithUpdate(w, dt, sp);
+  for (const s of G.slimes) slimeUpdate(s, dt, sp);
+  for (const h of G.hounds) houndUpdate(h, dt, sp);
+  if (G.vents.length) ventsUpdate(dt);
+  if (G.boss) {
+    if (G.boss.kind === 'blob') { blobUpdate(dt, sp); blobCrewUpdate(dt); }
+    else bossUpdate(dt, sp);
+    for (const m of G.minions) { if (m.fresh > 0) m.fresh -= dt; if (G.chill === 0) step(m, (G.fright > 0 ? 0.45 : 0.7) * BASE * dt, slimeAtCenter, false); }
+    orbsUpdate(dt);
+    for (const r of G.respawns) if ((r.t -= dt) <= 0) { G.dots[r.i] = r.v; G.dotsLeft++; }
+    G.respawns = G.respawns.filter(r => r.t > 0);
+  }
+
+  if (G.fruit) {
+    G.fruit.timer -= dt;
+    if (G.fruit.timer <= 0) G.fruit = null;
+    else if (pac.y === meta.fruit.y && Math.abs(pac.x - meta.fruit.x) < 0.8) {
+      const pts = FRUIT_PTS[G.fruit.kind];
+      addScore(pts); SFX.fruit();
+      popup(String(pts), meta.fruit.x, meta.fruit.y, '#ffb8ff', 2);
+      G.fruit = null;
+    }
+  }
+  for (const p of G.popups) p.t -= dt;
+  G.popups = G.popups.filter(p => p.t > 0);
+
+  for (const g of G.ghosts) {
+    if (g.mode !== 'active' || g.eaten) continue;
+    let dx = Math.abs(g.x - pac.x);
+    if (dx > W / 2) dx = W + 2 - dx;
+    if (dx >= 0.6 || Math.abs(g.y - pac.y) >= 0.6) continue;
+    if (G.chill > 0) {
+      g.eaten = true; g.frightened = false;
+      addScore(300); SFX.shatter();
+      popup('300', g.x, g.y, '#bdf4ff');
+      continue;
+    }
+    if (g.frightened) {
+      g.frightened = false; g.eaten = true;
+      const pts = 200 * 2 ** G.combo; G.combo++;
+      addScore(pts); SFX.ghost();
+      G.eatenGhost = g;
+      popup(String(pts), g.x, g.y, '#00f0ff', 0.9, true);
+      G.state = 'eatpause'; G.timer = 0.9;
+      return;
+    }
+    if (safe) continue;
+    G.state = 'dying'; G.timer = 0;
+    return;
+  }
+  for (const w of G.wraiths) {
+    const frozenHere = G.chill > 0 && (w.state === 'active' || w.state === 'leave');
+    if (w.state !== 'active' && !frozenHere) continue;
+    const touching = Math.hypot(w.x - pac.x, w.y - pac.y) < 0.7 ||
+      (frozenHere && w.reach && w.reach.some(t => Math.abs(t.x - pac.x) < 0.6 && Math.abs(t.y - pac.y) < 0.6));
+    if (!touching) continue;
+    if (G.chill > 0) {
+      w.state = 'eaten';
+      addScore(500); SFX.shatter(); SFX.ghost();
+      popup('500', w.x, w.y, '#bdf4ff');
+      continue;
+    }
+    if (safe) continue;
+    G.state = 'dying'; G.timer = 0;
+    return;
+  }
+  for (const s of [...G.slimes]) {
+    if (s.state !== 'active' || s.fresh > 0) continue;
+    let dx = Math.abs(s.x - pac.x);
+    if (dx > W / 2) dx = W + 2 - dx;
+    const rad = s.kind === 'big' ? 0.7 : 0.55;
+    if (dx >= rad || Math.abs(s.y - pac.y) >= rad) continue;
+    if (G.fright > 0 || G.chill > 0) { eatSlime(s); continue; }
+    if (safe) continue;
+    G.state = 'dying'; G.timer = 0;
+    return;
+  }
+  for (const h of G.hounds) {
+    if (h.state !== 'hunt' || Math.abs(h.x - pac.x) >= 0.6 || Math.abs(h.y - pac.y) >= 0.6) continue;
+    if (G.fright > 0 || G.chill > 0) {
+      h.state = 'eaten';
+      addScore(G.chill > 0 ? 300 : 400); G.chill > 0 ? SFX.shatter() : SFX.ghost();
+      popup(G.chill > 0 ? '300' : '400', h.x, h.y, '#ffc98f');
+      continue;
+    }
+    if (safe) continue;
+    G.state = 'dying'; G.timer = 0;
+    return;
+  }
+  if (!safe && G.vents.length && inSteam(pac.x, pac.y)) { G.state = 'dying'; G.timer = 0; return; }
+  const b = G.boss;
+  if (b && b.kind === 'king' && b.state !== 'dead' && Math.abs(b.x - pac.x) < 1.5 && Math.abs(b.y - pac.y) < 1.5) {
+    if (G.fright > 0 && b.inv <= 0 && b.state !== 'recoil') { hitBoss(); return; }
+    if (!(G.chill > 0 || safe || b.state === 'recoil' || b.inv > 1.2)) { G.state = 'dying'; G.timer = 0; return; }
+  }
+  if (b && b.kind === 'blob' && b.state !== 'dead') {
+    for (const s of G.buddies) {
+      if (s.state !== 'active' || Math.abs(s.x - pac.x) >= 0.7 || Math.abs(s.y - pac.y) >= 0.7) continue;
+      s.state = 'saved'; s.t = 0;
+      addScore(400); SFX.ghost();
+      popup('400', s.x, s.y, '#00f0ff');
+      blobHurt(BLOB_SAVE);
+    }
+    for (const s of G.blobules) {
+      if (s.fresh > 0 || Math.abs(s.x - pac.x) >= 0.65 || Math.abs(s.y - pac.y) >= 0.65) continue;
+      s.state = 'eaten';
+      addScore(300); SFX.ghost(); popup('300', s.x, s.y, '#9be86f');
+    }
+    G.blobules = G.blobules.filter(s => s.state === 'active');
+    if (blobTouch(pac)) {
+      if (G.fright > 0 && b.inv <= 0 && b.state !== 'recoil') { biteBlob(); return; }
+      if (!(G.chill > 0 || safe || b.state === 'recoil' || b.inv > 1)) { G.state = 'dying'; G.timer = 0; return; }
+    }
+  }
+  for (const m of [...G.minions]) {
+    if (m.fresh > 0 || Math.abs(m.x - pac.x) >= 0.6 || Math.abs(m.y - pac.y) >= 0.6) continue;
+    if (G.fright > 0 || G.chill > 0) {
+      G.minions.splice(G.minions.indexOf(m), 1);
+      addScore(200); SFX.ghost(); popup('200', m.x, m.y, '#00f0ff');
+      continue;
+    }
+    if (safe) continue;
+    G.state = 'dying'; G.timer = 0;
+    return;
+  }
+  if (!safe && G.orbs.some(o => Math.abs(o.x - pac.x) < 0.55 && Math.abs(o.y - pac.y) < 0.55)) { G.state = 'dying'; G.timer = 0; }
+}
+
+function update(dt) {
+  G.t += dt;
+  if (G.shake > 0) G.shake = Math.max(0, G.shake - dt);
+  if (G.paused) return;
+  if (G.bossSay && (G.state === 'play' || G.state === 'phase' || G.state === 'ready') && (G.bossSay.t -= dt) <= 0) G.bossSay = null;
+  switch (G.state) {
+    case 'ready':
+      G.timer -= dt;
+      if (G.timer <= 0) { G.state = 'play'; if (G.boss && G.boss.hp === BOSSES[G.boss.kind].hp && !G.bossSay) bossTalk(BOSSES[G.boss.kind].lines.start); }
+      break;
+    case 'play': play(dt); if (G.pendingPhase && G.state === 'play') startPhase(G.pendingPhase); break;
+    case 'phase': G.timer -= dt; if (G.timer <= 0) endPhase(); break;
+    case 'eatpause':
+      G.timer -= dt;
+      if (G.timer <= 0) { G.state = 'play'; G.eatenGhost = null; G.popups = G.popups.filter(p => !p.freeze); }
+      break;
+    case 'dying': {
+      const before = G.timer; G.timer += dt;
+      if (before < 1 && G.timer >= 1) SFX.death();
+      if (G.timer >= 3.2) {
+        if (!infinite) G.lives--;
+        if (G.lives <= 0) { G.state = 'over'; G.timer = 0; }
+        else {
+          resetActors();
+          if (G.boss) { const t = BOSSES[G.boss.kind].lines.taunt; bossTalk(t[Math.floor(Math.random() * t.length)]); }
+          G.globalMode = true; G.globalDots = 0; G.bannerFull = false; G.state = 'ready'; G.timer = 2;
+        }
+      }
+      break;
+    }
+    case 'clear':
+      G.timer += dt;
+      if (G.timer >= (G.cfg.boss ? 5.5 : 3)) finishLevel();
+      break;
+    case 'over': G.timer += dt; break;
+    case 'dialog': dialogUpdate(dt); break;
+    case 'menu': case 'cast': case 'tower': case 'ending': menuUpdate(dt); break;
+  }
+}
+
+// ---------- Drawing ----------
+const FONT = 'px "Press Start 2P", "Courier New", monospace';
+function text(s, col, row, color, align = 'left', size = 0.85) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = Math.round(px * size) + FONT;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = align;
+  ctx.fillStyle = color;
+  ctx.fillText(s, col * px, (row + 0.5) * px);
+  ctx.restore();
+}
+let shakeX = 0, shakeY = 0;
+function mazeSpace() { ctx.setTransform(px, 0, 0, px, (ox + shakeX) * px, (oy + shakeY) * px); }
+function screenSpace() { ctx.setTransform(px, 0, 0, px, 0, 0); }
+
+function drawPac(x, y, face, open, r = 0.8) {
+  const cx = x + 0.5, cy = y + 0.5, a = 0.02 + open * 0.3 * Math.PI;
+  ctx.fillStyle = '#ffe600';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, r, face.a + a, face.a - a + Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
+}
+function drawPacDeath(x, y, p) {
+  const cx = x + 0.5, cy = y + 0.5;
+  if (p < 1) {
+    const a = 0.05 + p * Math.PI * 0.95;
+    ctx.fillStyle = '#ffe600';
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, 0.8, -Math.PI / 2 + a, -Math.PI / 2 - a + Math.PI * 2);
+    ctx.closePath(); ctx.fill();
+  } else if (p < 1.3) {
+    ctx.strokeStyle = '#ffe600'; ctx.lineWidth = 0.12; ctx.lineCap = 'round';
+    const k = (p - 1) / 0.3;
+    for (let i = 0; i < 8; i++) {
+      const ang = i * Math.PI / 4;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * (0.3 + k * 0.3), cy + Math.sin(ang) * (0.3 + k * 0.3));
+      ctx.lineTo(cx + Math.cos(ang) * (0.6 + k * 0.3), cy + Math.sin(ang) * (0.6 + k * 0.3));
+      ctx.stroke();
+    }
+  }
+}
+const iceOn = () => G.chill > 0 && !(G.chill < 1.5 && Math.floor(G.chill * 6) % 2 === 0);
+function drawGhost(g) {
+  const cx = g.x + 0.5, cy = g.y + 0.5, r = 0.8;
+  const fr = (g.frightened && G.fright > 0) || g.panic;
+  const flash = fr && !g.panic && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const ice = !g.eaten && iceOn();
+  if (!g.eaten) {
+    ctx.fillStyle = ice ? '#bdf4ff' : fr ? (flash ? '#ffffff' : '#2121ff') : g.color;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 0.05, r, Math.PI, 0);
+    const bottom = cy + r * 0.95, n = 8, phase = G.chill > 0 ? 0 : Math.floor(G.t * 8) % 2;
+    ctx.lineTo(cx + r, bottom);
+    for (let i = 1; i <= n; i++) ctx.lineTo(cx + r - i * (2 * r / n), (i + phase) % 2 ? bottom - 0.24 : bottom);
+    ctx.closePath();
+    ctx.fill();
+    if (ice) {
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.1; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx - 0.5, cy - 0.35); ctx.lineTo(cx - 0.25, cy - 0.65); ctx.stroke();
+    }
+  }
+  if (fr && !g.eaten) {
+    const face = flash ? '#ff2a2a' : '#ffb8ae';
+    ctx.fillStyle = face;
+    ctx.fillRect(cx - 0.36, cy - 0.3, 0.18, 0.18);
+    ctx.fillRect(cx + 0.18, cy - 0.3, 0.18, 0.18);
+    ctx.strokeStyle = face; ctx.lineWidth = 0.09; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) ctx.lineTo(cx - 0.55 + i * (1.1 / 6), cy + 0.3 + (i % 2 ? -0.1 : 0.05));
+    ctx.stroke();
+    return;
+  }
+  const d = g.dir || L;
+  for (const s of [-1, 1]) {
+    const ex = cx + s * 0.3 + d.x * 0.1, ey = cy - 0.15 + d.y * 0.1;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.ellipse(ex, ey, 0.22, 0.28, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2121ff';
+    ctx.beginPath(); ctx.arc(ex + d.x * 0.1, ey + d.y * 0.12, 0.12, 0, Math.PI * 2); ctx.fill();
+  }
+}
+// Drawn like the ghosts: a hard-edged sprite with a two-frame tail flap, no glow or easing.
+const WRAITH_TAIL = [
+  [[0.75, 0.2], [0.42, 0.5], [0.55, 0.72], [0.12, 0.72], [0.22, 1.02], [-0.2, 0.78], [-0.5, 0.86], [-0.42, 0.5], [-0.75, 0.2]],
+  [[0.75, 0.2], [0.45, 0.52], [0.48, 0.86], [0.18, 0.78], [-0.22, 1.02], [-0.12, 0.72], [-0.55, 0.72], [-0.42, 0.5], [-0.75, 0.2]],
+];
+function drawWraithEyes(cx, hy, d, socket, pupil) {
+  for (const s of [-1, 1]) {
+    const ex = cx + s * 0.28 + d.x * 0.08, ey = hy + d.y * 0.08;
+    ctx.fillStyle = socket;
+    ctx.beginPath();
+    ctx.moveTo(ex - 0.2, ey - 0.12 * -s - 0.02); ctx.lineTo(ex + 0.2, ey - 0.12 * s - 0.02);
+    ctx.lineTo(ex + 0.16, ey + 0.2); ctx.lineTo(ex - 0.16, ey + 0.2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = pupil;
+    ctx.fillRect(ex - 0.06 + d.x * 0.07, ey + 0.02 + d.y * 0.05, 0.12, 0.12);
+  }
+}
+function drawWraith(w) {
+  const cx = w.x + 0.5, cy = w.y + 0.5, hy = cy - 0.2, d = w.dir || D;
+  if (w.state === 'eaten') { drawWraithEyes(cx, hy, d, '#c9b8ff', '#ff3b6b'); return; }
+  const frozen = G.chill > 0, ice = iceOn();
+  const frame = frozen ? 0 : Math.floor(G.t * 8) % 2;
+  const flickerOff = w.reforming && Math.floor(G.t * 10) % 2 === 0;
+  if (!flickerOff) {
+    ctx.fillStyle = ice ? '#bdf4ff' : '#c9b8ff';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 0.15, 0.75, Math.PI, 0);
+    for (const [x, y] of WRAITH_TAIL[frame]) ctx.lineTo(cx + x, cy + y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = ice ? '#8fd6ec' : '#9d86e8';
+    ctx.fillRect(cx - 0.12, cy + 0.32, 0.24, 0.1); // mouth slit
+  }
+  drawWraithEyes(cx, hy, d, ice ? '#4a7f99' : '#1a0b3a', ice ? '#e6fbff' : '#ff3b6b');
+}
+// A green blob on a flat base with a two-frame squash, drawn at arcade frame rate.
+function drawSlime(s) {
+  const big = s.kind === 'big', r = big ? 0.85 : 0.55;
+  const fr = (G.fright > 0 && s.state === 'active') || s.blue;
+  const flash = fr && !s.blue && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const ice = iceOn();
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 6 + (s.group || 0)) % 2;
+  const body = ice ? '#bdf4ff' : fr ? (flash ? '#ffffff' : '#2121ff') : '#5cff6b';
+  ctx.save();
+  ctx.translate(s.x + 0.5, s.y + 0.5 + r * 0.75);
+  ctx.scale(frame ? 1.12 : 0.94, frame ? 0.86 : 1.04);
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.moveTo(-r, 0);
+  ctx.bezierCurveTo(-r, -r * 2, r, -r * 2, r, 0);
+  ctx.closePath();
+  ctx.fill();
+  const drip = frame ? 0.28 : 0.16;
+  ctx.fillRect(-r * 0.7, -0.02, r * 0.24, r * drip);
+  ctx.fillRect(r * 0.25, -0.02, r * 0.2, r * (0.44 - drip));
+  if (!fr) { ctx.fillStyle = ice ? '#ffffff' : '#d4ffd9'; ctx.fillRect(-r * 0.55, -r * 1.2, r * 0.26, r * 0.2); }
+  const d = s.dir || D, ey = -r * 0.78;
+  if (fr) {
+    const face = flash ? '#ff2a2a' : '#ffb8ae';
+    ctx.fillStyle = face;
+    ctx.fillRect(-r * 0.45, ey - r * 0.1, r * 0.22, r * 0.22);
+    ctx.fillRect(r * 0.23, ey - r * 0.1, r * 0.22, r * 0.22);
+    ctx.strokeStyle = face; ctx.lineWidth = r * 0.1; ctx.beginPath();
+    for (let i = 0; i <= 4; i++) ctx.lineTo(-r * 0.5 + i * r * 0.25, -r * 0.3 + (i % 2 ? -r * 0.1 : 0));
+    ctx.stroke();
+  } else {
+    for (const sx of [-1, 1]) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(sx * r * 0.34 - r * 0.2, ey - r * 0.2, r * 0.4, r * 0.4);
+      ctx.fillStyle = ice ? '#4a7f99' : '#10301a';
+      ctx.fillRect(sx * r * 0.34 - r * 0.09 + d.x * r * 0.1, ey - r * 0.09 + d.y * r * 0.1, r * 0.18, r * 0.18);
+    }
+  }
+  ctx.restore();
+}
+function drawBoss(b) {
+  if (b.kind === 'blob') { drawBlob(b); return; }
+  const cx = b.x + 0.5, cy = b.y + 0.5, r = 1.55;
+  if (b.state === 'dead') {
+    const p = b.dead / 2.8;
+    if (p < 0.45 && Math.floor(b.dead * 14) % 2 === 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(cx, cy, r * (1 - p), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.lineWidth = 0.14;
+    for (let k = 0; k < 3; k++) {
+      const q = p * 1.4 - k * 0.2;
+      if (q <= 0 || q > 1) continue;
+      ctx.strokeStyle = ['#ffd86b', '#ff2a2a', '#ffffff'][k];
+      ctx.beginPath(); ctx.arc(cx, cy, 0.5 + q * 6, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = '#ffd86b';
+    for (let i = 0; i < 10; i++) {
+      const a = i * Math.PI / 5, d = p * 7;
+      ctx.fillRect(cx + Math.cos(a) * d - 0.15, cy + Math.sin(a) * d - 0.15, 0.3, 0.3);
+    }
+    return;
+  }
+  const ph = bossPhase(b), ice = iceOn();
+  const fr = G.fright > 0 && b.state !== 'recoil';
+  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const hit = b.inv > 0 && Math.floor(b.inv * 12) % 2 === 0;
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 8) % 2;
+  const cut = G.state === 'phase' && b === G.boss && Math.floor(G.t * 8) % 2 === 0;
+  ctx.fillStyle = ice ? '#bdf4ff' : hit ? '#ffffff' : fr ? (flash ? '#ffffff' : '#2121ff') : cut ? BOSS_COLORS[ph - 1] || '#ffffff' : BOSS_COLORS[ph];
+  ctx.beginPath();
+  ctx.arc(cx, cy - 0.1, r, Math.PI, 0);
+  const bottom = cy + r * 0.95, n = 12;
+  ctx.lineTo(cx + r, bottom);
+  for (let i = 1; i <= n; i++) ctx.lineTo(cx + r - i * (2 * r / n), (i + frame) % 2 ? bottom - 0.4 : bottom);
+  ctx.closePath(); ctx.fill();
+  // Crown
+  ctx.fillStyle = ice ? '#e6fbff' : '#ffd23f';
+  ctx.beginPath();
+  ctx.moveTo(cx - 0.95, cy - 1.35); ctx.lineTo(cx - 1.05, cy - 2.15); ctx.lineTo(cx - 0.5, cy - 1.7);
+  ctx.lineTo(cx, cy - 2.35); ctx.lineTo(cx + 0.5, cy - 1.7); ctx.lineTo(cx + 1.05, cy - 2.15); ctx.lineTo(cx + 0.95, cy - 1.35);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = ice ? '#8fd6ec' : '#ff2a2a';
+  ctx.fillRect(cx - 0.14, cy - 1.72, 0.28, 0.28);
+  if (fr) {
+    const face = flash ? '#ff2a2a' : '#ffb8ae';
+    ctx.fillStyle = face;
+    ctx.fillRect(cx - 0.75, cy - 0.65, 0.4, 0.4); ctx.fillRect(cx + 0.35, cy - 0.65, 0.4, 0.4);
+    ctx.strokeStyle = face; ctx.lineWidth = 0.16; ctx.beginPath();
+    for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 1.1 + i * 0.275, cy + 0.5 + (i % 2 ? -0.2 : 0.08));
+    ctx.stroke();
+    return;
+  }
+  const dx = pac.x - b.x, dy = pac.y - b.y, dl = Math.hypot(dx, dy) || 1;
+  for (const s of [-1, 1]) {
+    const ex = cx + s * 0.58, ey = cy - 0.45;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.ellipse(ex, ey, 0.42, 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = ph === 3 ? '#ff2a2a' : '#2121ff';
+    ctx.beginPath(); ctx.arc(ex + dx / dl * 0.18, ey + dy / dl * 0.22, 0.22, 0, Math.PI * 2); ctx.fill();
+    if (ph >= 2) { // angry brows
+      ctx.strokeStyle = '#1a0010'; ctx.lineWidth = 0.16;
+      ctx.beginPath(); ctx.moveTo(ex - s * 0.45, ey - 0.62); ctx.lineTo(ex + s * 0.35, ey - 0.4); ctx.stroke();
+    }
+  }
+  // Toothy grin, wider in the last phase
+  const mw = ph === 3 ? 1.2 : 0.9, mh = ph === 3 ? 0.5 : 0.34, my = cy + 0.45;
+  ctx.fillStyle = '#1a0010';
+  ctx.fillRect(cx - mw, my - mh / 2, mw * 2, mh);
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 6; i++) {
+    const tx = cx - mw + (i + 0.5) * (mw * 2 / 6);
+    ctx.beginPath(); ctx.moveTo(tx - 0.12, my - mh / 2); ctx.lineTo(tx + 0.12, my - mh / 2); ctx.lineTo(tx, my + 0.02); ctx.fill();
+  }
+}
+function drawOrb(o) {
+  const big = Math.floor(G.t * 12) % 2;
+  ctx.fillStyle = o.goo ? '#8dff5c' : '#ff5ce1';
+  ctx.beginPath(); ctx.arc(o.x + 0.5, o.y + 0.5, big ? 0.4 : 0.32, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(o.x + 0.4, o.y + 0.4, 0.2, 0.2);
+}
+// ---------- Basement sprites ----------
+// The Bloodhound: a spectral dog with floppy ears and a big sniffing nose.
+function drawHound(h) {
+  const cx = h.x + 0.5, cy = h.y + 0.5, d = h.dir || L;
+  const eyes = (pupil) => {
+    for (const s of [-1, 1]) {
+      const ex = cx + s * 0.26 + d.x * 0.12, ey = cy - 0.28 + d.y * 0.08;
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(ex, ey, 0.17, 0.21, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = pupil; ctx.beginPath(); ctx.arc(ex + d.x * 0.08, ey + d.y * 0.09, 0.09, 0, Math.PI * 2); ctx.fill();
+    }
+  };
+  if (h.state === 'eaten') { eyes('#8a5220'); return; }
+  const fr = G.fright > 0 && h.state === 'hunt', ice = iceOn();
+  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 10) % 2; // pants a bit faster than a ghost flaps
+  const body = ice ? '#bdf4ff' : fr ? (flash ? '#ffffff' : '#2121ff') : '#e8a25c', ear = ice ? '#8fd6ec' : fr ? '#1414a8' : '#8a5220';
+  // Ears flop out to the sides, flapping as it runs
+  ctx.fillStyle = ear;
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(cx + s * 0.72, cy - 0.1 + (frame ? 0.08 : -0.02), 0.2, 0.42, s * 0.35, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.arc(cx, cy - 0.05, 0.75, Math.PI, 0);
+  const bottom = cy + 0.72;
+  ctx.lineTo(cx + 0.75, bottom);
+  for (let i = 1; i <= 6; i++) ctx.lineTo(cx + 0.75 - i * 0.25, (i + frame) % 2 ? bottom - 0.22 : bottom);
+  ctx.closePath(); ctx.fill();
+  if (fr) {
+    const face = flash ? '#ff2a2a' : '#ffb8ae';
+    ctx.fillStyle = face;
+    ctx.fillRect(cx - 0.34, cy - 0.34, 0.16, 0.16); ctx.fillRect(cx + 0.18, cy - 0.34, 0.16, 0.16);
+    ctx.strokeStyle = face; ctx.lineWidth = 0.08; ctx.beginPath();
+    for (let i = 0; i <= 6; i++) ctx.lineTo(cx - 0.5 + i * (1 / 6), cy + 0.28 + (i % 2 ? -0.09 : 0.04));
+    ctx.stroke();
+    return;
+  }
+  eyes('#3a1a00');
+  // Snout and nose, pushed toward where it's heading; tongue out while it runs
+  const sx = cx + d.x * 0.18, sy = cy + 0.12 + d.y * 0.1;
+  ctx.fillStyle = ice ? '#e6fbff' : '#f6d2a8';
+  ctx.beginPath(); ctx.ellipse(sx, sy, 0.3, 0.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a0a00';
+  ctx.beginPath(); ctx.ellipse(sx + d.x * 0.12, sy - 0.06, 0.12 + (h.sniff > 0 && frame ? 0.03 : 0), 0.08, 0, 0, Math.PI * 2); ctx.fill();
+  if (!h.sniff && frame && !ice) { ctx.fillStyle = '#ff6b8a'; ctx.fillRect(sx - 0.07, sy + 0.14, 0.14, 0.2); }
+}
+function drawMagnet(cx, cy, s = 1) {
+  const pulse = 1 + Math.sin(G.t * 8) * 0.06;
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s * pulse, s * pulse);
+  ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 0.26; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.arc(0, 0.02, 0.3, Math.PI, 0, true); ctx.stroke(); // horseshoe, opening upward
+  ctx.beginPath(); ctx.moveTo(-0.3, 0.02); ctx.lineTo(-0.3, -0.28); ctx.moveTo(0.3, 0.02); ctx.lineTo(0.3, -0.28); ctx.stroke();
+  ctx.fillStyle = '#e6e9ff'; ctx.fillRect(-0.43, -0.46, 0.26, 0.18); ctx.fillRect(0.17, -0.46, 0.26, 0.18);
+  ctx.restore();
+}
+function drawVentGrate(v) {
+  const st = ventState(v), x = v.c, y = v.r;
+  const hot = st === 'warn' && Math.floor(G.t * 10) % 2 === 0;
+  ctx.fillStyle = st === 'blast' ? '#ff6a1a' : hot ? '#ff9b3d' : '#3a2418';
+  ctx.fillRect(x + 0.06, y + 0.06, 0.88, 0.88);
+  ctx.fillStyle = '#000000';
+  for (let k = 0; k < 3; k++) ctx.fillRect(x + 0.2 + k * 0.24, y + 0.18, 0.1, 0.64);
+  if (st === 'warn') { // wisps rising: it's about to blow
+    const p = (G.t * 2.5) % 1, q = (p + 0.5) % 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + 0.28, y + 0.3 - p * 0.9, 0.14, 0.14);
+    ctx.fillRect(x + 0.6, y + 0.4 - q * 0.9, 0.12, 0.12);
+  }
+}
+function drawSteam(v) {
+  if (ventState(v) !== 'blast') return;
+  const f = Math.floor(G.t * 10) % 2;
+  ctx.fillStyle = 'rgba(235,240,255,0.88)';
+  for (const [c, r] of v.tiles) for (const [dx, dy, rr] of [[0.28, 0.35, 0.36], [0.72, 0.38, 0.32], [0.5, 0.7, 0.38]]) {
+    ctx.beginPath(); ctx.arc(c + dx + (f ? 0.06 : -0.06), r + dy - (f ? 0.05 : 0), rr + (f ? 0.05 : 0), 0, Math.PI * 2); ctx.fill();
+  }
+}
+// Sewer water: dark channels with chevrons drifting along the current.
+function drawWater() {
+  const ph = (G.t * 1.3) % 1;
+  ctx.lineWidth = 0.09; ctx.strokeStyle = '#2c7d99';
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const f = M[r][c] === '#' ? null : flowAt(c, r);
+    if (!f) continue;
+    ctx.fillStyle = '#082331'; ctx.fillRect(c, r, 1, 1);
+    if ((c + r) % 2) continue;
+    const cx = c + 0.5 + f.x * (ph - 0.5) * 0.8, cy = r + 0.5 + f.y * (ph - 0.5) * 0.8, qx = -f.y, qy = f.x;
+    ctx.beginPath();
+    ctx.moveTo(cx - f.x * 0.15 + qx * 0.2, cy - f.y * 0.15 + qy * 0.2);
+    ctx.lineTo(cx + f.x * 0.15, cy + f.y * 0.15);
+    ctx.lineTo(cx - f.x * 0.15 - qx * 0.2, cy - f.y * 0.15 - qy * 0.2);
+    ctx.stroke();
+  }
+}
+function drawCrown(cx, cy, k, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx - 0.95 * k, cy + 0.5 * k); ctx.lineTo(cx - 1.05 * k, cy - 0.3 * k); ctx.lineTo(cx - 0.5 * k, cy + 0.15 * k);
+  ctx.lineTo(cx, cy - 0.5 * k); ctx.lineTo(cx + 0.5 * k, cy + 0.15 * k); ctx.lineTo(cx + 1.05 * k, cy - 0.3 * k); ctx.lineTo(cx + 0.95 * k, cy + 0.5 * k);
+  ctx.closePath(); ctx.fill();
+}
+// The Big Blob: a wobbling dome of goo sized by its mass, with its dinner floating inside.
+function drawBlob(b) {
+  const cx = b.x + 0.5, cy = b.y + 0.5, def = BOSSES.blob;
+  if (b.state === 'dead') {
+    const p = b.dead / 2.8, r = blobR({ hp: 20 }) * Math.max(0, 1 - p * 1.6);
+    if (r > 0 && Math.floor(b.dead * 14) % 2 === 0) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); }
+    for (let i = 0; i < 14; i++) { // goo droplets, then the fruit salad bursting out
+      const a = i * Math.PI / 7 + 0.2, d = p * 8, s = 0.35 * (1 - p * 0.5);
+      ctx.fillStyle = def.colors[1 + (i % 3)];
+      ctx.fillRect(cx + Math.cos(a) * d - s / 2, cy + Math.sin(a) * d - s / 2 + p * p * 3, s, s);
+    }
+    if (p > 0.25) FRUITS.slice(0, 8).forEach((f, i) => {
+      const a = i * Math.PI / 4, d = (p - 0.25) * 9;
+      drawFruit(f, cx + Math.cos(a) * d - 0.5, cy + Math.sin(a) * d - 0.5 - Math.sin(p * Math.PI) * 1.5);
+    });
+    return;
+  }
+  const r = blobR(b), ph = b.look || bossPhase(b), ice = iceOn();
+  const fr = G.fright > 0 && b.state !== 'recoil';
+  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const hit = b.hitT > 0 && Math.floor(b.hitT * 12) % 2 === 0;
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 5) % 2;
+  const cut = G.state === 'phase' && b === G.boss && Math.floor(G.t * 8) % 2 === 0;
+  ctx.save();
+  ctx.translate(cx, cy + r * 0.72);
+  ctx.scale(frame ? 1.08 : 0.95, frame ? 0.9 : 1.05);
+  ctx.fillStyle = ice ? '#bdf4ff' : hit ? '#ffffff' : fr ? (flash ? '#ffffff' : '#2121ff') : b.flash > 0 ? b.flashColor : cut ? def.colors[ph - 1] || '#ffffff' : def.colors[ph];
+  ctx.beginPath(); ctx.moveTo(-r, 0); ctx.bezierCurveTo(-r * 1.05, -r * 2.1, r * 1.05, -r * 2.1, r, 0); ctx.closePath(); ctx.fill();
+  const drip = frame ? 0.3 : 0.18;
+  ctx.fillRect(-r * 0.72, -0.02, r * 0.2, r * drip); ctx.fillRect(r * 0.15, -0.02, r * 0.16, r * (0.46 - drip)); ctx.fillRect(r * 0.55, -0.02, r * 0.12, r * drip * 0.7);
+  if (!fr && !ice && !hit) {
+    // Dinner, seen through the goo: the King's spare crown, some fruit salad, and any ghosts it swallowed.
+    ctx.save(); ctx.globalAlpha = 0.5;
+    drawCrown(-r * 0.42, -r * 0.42, r * 0.17, '#ffd23f');
+    ctx.save(); ctx.translate(r * 0.45, -r * 0.35); ctx.scale(r * 0.3, r * 0.3); drawFruit('cherry', -0.5, -0.5); ctx.restore();
+    (b.eaten || []).forEach((col, k) => {
+      const ex = (k - 1.5) * r * 0.36, ey = -r * 0.2 + Math.sin(G.t * 3 + k) * 0.08;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(ex, ey, r * 0.13, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(ex - r * 0.08, ey - r * 0.05, r * 0.06, r * 0.07); ctx.fillRect(ex + r * 0.02, ey - r * 0.05, r * 0.06, r * 0.07);
+    });
+    ctx.restore();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-r * 0.6, -r * 1.3, r * 0.2, r * 0.14); // shine
+  }
+  const ey = -r * 1.02;
+  if (fr) {
+    const face = flash ? '#ff2a2a' : '#ffb8ae';
+    ctx.fillStyle = face;
+    ctx.fillRect(-r * 0.42, ey, r * 0.2, r * 0.2); ctx.fillRect(r * 0.22, ey, r * 0.2, r * 0.2);
+    ctx.strokeStyle = face; ctx.lineWidth = r * 0.07; ctx.beginPath();
+    for (let i = 0; i <= 6; i++) ctx.lineTo(-r * 0.5 + i * r / 6, -r * 0.55 + (i % 2 ? -r * 0.08 : 0));
+    ctx.stroke();
+  } else {
+    const dx = pac.x - b.x, dy = pac.y - b.y, dl = Math.hypot(dx, dy) || 1;
+    for (const s of [-1, 1]) {
+      const ex = s * r * 0.34;
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(ex, ey, r * 0.2, r * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = ph === 3 ? '#c8002a' : '#10301a';
+      ctx.beginPath(); ctx.arc(ex + dx / dl * r * 0.08, ey + dy / dl * r * 0.1, r * 0.1, 0, Math.PI * 2); ctx.fill();
+      if (ph >= 2) {
+        ctx.strokeStyle = '#10301a'; ctx.lineWidth = r * 0.07;
+        ctx.beginPath(); ctx.moveTo(ex + s * r * 0.24, ey - r * 0.34); ctx.lineTo(ex - s * r * 0.18, ey - r * 0.2); ctx.stroke();
+      }
+    }
+    // Big hungry mouth, drooling
+    const mw = r * 0.55, mh = frame ? r * 0.3 : r * 0.2, my = -r * 0.52;
+    ctx.fillStyle = '#10301a'; ctx.beginPath(); ctx.ellipse(0, my, mw, mh, 0, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = '#ff7aa8'; ctx.beginPath(); ctx.ellipse(0, my + mh * 0.55, mw * 0.45, mh * 0.35, 0, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = '#d4ffd9'; ctx.fillRect(mw * 0.5, my, r * 0.07, mh + (frame ? r * 0.25 : r * 0.12));
+  }
+  ctx.restore();
+}
+// Lights out: stepped rings of shadow around Pac-Man, and anything with glowing eyes shows through.
+function drawDark() {
+  let r = G.light;
+  if (G.cfg.flicker && Math.sin(G.t * 23) + Math.sin(G.t * 7.3) > 1.55) r *= 0.55;
+  const cx = pac.x + 0.5, cy = pac.y + 0.5;
+  for (const [rr, a] of [[r, 0.45], [r + 1.1, 0.6], [r + 2.2, 0.72]]) {
+    ctx.fillStyle = `rgba(0,0,0,${a})`;
+    ctx.beginPath(); ctx.rect(-1, -1, W + 2, H + 2); ctx.arc(cx, cy, rr, 0, Math.PI * 2, true); ctx.fill();
+  }
+  const dim = e => Math.hypot(e.x - pac.x, e.y - pac.y) > r - 0.5;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const v = G.dots[y * W + x];
+    if ((v === 2 || v === 3) && dim({ x, y })) { ctx.fillStyle = v === 2 ? '#8a5f58' : '#3b7f99'; ctx.beginPath(); ctx.arc(x + 0.5, y + 0.5, 0.3, 0, Math.PI * 2); ctx.fill(); }
+  }
+  for (const g of G.ghosts) {
+    if (!dim(g) || g === G.eatenGhost) continue;
+    const fr = g.frightened && G.fright > 0 && !g.eaten, ex = g.x + 0.5, ey = g.y + 0.35, d = g.dir || L;
+    for (const s of [-1, 1]) {
+      if (fr) { ctx.fillStyle = '#ffb8ae'; ctx.fillRect(ex + s * 0.27 - 0.09, ey - 0.09, 0.18, 0.18); continue; }
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(ex + s * 0.3 + d.x * 0.1, ey + d.y * 0.1, 0.2, 0.26, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = g.color; ctx.beginPath(); ctx.arc(ex + s * 0.3 + d.x * 0.2, ey + d.y * 0.22, 0.12, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  for (const w of G.wraiths) if (dim(w)) drawWraithEyes(w.x + 0.5, w.y + 0.3, w.dir || D, '#1a0b3a', '#ff3b6b');
+  for (const s of G.slimes) if (dim(s) && s.state !== 'house') {
+    ctx.fillStyle = '#8dff9a'; ctx.fillRect(s.x + 0.25, s.y + 0.3, 0.16, 0.16); ctx.fillRect(s.x + 0.6, s.y + 0.3, 0.16, 0.16);
+  }
+  for (const h of G.hounds) if (dim(h) && h.state !== 'house') {
+    ctx.fillStyle = '#ffb04a'; ctx.fillRect(h.x + 0.18, h.y + 0.14, 0.2, 0.2); ctx.fillRect(h.x + 0.62, h.y + 0.14, 0.2, 0.2);
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (G.dots[y * W + x] === 5 && dim({ x, y })) drawMagnet(x + 0.5, y + 0.55, 0.9);
+}
+function drawFrostBerry(cx, cy, s = 1) {
+  const k = s * (0.92 + Math.sin(G.t * 6) * 0.08);
+  ctx.fillStyle = '#6fd8ff';
+  for (const [dx, dy] of [[-0.18, 0.08], [0.18, 0.08], [0, -0.16]]) {
+    ctx.beginPath(); ctx.arc(cx + dx * k, cy + dy * k, 0.24 * k, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(cx - 0.12 * k, cy - 0.26 * k, 0.09 * k, 0.09 * k);
+  ctx.strokeStyle = '#e6fbff'; ctx.lineWidth = 0.06; ctx.lineCap = 'round';
+  const tw = 0.3 + 0.15 * Math.sin(G.t * 9);
+  ctx.beginPath();
+  ctx.moveTo(cx + 0.35, cy - 0.45 - tw * 0.4); ctx.lineTo(cx + 0.35, cy - 0.45 + tw * 0.4);
+  ctx.moveTo(cx + 0.35 - tw * 0.4, cy - 0.45); ctx.lineTo(cx + 0.35 + tw * 0.4, cy - 0.45);
+  ctx.stroke();
+}
+function drawFruit(kind, x, y) {
+  const cx = x + 0.5, cy = y + 0.5;
+  const circle = (x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+  const line = (pts, c, w = 0.1) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); pts.forEach(([a, b], i) => i ? ctx.lineTo(a, b) : ctx.moveTo(a, b)); ctx.stroke(); };
+  switch (kind) {
+    case 'cherry':
+      line([[cx - 0.3, cy + 0.2], [cx + 0.1, cy - 0.6], [cx + 0.55, cy - 0.65]], '#c8751e');
+      line([[cx + 0.25, cy + 0.3], [cx + 0.15, cy - 0.55]], '#c8751e');
+      circle(cx - 0.3, cy + 0.25, 0.32, '#ff1a1a'); circle(cx + 0.25, cy + 0.35, 0.32, '#ff1a1a');
+      circle(cx - 0.4, cy + 0.15, 0.08, '#ffffff'); break;
+    case 'strawberry':
+      ctx.fillStyle = '#ff1a1a'; ctx.beginPath();
+      ctx.moveTo(cx - 0.6, cy - 0.3); ctx.quadraticCurveTo(cx, cy - 0.55, cx + 0.6, cy - 0.3);
+      ctx.quadraticCurveTo(cx + 0.5, cy + 0.4, cx, cy + 0.75); ctx.quadraticCurveTo(cx - 0.5, cy + 0.4, cx - 0.6, cy - 0.3); ctx.fill();
+      [[-0.25, -0.1], [0.2, -0.05], [0, 0.2], [-0.15, 0.4], [0.25, 0.3]].forEach(([a, b]) => { ctx.fillStyle = '#ffffff'; ctx.fillRect(cx + a, cy + b, 0.08, 0.08); });
+      line([[cx - 0.35, cy - 0.45], [cx + 0.35, cy - 0.45]], '#22c55e', 0.16); break;
+    case 'orange':
+      circle(cx, cy + 0.1, 0.58, '#ffa11a');
+      line([[cx, cy - 0.45], [cx + 0.1, cy - 0.7]], '#c8751e');
+      ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.ellipse(cx + 0.3, cy - 0.6, 0.25, 0.1, -0.4, 0, Math.PI * 2); ctx.fill(); break;
+    case 'apple':
+      circle(cx - 0.22, cy + 0.12, 0.45, '#ff1a1a'); circle(cx + 0.22, cy + 0.12, 0.45, '#ff1a1a');
+      line([[cx, cy - 0.3], [cx + 0.15, cy - 0.7]], '#c8751e');
+      circle(cx - 0.35, cy - 0.05, 0.09, '#ffffff'); break;
+    case 'melon':
+      circle(cx, cy + 0.1, 0.6, '#3ddc5a');
+      line([[cx - 0.2, cy - 0.4], [cx - 0.3, cy + 0.6]], '#c8ffcf', 0.08);
+      line([[cx + 0.2, cy - 0.4], [cx + 0.3, cy + 0.6]], '#c8ffcf', 0.08);
+      line([[cx, cy - 0.5], [cx, cy - 0.75]], '#c8751e'); break;
+    case 'grapes':
+      line([[cx, cy - 0.45], [cx + 0.1, cy - 0.75]], '#3f8a2a');
+      ctx.fillStyle = '#44d45a'; ctx.beginPath(); ctx.ellipse(cx + 0.3, cy - 0.6, 0.22, 0.09, -0.3, 0, Math.PI * 2); ctx.fill();
+      [[-0.3, -0.25], [0, -0.25], [0.3, -0.25], [-0.15, 0.05], [0.15, 0.05], [0, 0.35]].forEach(([a, b]) => circle(cx + a, cy + b, 0.19, '#9b3cff'));
+      circle(cx - 0.36, cy - 0.32, 0.06, '#e2c8ff'); break;
+    case 'pear':
+      circle(cx, cy + 0.3, 0.45, '#c6e04a'); circle(cx, cy - 0.15, 0.3, '#c6e04a');
+      line([[cx, cy - 0.42], [cx + 0.08, cy - 0.72]], '#8a5a1e');
+      ctx.fillStyle = '#3ddc5a'; ctx.beginPath(); ctx.ellipse(cx + 0.3, cy - 0.55, 0.2, 0.08, -0.5, 0, Math.PI * 2); ctx.fill();
+      circle(cx - 0.18, cy + 0.2, 0.08, '#f4ffc2'); break;
+    case 'banana':
+      ctx.strokeStyle = '#ffd92e'; ctx.lineWidth = 0.32; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(cx + 0.2, cy - 0.35, 0.72, Math.PI * 0.55, Math.PI * 1.05); ctx.stroke();
+      circle(cx - 0.52, cy - 0.47, 0.07, '#6b4a14');
+      circle(cx - 0.05, cy + 0.33, 0.07, '#6b4a14'); break;
+    case 'peach':
+      circle(cx, cy + 0.12, 0.58, '#ff9a6b');
+      ctx.strokeStyle = '#e8674a'; ctx.lineWidth = 0.07;
+      ctx.beginPath(); ctx.arc(cx - 0.25, cy + 0.12, 0.5, -0.9, 0.9); ctx.stroke();
+      ctx.fillStyle = '#3ddc5a'; ctx.beginPath(); ctx.ellipse(cx + 0.22, cy - 0.52, 0.24, 0.1, -0.5, 0, Math.PI * 2); ctx.fill();
+      circle(cx - 0.25, cy - 0.12, 0.09, '#ffd2bd'); break;
+    case 'pineapple':
+      ctx.fillStyle = '#3ddc5a'; ctx.beginPath();
+      ctx.moveTo(cx - 0.3, cy - 0.3); ctx.lineTo(cx - 0.35, cy - 0.75); ctx.lineTo(cx - 0.1, cy - 0.45);
+      ctx.lineTo(cx, cy - 0.85); ctx.lineTo(cx + 0.1, cy - 0.45); ctx.lineTo(cx + 0.35, cy - 0.75); ctx.lineTo(cx + 0.3, cy - 0.3); ctx.fill();
+      ctx.fillStyle = '#ffb21a'; ctx.beginPath(); ctx.ellipse(cx, cy + 0.22, 0.42, 0.55, 0, 0, Math.PI * 2); ctx.fill();
+      line([[cx - 0.3, cy - 0.05], [cx + 0.2, cy + 0.65]], '#b86a0a', 0.06);
+      line([[cx - 0.35, cy + 0.35], [cx - 0.05, cy + 0.75]], '#b86a0a', 0.06);
+      line([[cx + 0.3, cy - 0.05], [cx - 0.2, cy + 0.65]], '#b86a0a', 0.06);
+      line([[cx + 0.35, cy + 0.35], [cx + 0.05, cy + 0.75]], '#b86a0a', 0.06); break;
+  }
+}
+
+function drawHUD() {
+  const blink = Math.floor(G.t * 3.5) % 2 === 0;
+  if (G.state !== 'play' || blink) text('1UP', 3, 0, '#ffffff');
+  text('HIGH SCORE', 14, 0, '#ffffff', 'center');
+  text(G.score ? String(G.score) : '00', 7, 1, '#ffffff', 'right');
+  text(hi ? String(hi) : '00', 17, 1, '#ffffff', 'right');
+  if (G.state === 'cast') return;
+  const row = TOP + SCREEN_MAZE_ROWS + 0.5;
+  screenSpace();
+  const spare = Math.max(0, G.lives - (G.state === 'dying' || G.state === 'over' ? 0 : 1));
+  if (infinite) {
+    drawPac(1.6, row, L, 0.5, 0.7);
+    text('x INF', 3.6, row, '#ffe600', 'left', 0.55);
+  } else {
+    for (let i = 0; i < Math.min(spare, 4); i++) drawPac(1.6 + i * 2, row, L, 0.5, 0.7);
+  }
+  for (let l = G.lvIndex, i = 0; l >= 0 && i < 4; l--, i++) { screenSpace(); drawFruit(fruitFor(l), 25 - i * 2, row); }
+  const bdef = G.boss && BOSSES[G.boss.kind], ph = G.boss && (G.state === 'phase' ? G.phaseTo : bossPhase(G.boss));
+  const label = G.lvIndex >= ROOF ? `ROOF ${G.lvIndex - ROOF + 1}` : G.boss && G.boss.kind === 'blob' ? bdef.tips[ph]
+    : G.cfg.boss ? 'BOSS FIGHT' : `STAGE ${G.cfg.stage}-${G.cfg.lv}`;
+  text(label, 14, row, G.boss && G.boss.kind === 'blob' ? bdef.colors[ph] : STAGE_INK[G.cfg.stage], 'center', 0.55);
+  if (G.boss) {
+    // Three blocks, one per phase, emptied right to left; the live block blinks its frame.
+    // The King's blocks are four hit segments; the Blob's are a continuous mass gauge.
+    const per = bdef.per, blob = G.boss.kind === 'blob';
+    text(`${bdef.name}  PHASE ${ph}/3`, 0.8, TOP, bdef.colors[ph], 'left', 0.4);
+    screenSpace();
+    const gx = 10.4, gw = 5.3, gap = 0.5, segs = blob ? 1 : per, segW = gw / segs;
+    for (let p = 1; p <= 3; p++) {
+      const x0 = gx + (p - 1) * (gw + gap), lo = (3 - p) * per;
+      if (blob) {
+        const f = Math.max(0, Math.min(1, (G.boss.hp - lo) / per));
+        ctx.fillStyle = '#1a1d44'; ctx.fillRect(x0 + 0.06, TOP + 0.28, gw - 0.12, 0.44);
+        ctx.fillStyle = bdef.colors[p]; ctx.fillRect(x0 + 0.06, TOP + 0.28, (gw - 0.12) * f, 0.44);
+      } else for (let k = 0; k < segs; k++) {
+        const hpIdx = lo + per - k; // HP value this segment stands for
+        ctx.fillStyle = G.boss.hp >= hpIdx ? bdef.colors[p] : '#1a1d44';
+        ctx.fillRect(x0 + k * segW + 0.06, TOP + 0.28, segW - 0.12, 0.44);
+      }
+      if (p === ph && G.boss.hp > 0 && Math.floor(G.t * 3) % 2 === 0) {
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.08; ctx.strokeRect(x0 - 0.08, TOP + 0.18, gw + 0.16, 0.64);
+      }
+    }
+  }
+  if (G.cfg.dash) {
+    const full = G.dashCharge >= 1;
+    text('DASH', 27, 0, full ? '#ffe600' : '#6b6f93', 'right', 0.6);
+    screenSpace();
+    ctx.fillStyle = '#1a1d44'; ctx.fillRect(21, 1.2, 6, 0.6);
+    ctx.fillStyle = full ? (blink ? '#ffe600' : '#fff3a0') : '#8f9bff';
+    ctx.fillRect(21, 1.2, 6 * G.dashCharge, 0.6);
+  }
+}
+
+function drawTitle() {
+  screenSpace();
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(1, TOP + 2.2, 26, 23.9);
+  const blink = Math.floor(G.t * 2) % 2 === 0;
+  text('CHARACTER / NICKNAME', 14, TOP + 3, '#ffffff', 'center', 0.62);
+  const cast = [['-SHADOW', '"BLINKY"'], ['-SPEEDY', '"PINKY"'], ['-BASHFUL', '"INKY"'], ['-POKEY', '"CLYDE"'], ['-DRIFTER', '"WRAITH"'], ['-OOZER', '"SLIME"']];
+  if (save.unlocked > LEVELS.findIndex(l => l.hounds)) cast.push(['-SNIFFER', '"HOUND"']); // joins the cast once you've met one
+  const dy = (cast.length - 6) * 1.8;
+  cast.forEach(([a, b], i) => {
+    const row = 4.9 + i * 1.8;
+    screenSpace(); ctx.translate(0, TOP);
+    let color;
+    if (i < 4) { color = ghosts[i].color; drawGhost({ x: 3.5, y: row, dir: R, color, frightened: false, eaten: false }); }
+    else if (i === 4) { color = '#c9b8ff'; drawWraith({ x: 3.5, y: row, state: 'active', dir: R }); }
+    else if (i === 5) { color = '#5cff6b'; drawSlime({ kind: 'big', x: 3.5, y: row, dir: R, state: 'active', group: 0 }); }
+    else { color = '#e8a25c'; drawHound({ x: 3.5, y: row, dir: R, state: 'hunt', sniff: 0 }); }
+    text(a, 6, TOP + row, color, 'left', 0.6);
+    text(b, 25, TOP + row, color, 'right', 0.6);
+  });
+  screenSpace(); ctx.translate(0, TOP + dy);
+  ctx.fillStyle = '#ffb8ae'; ctx.fillRect(5.4, 16.3, 0.25, 0.25);
+  ctx.beginPath(); ctx.arc(5.5, 17.8, 0.4, 0, Math.PI * 2); ctx.fill();
+  drawFrostBerry(5.5, 19.2, 1);
+  text('DOT          10', 7, TOP + dy + 15.9, '#ffffff', 'left', 0.52);
+  text('POWER PELLET 50', 7, TOP + dy + 17.3, '#ffffff', 'left', 0.52);
+  text('FROST BERRY  50', 7, TOP + dy + 18.7, '#ffffff', 'left', 0.52);
+  if (blink) text('ENTER / TAP : BACK', 14, TOP + dy + 21.6, '#ffe600', 'center', 0.58);
+}
+
+function drawBanner() {
+  screenSpace();
+  const stageColor = WALL_COLORS[G.cfg.stage];
+  if (G.bannerFull) {
+    ctx.fillStyle = 'rgba(0,0,0,0.88)';
+    ctx.fillRect(2.5, 13.2, 23, 8.2);
+    ctx.strokeStyle = stageColor; ctx.lineWidth = 0.12;
+    ctx.strokeRect(2.5, 13.2, 23, 8.2);
+    text(G.lvIndex >= ROOF ? `THE ROOF - ROUND ${G.lvIndex - ROOF + 1}` : G.cfg.boss === 'blob' ? 'FINAL BOSS' : G.cfg.boss ? 'BOSS FIGHT'
+      : `${floorLabel(G.lvIndex)} - ${FLOOR_NAMES[G.lvIndex]}`, 14, 14.2, G.cfg.boss ? '#ffd86b' : '#ffffff', 'center', 0.7);
+    text(G.cfg.intro[0], 14, 16.2, '#ffe600', 'center', 0.6);
+    const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    text(G.cfg.intro[1].replace('DASH_HINT', coarse ? 'TAP DASH' : 'SPACE = DASH'), 14, 17.7, '#b9bddc', 'center', 0.46);
+    text('READY!', 14, 19.6, '#ffe600', 'center', 0.85);
+  } else {
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(9, 18.9, 10, 2.2);
+    text('READY!', 14, 19.6, '#ffe600', 'center', 0.85);
+  }
+}
+
+// ---------- Story screens ----------
+// Draws with G.fright forced on, so sprites show their blue frightened face.
+function withFright(on, fn) { const f = G.fright; if (on) G.fright = 5; fn(); G.fright = f; }
+const STARS = (() => {
+  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  return Array.from({ length: 46 }, () => ({ x: rnd() * 28, y: 2.5 + rnd() * 27, z: rnd() < 0.2 ? 0.2 : 0.12, p: Math.floor(rnd() * 5), c: rnd() < 0.3 ? '#8f9bff' : '#ffffff' }));
+})();
+function drawSky(moon = true) {
+  screenSpace();
+  for (const s of STARS) {
+    if ((Math.floor(G.t * 2) + s.p) % 7 === 0) continue;
+    ctx.fillStyle = s.c; ctx.fillRect(s.x, s.y, s.z, s.z);
+  }
+  if (!moon) return;
+  ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(3.6, 5.6, 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#000000'; ctx.beginPath(); ctx.arc(4.3, 5.1, 1.3, 0, Math.PI * 2); ctx.fill();
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+// Draws one character sprite centered on (cx, cy) in screen tiles, at scale k.
+function drawCharacter(who, mood, cx, cy, k, face = R, open = 0.4) {
+  const sp = SPEAKERS[who];
+  screenSpace();
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (who === 'KING') { ctx.scale(k * 0.5, k * 0.5); ctx.translate(0, 0.45); }
+  else if (who === 'BLOB') { ctx.scale(k * 0.42, k * 0.42); ctx.translate(0, 0.3); }
+  else ctx.scale(k, k);
+  const at = { x: -0.5, y: -0.5 };
+  withFright(mood === 'scared', () => {
+    if (who === 'PAC') drawPac(at.x, at.y, face, open);
+    else if (sp.ghost !== undefined) drawGhost({ ...at, dir: face, color: sp.color, frightened: mood === 'scared', eaten: false });
+    else if (who === 'WRAITH') drawWraith({ ...at, state: 'active', dir: face });
+    else if (who === 'SLIME') drawSlime({ kind: 'big', ...at, dir: face, state: 'active', group: 0 });
+    else if (who === 'KING') drawBoss({ ...at, kind: 'king', state: 'chase', hp: mood === 'angry' ? 1 : BOSSES.king.hp, inv: 0 });
+    else if (who === 'BLOB') drawBlob({ ...at, kind: 'blob', state: 'chase', hp: BOSSES.blob.hp, look: mood === 'angry' ? 3 : 1, inv: 0, flash: 0, eaten: [] });
+    else if (who === 'HOUND') drawHound({ ...at, dir: face, state: 'hunt', sniff: mood === 'sniff' ? 1 : 0 });
+  });
+  ctx.restore();
+}
+function wrapText(s, maxW, size) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = Math.round(px * size) + FONT;
+  const out = []; let cur = '';
+  for (const w of s.split(' ')) {
+    const t = cur ? cur + ' ' + w : w;
+    if (cur && ctx.measureText(t).width > maxW * px) { out.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) out.push(cur);
+  ctx.restore();
+  return out;
+}
+
+function drawDialog() {
+  const d = G.dlg, [who, msg, mood] = d.lines[d.i], sp = SPEAKERS[who];
+  const typing = d.chars < msg.length;
+  screenSpace();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, SCREEN_COLS, TOTAL_ROWS);
+  const bx = 0.7, by = 26.4, bw = 26.6, bh = 8.6;
+  ctx.fillStyle = '#000000'; ctx.fillRect(bx, by, bw, bh);
+  ctx.lineWidth = 0.14; ctx.strokeStyle = sp.color; ctx.strokeRect(bx, by, bw, bh);
+  ctx.lineWidth = 0.06; ctx.strokeStyle = '#ffffff'; ctx.strokeRect(bx + 0.3, by + 0.3, bw - 0.6, bh - 0.6);
+  let tx = bx + 1;
+  if (sp.portrait) {
+    const s = 5.4, x = bx + 0.9, y = by + 1.9;
+    screenSpace();
+    ctx.fillStyle = '#07081a'; ctx.fillRect(x, y, s, s);
+    ctx.lineWidth = 0.1; ctx.strokeStyle = sp.color; ctx.strokeRect(x, y, s, s);
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, s, s); ctx.clip();
+    const bob = typing && Math.floor(G.t * 8) % 2 ? -0.15 : 0;
+    const open = who === 'PAC' ? (typing ? Math.floor(G.t * 12) % 2 : 0.3) : 0.4;
+    drawCharacter(who, mood, x + s / 2, y + s / 2 + bob + (who === 'SLIME' ? -0.3 : 0), 2.3, R, open);
+    ctx.restore();
+    tx = x + s + 0.8;
+  }
+  text(sp.name, tx, by + 0.75, sp.color, 'left', 0.55);
+  const lines = wrapText(msg, bx + bw - 0.9 - tx, 0.5);
+  let left = Math.floor(d.chars);
+  lines.forEach((l, j) => {
+    if (left <= 0) return;
+    text(l.slice(0, left), tx, by + 2.1 + j * 1.15, who === 'NARR' ? '#b9bddc' : '#ffffff', 'left', 0.5);
+    left -= l.length + 1;
+  });
+  text(`${d.i + 1}/${d.lines.length}  ESC SKIP`, bx + bw - 0.8, by + 0.75, '#6b6f93', 'right', 0.36);
+  if (!typing && Math.floor(G.t * 3) % 2 === 0) {
+    screenSpace();
+    ctx.fillStyle = '#ffe600';
+    const ax = bx + bw - 1.4, ay = by + bh - 1.35;
+    ctx.beginPath(); ctx.moveTo(ax - 0.35, ay - 0.2); ctx.lineTo(ax + 0.35, ay - 0.2); ctx.lineTo(ax, ay + 0.25); ctx.fill();
+  }
+}
+
+// A lap of Pac-Man chased by the cast, then a lap chasing the blue ghosts back, like the attract mode.
+function drawParade(row, speed = 7) {
+  const lap = 52, p = (G.t * speed) % (lap * 2), chase = p < lap;
+  const open = (1 - Math.cos(G.t * 18)) / 2;
+  if (chase) {
+    const x = p - 2, crew = ['BLINKY', 'PINKY', 'INKY', 'CLYDE', 'WRAITH', 'SLIME'];
+    drawCharacter('PAC', null, x, row, 1, R, open);
+    crew.forEach((c, k) => drawCharacter(c, null, x - 2.3 * (k + 1), row, 1, R));
+  } else {
+    const x = 43 - (p - lap);
+    drawCharacter('PAC', null, x, row, 1, L, open);
+    ['BLINKY', 'PINKY', 'INKY', 'CLYDE'].forEach((c, k) => drawCharacter(c, 'scared', x - 2.3 * (k + 1), row, 1, L));
+  }
+}
+
+function drawMenu() {
+  drawSky();
+  text(`HIGH SCORE ${hi || '00'}`, 14, 0.4, '#ffffff', 'center', 0.5);
+  text('PAC-MAN', 14.25, 4.7, '#2a3cff', 'center', 2.3);
+  text('PAC-MAN', 14, 4.5, '#ffe600', 'center', 2.3);
+  text('AND THE', 14, 7.5, '#b9bddc', 'center', 0.5);
+  text('SPOOKSCRAPER', 14.12, 8.9, '#5a1340', 'center', 1.05);
+  text('SPOOKSCRAPER', 14, 8.8, '#ff4fa3', 'center', 1.05);
+  drawParade(13.2);
+  const items = menuItems(), blink = Math.floor(G.t * 3) % 2 === 0;
+  items.forEach((it, k) => {
+    const row = 17 + k * 2.2, on = k === G.menu.sel;
+    if (on) drawCharacter('PAC', null, 8.6, row + 0.5, 0.75, R, (1 - Math.cos(G.t * 14)) / 2);
+    text(it, 10.2, row, on ? '#ffe600' : '#ffffff', 'left', 0.75);
+  });
+  const pr = 17 + items.length * 2.2 + 0.6;
+  if (hasProgress()) {
+    text(save.won ? 'THE BLOB IS BEATEN! ROOF OPEN' : `REACHED ${floorLabel(save.unlocked)}: ${FLOOR_NAMES[save.unlocked]}`, 14, pr, save.won ? '#ffd86b' : '#6b6f93', 'center', 0.42);
+  }
+  if (G.menu.confirm && blink) text('THIS ERASES YOUR SAVE. PRESS AGAIN', 14, pr + 1.4, '#ff2a2a', 'center', 0.42);
+  text('A GOOFY GHOST STORY IN TWENTY FLOORS', 14, 31, '#6b6f93', 'center', 0.4);
+  const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  text(coarse ? 'TAP TO CHOOSE' : 'UP/DOWN + ENTER', 14, 33, '#b9bddc', 'center', 0.45);
+}
+
+function drawIconStar(cx, cy, r, color) {
+  ctx.fillStyle = color; ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  ctx.fill();
+}
+function drawIconLock(cx, cy, color) {
+  ctx.strokeStyle = color; ctx.lineWidth = 0.12;
+  ctx.beginPath(); ctx.arc(cx, cy - 0.12, 0.24, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = color; ctx.fillRect(cx - 0.34, cy - 0.12, 0.68, 0.5);
+}
+const PEBBLES = (() => {
+  let s = 11; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  return Array.from({ length: 90 }, () => ({ x: rnd() * 28, y: 0.6 + rnd() * 26, w: 0.2 + rnd() * 0.35 }));
+})();
+function drawTower() {
+  drawSky();
+  const T = G.tower, top = topFloor(), blink = Math.floor(G.t * 3) % 2 === 0, cam = towerCam(T.py), open = basementOpen();
+  const Y = y => y - cam;
+  screenSpace();
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, VIEW_TOP, SCREEN_COLS, VIEW_BOT - VIEW_TOP); ctx.clip();
+  // Earth under the ground line. Once the King falls through, a shaft of basement floors is dug out below.
+  const gy = Y(GROUND);
+  ctx.fillStyle = '#0d0805'; ctx.fillRect(0, gy, SCREEN_COLS, 60);
+  ctx.fillStyle = '#2a1a10';
+  for (const p of PEBBLES) ctx.fillRect(p.x, gy + p.y, p.w, p.w * 0.6);
+  if (open) {
+    const bot = Y(floorTop(ROOF - 1) + FLOOR_H);
+    ctx.fillStyle = '#000000'; ctx.fillRect(TOWER_X - 0.3, gy, TOWER_W + 0.6, bot - gy + 0.3);
+    ctx.fillStyle = '#3a2418'; ctx.fillRect(TOWER_X - 0.5, gy, 0.2, bot - gy + 0.3); ctx.fillRect(TOWER_X + TOWER_W + 0.3, gy, 0.2, bot - gy + 0.3);
+    // Pipes run down the shaft; the sewer pools at the bottom.
+    ctx.fillStyle = '#58b82e'; ctx.fillRect(TOWER_X - 1.5, gy + 1, 0.35, bot - gy - 1);
+    ctx.fillStyle = '#1f6f8b'; ctx.fillRect(TOWER_X - 0.5, bot + 0.3, TOWER_W + 1, 0.5);
+    const drip = (G.t * 6) % 12;
+    ctx.fillStyle = '#9be86f'; ctx.fillRect(TOWER_X - 1.4, gy + 1 + drip * (bot - gy - 1) / 12, 0.15, 0.3);
+  }
+  ctx.fillStyle = '#1a1d44'; ctx.fillRect(0, gy + 0.05, SCREEN_COLS, 0.18);
+  // Roof: dark until the Blob is beaten, gold after.
+  const ry = Y(floorTop(KING_FLOOR)), peak = ry - 4.3, roofCol = save.won ? '#ffd86b' : '#2a2d55';
+  ctx.fillStyle = '#000000'; ctx.strokeStyle = roofCol; ctx.lineWidth = 0.12; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(TOWER_X - 0.8, ry); ctx.lineTo(14, peak); ctx.lineTo(TOWER_X + TOWER_W + 0.8, ry); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(14, peak); ctx.lineTo(14, peak - 1.3); ctx.stroke();
+  ctx.fillStyle = save.won ? '#ffe600' : '#9b3dff';
+  const wave = Math.floor(G.t * 4) % 2 ? 0.12 : 0;
+  ctx.beginPath(); ctx.moveTo(14, peak - 1.3); ctx.lineTo(15.4, peak - 1 + wave); ctx.lineTo(14, peak - 0.6); ctx.fill();
+  if (save.won) text('ENDLESS', 14, ry - 1.1, '#ffd86b', 'center', 0.38);
+  else { screenSpace(); drawIconLock(14, ry - 0.9, '#2a2d55'); }
+  // Floors
+  for (let i = 0; i < ROOF; i++) {
+    const under = underground(i);
+    if (under && !open) continue;
+    const y = Y(floorTop(i)), st = floorStage(i), locked = i > top, cleared = isCleared(i), mid = y + FLOOR_H / 2;
+    if (y > VIEW_BOT || y + FLOOR_H < VIEW_TOP) continue;
+    const col = locked ? '#2a2d55' : WALL_COLORS[st];
+    screenSpace();
+    ctx.fillStyle = '#000000'; ctx.fillRect(TOWER_X, y, TOWER_W, FLOOR_H);
+    ctx.strokeStyle = col; ctx.lineWidth = 0.12;
+    roundRect(TOWER_X + 0.1, y + 0.14, TOWER_W - 0.2, FLOOR_H - 0.28, under ? 0.15 : 0.45); ctx.stroke();
+    for (let k = 0; k < 4; k++) { // windows up top, barred grates down below
+      const wx = 15 + k * 1.15, wy = y + 0.62;
+      ctx.fillStyle = locked ? '#15173a' : cleared ? '#ffd23f' : '#1a1d44';
+      ctx.fillRect(wx, wy, 0.75, 1.05);
+      if (locked || under) { ctx.fillStyle = locked ? '#2a2d55' : '#000000'; ctx.fillRect(wx + 0.32, wy, 0.1, 1.05); if (under) ctx.fillRect(wx, wy + 0.47, 0.75, 0.1); }
+    }
+    const label = LEVELS[i].boss ? 'BOSS' : `${LEVELS[i].stage}-${LEVELS[i].lv}`;
+    text(label, TOWER_X + 0.7, mid - 0.5, locked ? '#2a2d55' : STAGE_INK[st], 'left', 0.42);
+    text(floorLabel(i), TOWER_X - 0.4, mid - 0.5, locked ? '#2a2d55' : under ? '#a0804a' : '#6b6f93', 'right', 0.38);
+    screenSpace();
+    if (i === T.fresh) { if (blink) text('NEW', TOWER_X + TOWER_W + 0.5, mid - 0.5, '#ffe600', 'left', 0.38); }
+    else if (cleared) drawIconStar(TOWER_X + TOWER_W + 0.9, mid, 0.42, '#ffd23f');
+    else if (locked) drawIconLock(TOWER_X + TOWER_W + 0.9, mid, '#2a2d55');
+  }
+  // Stage brackets
+  for (let st = 1; st <= 8; st++) {
+    const idx = LEVELS.map((l, i) => l.stage === st ? i : -1).filter(i => i >= 0);
+    if (!open && underground(idx[0])) continue;
+    const tops = idx.map(floorTop), y0 = Y(Math.min(...tops)) + 0.3, y1 = Y(Math.max(...tops)) + FLOOR_H - 0.3;
+    const on = idx[0] <= top;
+    screenSpace();
+    ctx.fillStyle = on ? WALL_COLORS[st] : '#2a2d55'; ctx.fillRect(23.2, y0, 0.14, y1 - y0);
+    text(`STAGE ${st}`, 23.7, (y0 + y1) / 2 - 1, on ? '#6b6f93' : '#2a2d55', 'left', 0.34);
+    text(STAGE_SHORT[st], 23.7, (y0 + y1) / 2 - 0.1, on ? STAGE_INK[st] : '#2a2d55', 'left', 0.4);
+  }
+  // Selection frame and Pac-Man
+  const sel = T.sel, still = Math.abs(T.py - floorMid(sel)) < 1e-6;
+  screenSpace();
+  if (still && blink) {
+    ctx.strokeStyle = '#ffe600'; ctx.lineWidth = 0.1;
+    if (sel === ROOF) { ctx.beginPath(); ctx.moveTo(TOWER_X - 1.2, ry + 0.25); ctx.lineTo(14, peak - 0.5); ctx.lineTo(TOWER_X + TOWER_W + 1.2, ry + 0.25); ctx.closePath(); ctx.stroke(); }
+    else { roundRect(TOWER_X - 0.2, Y(floorTop(sel)) - 0.12, TOWER_W + 0.4, FLOOR_H + 0.24, 0.55); ctx.stroke(); }
+  }
+  const roofY = floorMid(ROOF), m9 = floorMid(KING_FLOOR);
+  const pacX = T.py >= m9 ? 12.3 : 12.3 + (m9 - T.py) / (m9 - roofY) * 1.7;
+  const falling = T.fall && !still;
+  drawCharacter('PAC', null, pacX, Y(T.py), 0.75, still ? R : (floorMid(sel) < T.py ? U : D), still ? 0.4 : (1 - Math.cos(G.t * 18)) / 2);
+  if (falling && blink) text('AAAAH!', pacX + 1.2, Y(T.py) - 1, '#ffe600', 'left', 0.4);
+  ctx.restore();
+  // Header, the Act 2 title card, and the info panel sit on top of the scrolling view.
+  text('THE SPOOKSCRAPER', 14, 0.35, '#ff4fa3', 'center', 0.72);
+  text(`HIGH SCORE ${hi || '00'}`, 14, 1.55, '#ffffff', 'center', 0.42);
+  if (T.fresh === BASEMENT && still && G.timer < 6) {
+    screenSpace();
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(3, 4, 22, 4.6);
+    ctx.strokeStyle = '#58b82e'; ctx.lineWidth = 0.12; ctx.strokeRect(3, 4, 22, 4.6);
+    text('ACT 2', 14, 4.7, '#9be86f', 'center', 1.1);
+    text('THE BASEMENT', 14, 6.5, '#ffffff', 'center', 0.6);
+    text('FIND THE FRUIT SALAD. BEWARE THE BLOB.', 14, 7.6, '#b9bddc', 'center', 0.34);
+  }
+  const st = floorStage(sel), ink = sel >= ROOF ? '#ffd86b' : STAGE_INK[st];
+  text(sel >= ROOF ? 'THE ROOF' : `${floorLabel(sel)}  ${FLOOR_NAMES[sel]}`, 14, 32.1, ink, 'center', 0.62);
+  text(sel >= ROOF ? 'ENDLESS BONUS ROUNDS' : `STAGE ${st}: ${STAGE_NAMES[st]}`, 14, 33.25, '#b9bddc', 'center', 0.4);
+  const best = save.best[sel] || 0;
+  text(best ? `BEST ${best}` : (isCleared(sel) ? 'CLEARED' : 'NOT CLEARED YET'), 14, 34.2, '#6b6f93', 'center', 0.38);
+  const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  text(coarse ? 'TAP A FLOOR, TAP AGAIN TO PLAY' : 'UP/DOWN MOVE  ENTER PLAY  ESC MENU', 14, 35.2, '#6b6f93', 'center', 0.34);
+}
+
+function drawEnding() {
+  drawSky();
+  text('THE END', 14.2, 4.7, '#2a3cff', 'center', 1.9);
+  text('THE END', 14, 4.5, '#ffe600', 'center', 1.9);
+  text('THE FRUIT IS HOME. AGAIN.', 14, 8, '#ffffff', 'center', 0.55);
+  text('THE GHOSTS GOT THEIR OLD JOBS BACK.', 14, 9.3, '#b9bddc', 'center', 0.42);
+  // Victory lap: Pac-Man leads, the fruit follows, the whole cast tags along happily.
+  const x = (G.t * 5) % 58 - 4;
+  drawCharacter('PAC', null, x, 14, 1, R, (1 - Math.cos(G.t * 18)) / 2);
+  FRUITS.slice(0, 5).forEach((f, k) => { screenSpace(); drawFruit(f, x - 2 - k * 1.6 - 0.5, 13.5); });
+  ['BLINKY', 'PINKY', 'INKY', 'CLYDE', 'WRAITH', 'SLIME', 'HOUND'].forEach((c, k) => drawCharacter(c, null, x - 11 - k * 2.3, 14, 1, R));
+  const bob = Math.floor(G.t * 3) % 2 ? 0.15 : 0;
+  drawCharacter('KING', 'scared', 8.5, 20 + bob, 1.5);
+  drawCharacter('BLOB', 'scared', 19.5, 20.2 - bob, 1.5);
+  text('THE KING AND THE BLOB', 14, 24, '#ffd86b', 'center', 0.45);
+  text('JOINED THE SAME GYM.', 14, 25.2, '#ffd86b', 'center', 0.45);
+  text('ROOF UNLOCKED: ENDLESS MODE', 14, 27.8, '#ffe600', 'center', 0.5);
+  text('THANKS FOR PLAYING!', 14, 29.4, '#ff4fa3', 'center', 0.55);
+  if (G.timer > 1.5 && Math.floor(G.t * 2) % 2 === 0) text('PRESS ENTER', 14, 32.5, '#ffffff', 'center', 0.6);
+}
+
+// Comic speech bubble over the King, flipped below him near the top wall and kept on screen.
+function drawBossSay() {
+  const b = G.boss, size = 0.42, lines = wrapText(G.bossSay.text, 11, size);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.font = Math.round(px * size) + FONT;
+  const w = Math.max(...lines.map(l => ctx.measureText(l).width / px)) + 1.1;
+  ctx.restore();
+  const h = lines.length * 0.72 + 0.7;
+  const cx = ox + b.x + 0.5, top = oy + b.y - (b.kind === 'blob' ? blobR(b) * 0.86 + 0.6 : 2.6);
+  const below = top - h < TOP + 1.2;
+  const by = below ? oy + b.y + (b.kind === 'blob' ? blobR(b) + 0.4 : 2.4) : top - h;
+  const bx = Math.max(0.4, Math.min(SCREEN_COLS - 0.4 - w, cx - w / 2));
+  const pop = G.bossSay.t > 2.45 && G.state !== 'phase' ? 0.6 : 1; // tiny pop-in
+  screenSpace();
+  ctx.save();
+  ctx.translate(cx, below ? by : by + h); ctx.scale(pop, pop); ctx.translate(-cx, -(below ? by : by + h));
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000000'; ctx.lineWidth = 0.1;
+  roundRect(bx, by, w, h, 0.35); ctx.fill();
+  const tx = Math.max(bx + 0.5, Math.min(bx + w - 0.5, cx));
+  ctx.beginPath();
+  if (below) { ctx.moveTo(tx - 0.35, by + 0.05); ctx.lineTo(tx, by - 0.55); ctx.lineTo(tx + 0.35, by + 0.05); }
+  else { ctx.moveTo(tx - 0.35, by + h - 0.05); ctx.lineTo(tx, by + h + 0.55); ctx.lineTo(tx + 0.35, by + h - 0.05); }
+  ctx.fill();
+  ctx.restore();
+  if (pop < 1) return;
+  lines.forEach((l, j) => text(l, bx + w / 2, by + 0.35 + j * 0.72 - 0.14, '#1a0010', 'center', size));
+}
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (G.state === 'menu') { drawMenu(); return; }
+  if (G.state === 'tower') { drawTower(); return; }
+  if (G.state === 'ending') { drawEnding(); return; }
+  drawHUD();
+
+  const stageColor = WALL_COLORS[G.cfg.stage];
+  shakeX = G.shake > 0 ? (Math.random() - 0.5) * 0.5 * Math.min(1, G.shake * 2) : 0;
+  shakeY = G.shake > 0 ? (Math.random() - 0.5) * 0.5 * Math.min(1, G.shake * 2) : 0;
+  const flash = G.state === 'clear' && G.timer > 1 && Math.floor((G.timer - 1) / 0.22) % 2 === 0;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(mazeArt(G.cfg.maze, flash ? '#ffffff' : stageColor), (ox + shakeX) * px, (oy + shakeY) * px, W * px, H * px);
+
+  mazeSpace();
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) { ctx.fillStyle = '#ffb8ff'; ctx.fillRect(house.doorC, house.exitY + 1.38, 2, 0.24); }
+  if (hasFlow && G.state !== 'cast') drawWater();
+  if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
+
+  const pelletOn = G.state !== 'play' || Math.floor(G.t * 5) % 2 === 0;
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const v = G.dots[r * W + c];
+    if (v === 1) { ctx.fillStyle = '#ffb8ae'; ctx.fillRect(c + 0.375, r + 0.375, 0.25, 0.25); }
+    else if (v === 2 && pelletOn) { ctx.fillStyle = '#ffb8ae'; ctx.beginPath(); ctx.arc(c + 0.5, r + 0.5, 0.42, 0, Math.PI * 2); ctx.fill(); }
+    else if (v === 3) drawFrostBerry(c + 0.5, r + 0.5, 1.1);
+    else if (v === 5) drawMagnet(c + 0.5, r + 0.55);
+  }
+
+  if (G.state === 'cast') { ctx.restore(); drawTitle(); return; }
+
+  if (G.fruit) drawFruit(G.fruit.kind, meta.fruit.x, meta.fruit.y);
+  if (G.magnet > 0 && (G.magnet > 1.5 || Math.floor(G.t * 8) % 2)) { // the pull radius, spinning
+    ctx.save(); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 0.08; ctx.setLineDash([0.4, 0.35]); ctx.lineDashOffset = -G.t * 3;
+    ctx.beginPath(); ctx.arc(pac.x + 0.5, pac.y + 0.5, MAGNET_R, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+  for (const f of G.flyDots) { // pulled dots zipping into Pac-Man
+    const k = f.t / 0.25;
+    ctx.fillStyle = '#ffb8ae';
+    ctx.fillRect(f.x + (pac.x - f.x) * k + 0.375, f.y + (pac.y - f.y) * k + 0.375, 0.25, 0.25);
+  }
+  if (G.chill > 0) {
+    ctx.strokeStyle = '#bdf4ff'; ctx.lineWidth = 0.08;
+    const k = 0.3 + (Math.floor(G.t * 6) % 2) * 0.12;
+    for (const w of G.wraiths) if (w.reach && (w.state === 'active' || w.state === 'leave')) for (const t of w.reach) {
+      ctx.beginPath();
+      ctx.moveTo(t.x + 0.5 - k, t.y + 0.5); ctx.lineTo(t.x + 0.5 + k, t.y + 0.5);
+      ctx.moveTo(t.x + 0.5, t.y + 0.5 - k); ctx.lineTo(t.x + 0.5, t.y + 0.5 + k);
+      ctx.stroke();
+    }
+  }
+
+  const showEnemies = G.state === 'ready' || G.state === 'phase' || (G.state === 'dialog' && G.dlg.then === 'ready') || G.state === 'play' || G.state === 'eatpause' || (G.state === 'dying' && G.timer < 1) || (G.state === 'clear' && G.timer < 1);
+  if (G.state === 'dying') {
+    if (G.timer < 1) drawPac(pac.x, pac.y, pac.face, 0.4);
+    else drawPacDeath(pac.x, pac.y, (G.timer - 1) / 1.4);
+  } else if (G.state !== 'over' && G.state !== 'eatpause') {
+    const open = G.state === 'ready' || G.state === 'dialog' ? 0 : (1 - Math.cos(pac.anim * Math.PI * 2 * 0.8)) / 2;
+    ctx.save();
+    pac.trail.forEach((t, i) => {
+      if (i % 2 || Math.abs(t.x - pac.x) > 5) return;
+      ctx.globalAlpha = 0.45 * (1 - i / pac.trail.length);
+      drawPac(t.x, t.y, pac.face, open);
+    });
+    ctx.restore();
+    drawPac(pac.x, pac.y, pac.face, G.state === 'clear' ? 0 : open);
+  }
+  if (showEnemies) {
+    for (const s of G.slimes) if (s.state === 'house') drawSlime(s); // house-bound ones sit behind the ghosts
+    for (const w of G.wraiths) if (w.state === 'house') drawWraith(w);
+    for (const g of G.ghosts) if (g !== G.eatenGhost) drawGhost(g);
+    for (const s of G.slimes) if (s.state !== 'house') drawSlime(s);
+    for (const w of G.wraiths) if (w.state !== 'house') drawWraith(w);
+    for (const m of G.minions) drawGhost({ ...m, frightened: true, eaten: false });
+    for (const h of G.hounds) drawHound(h);
+    for (const s of G.blobules) drawSlime({ ...s, state: 'bit', blue: true });
+    for (const s of G.buddies) drawGhost({ ...s, dir: s.state === 'saved' ? U : s.dir, panic: true, frightened: false, eaten: s.state === 'saved' });
+  }
+  if (G.boss && (showEnemies || G.state === 'clear')) drawBoss(G.boss);
+  if (showEnemies) {
+    for (const o of G.orbs) drawOrb(o);
+    for (const v of G.vents) drawSteam(v);
+  }
+  if (G.cfg.dark && G.state !== 'clear') drawDark();
+  ctx.restore();
+
+  for (const p of G.popups) text(p.text, ox + p.x + 0.5, oy + p.y, p.color, 'center', 0.55);
+  if (G.state === 'ready') drawBanner();
+  if (G.state === 'clear' && G.timer < 1.2 && !G.cfg.boss) {
+    const last = G.lvIndex === LEVELS.length - 1, stageEnd = G.lvIndex < LEVELS.length - 1 && LEVELS[G.lvIndex + 1].stage !== G.cfg.stage;
+    text(last ? 'ALL STAGES CLEAR!' : stageEnd ? `STAGE ${G.cfg.stage} CLEAR!` : 'LEVEL CLEAR!', 14, 19.6, '#ffe600', 'center', 0.8);
+  }
+  if (G.state === 'clear' && G.cfg.boss) {
+    screenSpace();
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(2.5, 14.8, 23, 6.6);
+    ctx.strokeStyle = '#ffd86b'; ctx.lineWidth = 0.12; ctx.strokeRect(2.5, 14.8, 23, 6.6);
+    const blob = G.cfg.boss === 'blob';
+    text(`${BOSSES[G.cfg.boss].name} DEFEATED!`, 14, 15.8, '#ffd86b', 'center', 0.7);
+    if (Math.floor(G.t * 3) % 2 === 0) text(blob ? 'YOU WIN!' : 'VICTORY!', 14, 17.6, '#ffe600', 'center', 1);
+    text(blob ? 'THE FRUIT IS SAVED. AGAIN!' : 'THE FRUIT IS SAVED!', 14, 19.6, '#b9bddc', 'center', 0.5);
+  }
+  if (G.state === 'over') {
+    text('GAME  OVER', 14, 19.6, '#ff2a2a', 'center');
+    if (G.timer > 1.5 && Math.floor(G.t * 2) % 2 === 0) {
+      if (G.cfg.boss && G.lvIndex < ROOF) {
+        const def = BOSSES[G.cfg.boss];
+        text(`ENTER: RETRY FROM PHASE ${bossPhase({ kind: G.cfg.boss, hp: (save.ck && save.ck[G.lvIndex]) || def.hp })}`, 14, 21.6, '#ffffff', 'center', 0.5);
+        text('ESC: BACK TO TOWER', 14, 22.8, '#b9bddc', 'center', 0.45);
+      } else text('ENTER: BACK TO TOWER', 14, 21.6, '#ffffff', 'center', 0.55);
+    }
+  }
+  if (G.bossSay && G.boss && G.boss.state !== 'dead' && (showEnemies || G.state === 'phase')) drawBossSay();
+  if (G.state === 'phase') {
+    const t = 3.4 - G.timer;
+    if (t > 0.3 && Math.floor(G.t * 4) % 4 !== 0) {
+      screenSpace();
+      ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(4, 24.6, 20, 3);
+      const def = BOSSES[G.boss.kind], col = def.colors[G.phaseTo];
+      const tip = G.boss.kind === 'blob' ? (G.phaseTo === 2 ? 'EAT THE GHOSTS BEFORE IT DOES' : 'BITE IT, THEN EAT THE BITS') : def.tips[G.phaseTo];
+      ctx.strokeStyle = col; ctx.lineWidth = 0.14; ctx.strokeRect(4, 24.6, 20, 3);
+      text(`PHASE ${G.phaseTo}`, 14, 25.1, col, 'center', 1);
+      text(tip, 14, 26.5, '#ffffff', 'center', 0.4);
+    }
+  }
+  if (G.state === 'dialog') drawDialog();
+  if (G.paused) {
+    screenSpace();
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(8, 18.5, 12, 3);
+    text('PAUSED', 14, 19.5, '#ffffff', 'center');
+  }
+}
+
+// ---------- Layout ----------
+const main = document.getElementById('main');
+const bar = document.getElementById('bar');
+const dpad = document.getElementById('dpad');
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const cs = getComputedStyle(main);
+  const availW = main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const dpadH = getComputedStyle(dpad).display !== 'none' ? dpad.offsetHeight + 12 : 0;
+  const availH = main.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - bar.offsetHeight - 12 - dpadH;
+  const S = Math.max(6, Math.min(availW / SCREEN_COLS, availH / TOTAL_ROWS));
+  canvas.style.width = (S * SCREEN_COLS) + 'px';
+  canvas.style.height = (S * TOTAL_ROWS) + 'px';
+  canvas.width = Math.round(S * SCREEN_COLS * dpr);
+  canvas.height = Math.round(S * TOTAL_ROWS * dpr);
+  px = canvas.width / SCREEN_COLS;
+}
+window.addEventListener('resize', resize);
+
+// ---------- Input ----------
+const pauseBtn = document.getElementById('pauseBtn');
+const soundBtn = document.getElementById('soundBtn');
+function togglePause() {
+  if (G.state === 'over' || MENU_STATES.has(G.state)) return;
+  G.paused = !G.paused;
+  pauseBtn.textContent = G.paused ? 'RESUME' : 'PAUSE';
+}
+const infBtn = document.getElementById('infBtn');
+function setInfinite(on) {
+  infinite = on;
+  infBtn.textContent = on ? 'INFINITE LIVES: ON' : 'INFINITE LIVES: OFF';
+  infBtn.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('pacman.infinite', on ? '1' : '0'); } catch (e) {}
+}
+// Testing aid: count the current level as cleared and jump to the next one's intro.
+function skipLevel() {
+  if (G.state === 'over' || (MENU_STATES.has(G.state) && G.state !== 'dialog')) return;
+  if (G.paused) togglePause();
+  const i = G.lvIndex;
+  if (i >= ROOF) { loadLevel(i + 1); G.state = 'ready'; G.timer = 2; return; }
+  recordClear(i, 0);
+  startLevel(i + 1);
+}
+function toggleSound() {
+  muted = !muted;
+  soundBtn.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+  audioOn();
+}
+function steer(dir) {
+  audioOn();
+  if (G.state === 'menu') { if (dir === U || dir === D) menuMove(dir === U ? -1 : 1); return; }
+  if (G.state === 'tower') { if (dir === U || dir === D) towerMove(dir === U); return; }
+  if (MENU_STATES.has(G.state) || G.state === 'over') return;
+  if (G.paused) togglePause();
+  if (dir) G.want = dir;
+}
+function confirmKey() {
+  audioOn();
+  switch (G.state) {
+    case 'menu': menuSelect(); break;
+    case 'cast': toMenu(); break;
+    case 'tower': towerEnter(); break;
+    case 'dialog': dialogNext(); break;
+    case 'ending': if (G.timer > 1.5) toTower(ROOF, BLOB_FLOOR); break;
+    case 'over':
+      if (G.timer <= 1.5) break;
+      if (G.lvIndex >= ROOF && G.score > (save.best[ROOF] || 0)) { save.best[ROOF] = G.score; writeSave(); }
+      if (G.cfg.boss && G.lvIndex < ROOF) startLevel(G.lvIndex);
+      else toTower(Math.min(G.lvIndex, ROOF));
+      break;
+    default: togglePause();
+  }
+}
+function backKey() {
+  if (G.state === 'dialog') endDialog();
+  else if (G.state === 'tower' || G.state === 'cast') toMenu();
+  else if (G.state === 'over') { if (G.timer > 1.5) toTower(Math.min(G.lvIndex, ROOF)); }
+  else if (G.state !== 'menu' && G.state !== 'ending' && G.state !== 'over') togglePause();
+}
+const KEYS = { ArrowUp: U, ArrowDown: D, ArrowLeft: L, ArrowRight: R, w: U, s: D, a: L, d: R, W: U, S: D, A: L, D: R };
+window.addEventListener('keydown', e => {
+  if (KEYS[e.key]) { e.preventDefault(); steer(KEYS[e.key]); return; }
+  if (e.key === ' ' && G.state === 'play' && G.cfg.dash && !G.paused) { e.preventDefault(); triggerDash(); return; }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmKey(); return; }
+  if (e.key === 'Escape') { backKey(); return; }
+  if (e.key === 'p' || e.key === 'P') togglePause();
+  if (e.key === 'm' || e.key === 'M') toggleSound();
+  if (e.key === 'i' || e.key === 'I') setInfinite(!infinite);
+  if (e.key === 'n' || e.key === 'N') skipLevel();
+  if ((e.key === 'u' || e.key === 'U') && (G.state === 'tower' || G.state === 'menu')) unlockAll();
+});
+pauseBtn.addEventListener('click', togglePause);
+soundBtn.addEventListener('click', toggleSound);
+infBtn.addEventListener('click', () => setInfinite(!infinite));
+document.getElementById('skipBtn').addEventListener('click', skipLevel);
+document.getElementById('unlockBtn').addEventListener('click', unlockAll);
+try { setInfinite(localStorage.getItem('pacman.infinite') === '1'); } catch (e) { setInfinite(false); }
+
+let swipe = null;
+canvas.addEventListener('pointerdown', e => {
+  canvas.focus();
+  audioOn();
+  swipe = { x: e.clientX, y: e.clientY };
+  const rect = canvas.getBoundingClientRect();
+  const row = (e.clientY - rect.top) / rect.height * TOTAL_ROWS, col = (e.clientX - rect.left) / rect.width * SCREEN_COLS;
+  if (G.state === 'menu') {
+    const k = Math.floor((row - 16.6) / 2.2);
+    if (k >= 0 && k < menuItems().length) {
+      if (k !== G.menu.sel) G.menu.confirm = false;
+      G.menu.sel = k; menuSelect();
+    }
+  } else if (G.state === 'tower') {
+    const f = floorAt(row + towerCam(G.tower.py));
+    if (f === null || !canEnter(f)) return;
+    if (f === G.tower.sel) towerEnter(); else { G.tower.sel = f; SFX.tick(); }
+  } else if (G.state === 'dialog') {
+    if (row > 26.4 && row < 28.4 && col > 19) endDialog(); else dialogNext();
+  } else if (G.state === 'cast' || G.state === 'ending' || G.state === 'over') confirmKey();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!swipe || MENU_STATES.has(G.state)) return;
+  const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return;
+  steer(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? R : L) : (dy > 0 ? D : U));
+  swipe = { x: e.clientX, y: e.clientY };
+});
+window.addEventListener('pointerup', () => { swipe = null; });
+const dashBtn = document.getElementById('dashBtn');
+// The d-pad centre doubles as an OK button on menus, dialog and the tower.
+const menuish = () => MENU_STATES.has(G.state) || G.state === 'over';
+dashBtn.addEventListener('pointerdown', e => { e.preventDefault(); if (menuish()) confirmKey(); else triggerDash(); });
+dpad.querySelectorAll('button[data-dir]').forEach(b => {
+  b.addEventListener('pointerdown', e => { e.preventDefault(); steer(DIR_BY_NAME[b.dataset.dir]); });
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && !G.paused && !MENU_STATES.has(G.state) && G.state !== 'over') togglePause();
+});
+
+// ---------- Boot ----------
+function start(data) {
+  if (data && data.hi > hi) { hi = data.hi; saveHi(); }
+  window.claude?.hot?.snapshot?.(() => ({ hi }));
+  toMenu();
+  resize();
+  if (document.fonts) document.fonts.load('16px "Press Start 2P"').catch(() => {});
+  let last = performance.now(), acc = 0;
+  const DT = 1 / 120;
+  function frame(now) {
+    acc += Math.min(0.1, (now - last) / 1000);
+    last = now;
+    while (acc >= DT) { update(DT); acc -= DT; }
+    render();
+    const ok = menuish(), label = ok ? 'OK' : 'DASH';
+    const dashOff = !ok && !(G.cfg.dash && G.state === 'play' && G.dashCharge >= 1);
+    if (dashBtn.disabled !== dashOff) dashBtn.disabled = dashOff;
+    if (dashBtn.textContent !== label) dashBtn.textContent = label;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  canvas.focus({ preventScroll: true });
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+
+</body></html>
