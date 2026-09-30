@@ -355,7 +355,7 @@ const LEVELS = [
     release: { pinky: 0, inky: 15, clyde: 35 }, intro: ['BONE HALL', 'PELLETS LIGHT UP THE ROOM'] },
   { stage: 7, lv: 3, maze: 'E', ghosts: ALL4, hounds: 1, wraiths: 1, pellets: true, frost: true, dash: true, tier: 2, fright: 5, dark: 4.2, flicker: true, magnets: [[9, 20]],
     vents: { spots: [[6, 11], [21, 11], [3, 20], [24, 20]], period: 6 },
-    release: { pinky: 0, inky: 0, clyde: 20 }, intro: ['PITCH BLACK', 'THE LIGHTS ARE FLICKERING...'] },
+    release: { pinky: 0, inky: 0, clyde: 20 }, intro: ['PITCH BLACK', 'IN THE BLACKOUTS, GHOSTS CREEP'] },
   { stage: 8, lv: 1, maze: 'S', boss: 'blob', ghosts: [], pellets: true, frost: true, dash: true, tier: 2, fright: 6, chill: 4, magnets: [[13, 1]],
     intro: ['THE BIG BLOB', 'PHASE 1: EAT THE DOTS BEFORE IT DOES'] },
 ];
@@ -853,7 +853,7 @@ function resetActors() {
   G.slimes = [];
   for (let i = 0; i < (G.cfg.slimes || 0); i++) G.slimes.push(makeSlime(i, 3 + i * 7));
   G.orbs = []; G.minions = []; G.buddies = []; G.blobules = []; G.waveT = 1.5;
-  G.ventT = 0; G.light = G.cfg.dark || 0;
+  G.ventT = 0; G.light = G.cfg.dark || 0; G.blackout = 0; G.blackT = 7;
   G.hounds = [];
   for (let i = 0; i < (G.cfg.hounds || 0); i++) G.hounds.push(makeHound(i));
   G.magnet = 0; G.flyDots = []; G.pacKey = -1;
@@ -1348,6 +1348,7 @@ function ventsUpdate(dt) {
 // They outrun Pac-Man on the straights but skid at every corner, so a twisty route loses them.
 // A dash leaves no scent, so they stop to sniff before picking your trail up again.
 // The trail they still have to walk is drawn as paw prints.
+const BLACKOUT_TIME = 2.2, BLACKOUT_SLOW = 0.5;
 const HOUND_SPEED = 1.5, HOUND_SKID = 0.25, HOUND_SNIFF = 1.5, HOUND_TRAIL = 120;
 function bfsPath(sx, sy, tx, ty) {
   const key = (c, r) => r * W + c, prev = new Map([[key(sx, sy), -1]]), q = [[sx, sy]];
@@ -1895,6 +1896,11 @@ function play(dt) {
     const want = G.cfg.dark + (G.fright > 0 ? 3.5 : 0);
     G.light += (want - G.light) * Math.min(1, dt * 3);
   }
+  if (G.cfg.flicker) { // every so often the lights die completely and everyone creeps
+    if (G.fright > 0) G.blackout = 0; // a power pellet relights the room
+    else if (G.blackout > 0) G.blackout = Math.max(0, G.blackout - dt);
+    else if (G.fright === 0 && (G.blackT -= dt) <= 0) { G.blackout = BLACKOUT_TIME; G.blackT = 7 + Math.random() * 5; }
+  }
 
   if (G.chill > 0) G.chill = Math.max(0, G.chill - dt);
   if (G.fright > 0) {
@@ -1908,10 +1914,11 @@ function play(dt) {
     }
   }
   releaseCheck(dt);
-  for (const g of G.ghosts) ghostUpdate(g, dt, sp);
-  for (const w of G.wraiths) wraithUpdate(w, dt, sp);
-  for (const s of G.slimes) slimeUpdate(s, dt, sp);
-  for (const h of G.hounds) houndUpdate(h, dt, sp);
+  const edt = G.blackout > 0 ? dt * BLACKOUT_SLOW : dt;
+  for (const g of G.ghosts) ghostUpdate(g, edt, sp);
+  for (const w of G.wraiths) wraithUpdate(w, edt, sp);
+  for (const s of G.slimes) slimeUpdate(s, edt, sp);
+  for (const h of G.hounds) houndUpdate(h, edt, sp);
   if (G.vents.length) ventsUpdate(dt);
   if (G.boss) {
     if (G.boss.kind === 'blob') { blobUpdate(dt, sp); blobCrewUpdate(dt); }
@@ -2531,8 +2538,16 @@ function drawBlob(b) {
 function drawDark() {
   let r = G.light;
   if (G.cfg.flicker && Math.sin(G.t * 23) + Math.sin(G.t * 7.3) > 1.55) r *= 0.55;
+  if (G.blackout > 0) { // pitch black: stutter out, hold, stutter back on
+    const b = G.blackout, edge = b > BLACKOUT_TIME - 0.35 || b < 0.35;
+    if (!edge || Math.floor(G.t * 18) % 2 === 0) r = 0;
+  }
   const cx = pac.x + 0.5, cy = pac.y + 0.5;
-  for (const [rr, a] of [[r, 0.45], [r + 1.1, 0.6], [r + 2.2, 0.72]]) {
+  if (r === 0) { // you can still just make out your own outline
+    ctx.fillStyle = '#000'; ctx.fillRect(-1, -1, W + 2, H + 2);
+    ctx.globalAlpha = 0.3; drawPac(pac.x, pac.y, pac.face, 0.3); ctx.globalAlpha = 1;
+  }
+  else for (const [rr, a] of [[r, 0.45], [r + 1.1, 0.6], [r + 2.2, 0.72]]) {
     ctx.fillStyle = `rgba(0,0,0,${a})`;
     ctx.beginPath(); ctx.rect(-1, -1, W + 2, H + 2); ctx.arc(cx, cy, rr, 0, Math.PI * 2, true); ctx.fill();
   }
@@ -2705,7 +2720,7 @@ function drawHUD() {
   if (G.state === 'cast') return;
   const row = TOP + SCREEN_MAZE_ROWS + 0.5;
   screenSpace();
-  const spare = Math.max(0, G.lives - (G.state === 'dying' || G.state === 'over' ? 0 : 1));
+  const spare = Math.max(0, G.lives - 1); // the life on screen isn't a spare, even mid-death
   if (infinite) {
     drawPac(1.6, row, L, 0.5, 0.7);
     text('x INF', 3.6, row, '#ffe600', 'left', 0.55);
