@@ -762,6 +762,7 @@ const STORY = {
       ['KING', "FRUIT DOESN'T HAVE ANY CALCIUM."],
       ['SKULL', "SILENCE, TENANT!", 'angry'],
       ['NARR', "TIP: POWER UP AND HIT HIM TO KNOCK HIM TO PIECES. ONLY EATEN BONES HURT HIM. THE REST HEAL HIM."],
+      ['NARR', "AND WATCH THE CEILING. HE KEEPS PETS UP THERE."],
     ],
   },
   post: {
@@ -1014,6 +1015,8 @@ const SFX = {
   crumble() { for (let i = 0; i < 5; i++) beep(320 - i * 50, 60, 0.14, 'sawtooth', 0.08, i * 0.05); beep(1800, 200, 0.2, 'square', 0.04); },
   rattle() { for (let i = 0; i < 4; i++) beep(1300 + (i % 2) * 400, 900, 0.035, 'square', 0.05, i * 0.05); },
   tear() { beep(2200, 500, 0.1, 'sawtooth', 0.05); },
+  chant() { [196, 233, 185, 262].forEach((f, i) => beep(f, f * 0.98, 0.28, 'triangle', 0.12, i * 0.28)); beep(98, 90, 1.2, 'sawtooth', 0.05); },
+  thud() { beep(160, 60, 0.15, 'square', 0.09); },
   rumble() { beep(70, 45, 0.6, 'sawtooth', 0.12); beep(110, 60, 0.5, 'square', 0.05, 0.1); },
   whoosh() { beep(260, 900, 0.5, 'triangle', 0.1); beep(420, 1300, 0.4, 'sine', 0.05, 0.1); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
@@ -1057,6 +1060,7 @@ const G = {
   buddies: [], blobules: [], waveT: 0, slurpT: 0,
   gargoyles: [], spiders: [], webs: new Map(), bones: [], gargMoving: false,
   reform: { on: false, every: 8, t: 0, phase: 'idle', quads: [], done: false }, layoutGen: 0,
+  drops: [], centipedes: [], spell: { on: false, t: 0, phase: 'idle', quads: [] },
 };
 const pac = { x: 13.5, y: 23, dir: L, face: L, anim: 0, dash: 0, grace: 0, trail: [] };
 const ghosts = [
@@ -1110,7 +1114,8 @@ function resetActors() {
   G.gargoyles = (G.cfg.gargoyles || []).map(makeGargoyle);
   G.spiders = [];
   for (let i = 0; i < (G.cfg.spiders || 0); i++) G.spiders.push(makeSpider(i));
-  G.webs = new Map(); G.bones = []; G.gargMoving = false;
+  G.webs = new Map(); G.bones = []; G.gargMoving = false; G.drops = []; G.centipedes = [];
+  G.spell = { on: false, t: 0, phase: 'idle', quads: [] };
   G.reform = { on: !!G.cfg.reform, every: G.cfg.reform || 7, t: 0, phase: 'idle', quads: [], done: false };
   if (G.cfg.boss) {
     if (!G.boss) G.boss = { kind: G.cfg.boss, hp: BOSSES[G.cfg.boss].hp, eaten: [] };
@@ -2042,10 +2047,11 @@ const SKULL_LINES = {
   },
   bone: ["GIVE THAT BACK!", "THAT'S MY FEMUR!", "NOT MY TOE BONE!", "I NEEDED THAT ONE!", "DROP IT! BAD PAC-MAN!"],
   rise: ["GOOD AS NEW. MOSTLY.", "WHO TOOK MY RIB?", "BACK ON MY FEET. WELL, FOOT."],
+  spell: ["OSSIUM, MOVEBIMINI!", "BONES OF MY TOWER, REARRANGE!", "RATTLE AND ROLL!", "CRAWL, MY PETS! REDECORATE!"],
   last: "WAIT! LET'S TALK ABOUT A DISCOUNT!",
   phase: {
-    2: "GARGOYLES, YOU'RE FIRED. SPIDERS, YOU'RE HIRED!",
-    3: "ENOUGH! MY CRYPT REBUILDS ITSELF AT MY COMMAND!",
+    2: "GARGOYLES, YOU'RE FIRED. SPIDERS, YOU'RE HIRED! DROP IN ANY TIME.",
+    3: "ENOUGH! COME OUT, MY PETS! REBUILD MY CRYPT!",
   },
   start: "RENT IS DUE, PAC-MAN.",
   taunt: ["LATE FEE!", "EVICTED!", "NO REFUNDS.", "I'LL BE KEEPING YOUR DEPOSIT."],
@@ -2058,7 +2064,7 @@ const BOSSES = {
     tips: { 1: 'STARVE IT', 2: 'EAT THE GHOSTS', 3: 'BITE + EAT BITS' },
     retry: ph => `BACK FOR SECONDS? FINE. WE START AT PHASE ${ph}. I SAVED YOU A SEAT. IN MY STOMACH.` },
   skull: { name: 'SKELETON KING', short: 'SKULL KING', hp: 36, per: 12, gauge: true, colors: ['', '#7dffb0', '#c9a0ff', '#ff5a5a'], lines: SKULL_LINES, speaker: 'SKULL',
-    tips: { 1: 'GARGOYLE GUARDS', 2: 'SPIDERS SPIN WEBS', 3: 'CRYPT REBUILDS' },
+    tips: { 1: 'GARGOYLE GUARDS', 2: 'SPIDERS DROP IN', 3: 'BONE CENTIPEDES' },
     retry: ph => `BACK ALREADY? FINE. WE START AT PHASE ${ph}. I'M ADDING IT TO YOUR RENT.` },
 };
 const bossPhase = b => { const d = BOSSES[b.kind]; return b.hp > d.per * 2 ? 1 : b.hp > d.per ? 2 : 3; };
@@ -2078,7 +2084,8 @@ function bossStep(b, dist, tx, ty) {
 }
 function fireOrb(b, d, lane) {
   const x = d.x ? b.x + d.x * 1.6 : lane ?? Math.round(b.x), y = d.y ? b.y + d.y * 1.6 : lane ?? Math.round(b.y);
-  G.orbs.push({ x, y, dir: d, armed: false, goo: b.kind === 'blob', bone: b.kind === 'skull' });
+  const web = b.kind === 'skull' && bossPhase(b) === 2 && (G.webShot = !G.webShot); // every other throw in phase 2 is a web ball
+  G.orbs.push({ x, y, dir: d, armed: false, goo: b.kind === 'blob', bone: b.kind === 'skull' && !web, web });
   SFX.orb();
 }
 function spawnMinion() {
@@ -2124,6 +2131,7 @@ function bossDie() {
   b.state = 'dead'; b.dead = 0;
   G.orbs = []; G.minions = []; G.blobules = []; G.buddies = []; G.bossSay = null;
   G.bones = []; G.spiders = []; G.gargoyles = []; G.webs = new Map(); G.reform.on = false; G.reform.quads = [];
+  G.drops = []; G.centipedes = []; G.spell.on = false;
   clearCheckpoint();
   addScore(10000); SFX.bossDie();
 }
@@ -2311,37 +2319,69 @@ function blobCrewUpdate(dt) {
 // your row or column. Hit him while powered up and he collapses into a heap; four bones scatter and
 // crawl back to rebuild him. Each bone carries off a share of his health: eat it and that health is
 // gone for good; let it get home and he's whole again, so the hits alone never wear him down.
-// Phase 1 brings gargoyle guards, phase 2 spiders and their webs, phase 3 the shifting bone gates.
+// Phase 1 brings gargoyle guards. Phase 2 drops spiders from the ceiling and turns some of his throws
+// into web balls. Phase 3 he's faster and casts a spell: bone centipedes burrow through two quarters
+// of the crypt, rebuilding the pillars behind them, and his bones run off to hide in those quarters.
 const SKULL_BONES = 4, SKULL_BONE_HP = 1.5, SKULL_RISE = 0.9;
+const DROP_TIME = 1.1, DROP_EVERY = 4, SPIDER_MAX = 3;
+const SPELL_CHANT = 1.3, SPELL_EVERY = 6, CENTI_SPEED = 12, CENTI_LEN = 9, CENTI_GAP = 0.6;
 function skullSetup(ph) {
   G.gargoyles = ph === 1 ? meta.perches.map(makeGargoyle) : [];
-  G.spiders = []; G.webs = new Map(); G.bones = [];
-  Object.assign(G.reform, { on: ph === 3, every: 7, t: 4, phase: 'idle', quads: [] }); // the first rebuild comes quickly
-  if (ph === 2) { spawnSpider(); spawnSpider(); }
+  G.spiders = []; G.webs = new Map(); G.bones = []; G.drops = []; G.centipedes = [];
+  G.spell = { on: ph === 3, t: SPELL_EVERY - 2, phase: 'idle', quads: [] }; // the first spell comes quickly
+  if (ph === 2) { dropSpider(1.2); dropSpider(2.2); }
+  if (G.boss) G.boss.summon = DROP_EVERY;
 }
-function spawnSpider() {
-  const b = G.boss, spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
-  G.spiders.push(makeSpider(G.spiders.length, spots[G.spiders.length % spots.length]));
+// A spider lowers itself on a thread onto a spot a little way ahead of Pac-Man; its shadow shows where.
+function dropSpider(t = DROP_TIME) {
+  const sx = Math.max(0, Math.min(W - 1, Math.round(pac.x))), sy = Math.round(pac.y), f = pac.dir || pac.face;
+  const dist = new Map([[sy * W + sx, 0]]), q = [[sx, sy]], near = [], ahead = [];
+  for (let i = 0; i < q.length; i++) {
+    const [c, r] = q[i], d = dist.get(r * W + c);
+    if (d >= 4 && d <= 7 && !G.drops.some(p => p.x === c && p.y === r)) ((c - sx) * f.x + (r - sy) * f.y > 0 ? ahead : near).push({ x: c, y: r });
+    if (d >= 7) continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = c + dx, nr = r + dy, k = nr * W + nc;
+      if (nc < 0 || nc >= W || dist.has(k) || !pacOK(nc, nr)) continue;
+      dist.set(k, d + 1); q.push([nc, nr]);
+    }
+  }
+  const pool = ahead.length ? ahead : near;
+  if (!pool.length) return;
+  const spot = pool[(Math.random() * pool.length) | 0];
+  G.drops.push({ ...spot, t, t0: t });
+}
+function dropsUpdate(dt) {
+  for (const d of G.drops) if ((d.t -= dt) <= 0) {
+    const s = makeSpider(G.spiders.length, d);
+    s.fresh = 0.35; // a beat to land before it bites
+    G.spiders.push(s); SFX.thud();
+  }
+  G.drops = G.drops.filter(d => d.t > 0);
 }
 function skullUpdate(dt, sp) {
   const b = G.boss;
   if (b.inv > 0) b.inv -= dt;
   const ph = bossPhase(b);
+  if (G.spell.on) spellUpdate(dt);
+  if (ph === 2) {
+    dropsUpdate(dt);
+    if ((b.summon -= dt) <= 0) { if (G.spiders.length + G.drops.length < SPIDER_MAX) dropSpider(); b.summon = DROP_EVERY; }
+  }
   if (b.state === 'pile') { // waits in a heap until every bone is home or eaten
     if (!G.bones.length) { b.state = 'rise'; b.rt = SKULL_RISE; SFX.rattle(); if (!G.bossSay || G.bossSay.t < 1) bossLine(SKULL_LINES.rise); }
     return;
   }
   if (b.state === 'rise') { if ((b.rt -= dt) <= 0) { b.state = 'chase'; b.inv = 1.6; } return; } // a moment's grace to step clear
-  if (G.chill > 0) return;
-  if (ph === 2 && (b.summon -= dt) <= 0) { if (G.spiders.length < 2) spawnSpider(); b.summon = 7; }
+  if (G.chill > 0 || G.spell.phase === 'chant') return; // frozen, or standing still to cast
   if (G.fright > 0) {
     const [tx, ty] = fleeCorner();
     bossStep(b, 0.42 * BASE * dt, tx, ty);
     return;
   }
-  bossStep(b, [0, 0.34, 0.4, 0.46][ph] * BASE * dt, Math.round(pac.x - 0.5), Math.round(pac.y));
-  aimOrbs(b, dt, [0, 2.2, 1.8, 1.3][ph]);
-  if (ph === 3 && (b.burst -= dt) <= 0) { for (const d of ORDER) fireOrb(b, d); b.burst = 5; }
+  bossStep(b, [0, 0.34, 0.4, 0.56][ph] * BASE * dt, Math.round(pac.x - 0.5), Math.round(pac.y));
+  aimOrbs(b, dt, [0, 2.2, 1.6, 0.9][ph]);
+  if (ph === 3 && (b.burst -= dt) <= 0) { for (const d of ORDER) fireOrb(b, d); b.burst = 3; }
 }
 function skullHurt(n) {
   const b = G.boss, before = bossPhase(b);
@@ -2355,17 +2395,28 @@ function hitSkull() {
   b.state = 'pile'; b.inv = 0;
   addScore(1000); SFX.bossHit(); SFX.crumble();
   popup('1000', b.x, b.y - 2, '#ffd86b', 1.5);
+  if (G.spell.on && G.spell.phase === 'idle') castSpell(); // phase 3: his bones go and hide in the quarters he's rebuilding
+  const hide = G.spell.on ? G.spell.quads : [];
   const spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
   for (let k = 0; k < SKULL_BONES; k++) {
-    const s = spots[k % spots.length];
-    G.bones.push({ x: s.x, y: s.y, dir: ORDER[k], decided: -1, t: 0, fresh: 0.5, spin: k * 1.7, share: SKULL_BONE_HP });
+    const s = spots[k % spots.length], q = hide.length ? meta.reform[hide[k % hide.length]] : null;
+    const goal = q && { x: q.c0 + 1 + ((Math.random() * (q.c1 - q.c0 - 1)) | 0), y: q.r0 + 1 + ((Math.random() * (q.r1 - q.r0 - 1)) | 0) };
+    G.bones.push({ x: s.x, y: s.y, dir: ORDER[k], decided: -1, t: 0, fresh: 0.5, spin: k * 1.7, share: SKULL_BONE_HP, goal });
   }
   if (b.hp - pieceRisk(b) <= 6) bossTalk(SKULL_LINES.last); else bossLine(SKULL_LINES.hit[bossPhase(b)]);
 }
-// Bones fly apart, each its own way, then crawl back to the heap (or give up and slide home after a while).
+// Bones fly apart, each its own way (or off toward a hiding spot), then crawl back to the heap, or give
+// up and slide home after a while.
+const BONE_HIDE = 4;
 function boneAtCenter(s) {
   const opts = ORDER.filter(d => d !== s.dir.o && ghostOK(s.x + d.x, s.y + d.y));
   if (!opts.length) { s.dir = s.dir.o; return true; }
+  if (s.goal && s.t < BONE_HIDE) {
+    let best = opts[0], bd = Infinity;
+    for (const d of opts) { const dd = Math.hypot(s.x + d.x - s.goal.x, s.y + d.y - s.goal.y) + Math.random() * 0.8; if (dd < bd) { bd = dd; best = d; } }
+    s.dir = best;
+    return true;
+  }
   if (s.t < 1.5) { if (!opts.includes(s.dir)) s.dir = opts[(Math.random() * opts.length) | 0]; return true; }
   return bitAtCenter(s);
 }
@@ -2375,10 +2426,95 @@ function bonesUpdate(dt) {
     s.t += dt;
     if (s.fresh > 0) s.fresh -= dt;
     if (G.chill > 0) continue;
-    step(s, (s.t < 0.8 ? 0.9 : 0.45) * BASE * dt, boneAtCenter, false);
-    if (s.t > 1.5 && (Math.hypot(s.x - b.x, s.y - b.y) < 1.6 || s.t > 7)) { s.state = 'home'; SFX.rattle(); popup('HEALED', b.x, b.y - 1.6, '#7dffb0', 0.8); }
+    const hiding = s.goal && s.t < BONE_HIDE;
+    step(s, (hiding ? 0.7 : s.t < 0.8 ? 0.9 : 0.45) * BASE * dt, boneAtCenter, false);
+    const away = s.goal ? BONE_HIDE : 1.5;
+    if (s.t > away && (Math.hypot(s.x - b.x, s.y - b.y) < 1.6 || s.t > away + 6)) { s.state = 'home'; SFX.rattle(); popup('HEALED', b.x, b.y - 1.6, '#7dffb0', 0.8); }
   }
   G.bones = G.bones.filter(s => s.state !== 'home');
+}
+
+// The spell: the King stops and chants, then a bone centipede bursts out of the wall in each of two
+// quarters and zigzags across it, three rows per sweep. Every pillar within reach of its head is rebuilt
+// as it passes, so the new layout appears right behind it. Its body is deadly; a dash gets you through.
+function castSpell() {
+  const S = G.spell;
+  Object.assign(S, { phase: 'chant', t: 0, quads: shuffled([0, 1, 2, 3]).slice(0, 2) });
+  bossLine(SKULL_LINES.spell); SFX.chant();
+}
+function spellUpdate(dt) {
+  const S = G.spell;
+  S.t += dt;
+  if (G.layoutDirty && G.t - (G.layoutAt || 0) > 0.1) { // redraw the walls a few times a second while they change
+    G.layoutDirty = false; G.layoutAt = G.t; G.layoutGen++;
+    for (const k in artCache) if (k.startsWith(G.cfg.maze + '#')) delete artCache[k];
+  }
+  if (S.phase === 'idle') { if (S.t >= SPELL_EVERY && G.boss.state === 'chase') castSpell(); return; }
+  if (S.phase === 'chant') {
+    if (S.t < SPELL_CHANT) return;
+    // Roll the new layout for both quarters now (checked as a whole), then let the centipedes lay it down.
+    const g = M.map(r => [...r]), keep = M.map(r => [...r]);
+    let ok = false;
+    for (let tries = 0; tries < 30 && !ok; tries++) {
+      for (const qi of S.quads) fillPillars(g, meta.reform[qi]);
+      ok = allReachable(g) && S.quads.every(qi => region(g, meta.reform[qi]) !== region(keep, meta.reform[qi]));
+    }
+    if (!ok) { Object.assign(S, { phase: 'idle', t: 0 }); return; }
+    G.centipedes = S.quads.map(qi => makeCentipede(meta.reform[qi], g));
+    Object.assign(S, { phase: 'crawl', t: 0 });
+    SFX.rumble();
+    return;
+  }
+  if (S.phase === 'crawl') {
+    for (const cp of G.centipedes) if (G.chill <= 0) centipedeUpdate(cp, dt);
+    G.centipedes = G.centipedes.filter(cp => cp.d - CENTI_LEN * CENTI_GAP < cp.len);
+    if (!G.centipedes.length) Object.assign(S, { phase: 'idle', t: 0 });
+  }
+}
+function makeCentipede(q, g) {
+  const rows = [];
+  for (let r = q.r0 + 1; r - 1 <= q.r1; r += 3) rows.push(r);
+  const left = q.c0 < W / 2, outer = left ? q.c0 - 1 : q.c1 + 1, inner = left ? q.c1 : q.c0; // out of the side wall, sweep across and back
+  const edge = left ? q.c0 : q.c1, pts = [];
+  rows.forEach((r, i) => { const [a, b] = i % 2 ? [inner, edge] : [i ? edge : outer, inner]; pts.push({ x: a, y: r }, { x: b, y: r }); });
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) len += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+  const next = [];
+  for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) next.push(g[r][c]);
+  return { q, pts, len, d: 0, next, laid: new Uint8Array(next.length) };
+}
+// Position (and heading) a given distance along the centipede's zigzag.
+function centiAt(cp, d) {
+  d = Math.max(0, Math.min(cp.len, d));
+  for (let i = 1; i < cp.pts.length; i++) {
+    const a = cp.pts[i - 1], b = cp.pts[i], l = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+    if (d <= l || i === cp.pts.length - 1) { const k = l ? Math.min(1, d / l) : 0; return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, dx: Math.sign(b.x - a.x), dy: Math.sign(b.y - a.y) }; }
+    d -= l;
+  }
+}
+function centipedeUpdate(cp, dt) {
+  cp.d += CENTI_SPEED * dt;
+  const h = centiAt(cp, cp.d), q = cp.q, w = q.c1 - q.c0 + 1;
+  const done = cp.d >= cp.len;
+  let changed = false;
+  for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) {
+    const i = (r - q.r0) * w + (c - q.c0);
+    if (cp.laid[i] || !(done || (Math.abs(c - h.x) <= 1.5 && Math.abs(r - h.y) <= 1.5))) continue;
+    cp.laid[i] = 1;
+    if (M[r][c] === cp.next[i]) continue;
+    M[r] = M[r].slice(0, c) + cp.next[i] + M[r].slice(c + 1);
+    changed = true;
+  }
+  if (!changed) return;
+  mapMaze(); G.layoutDirty = true;
+  for (const e of [pac, ...G.bones, ...G.spiders.filter(s => s.state === 'active')]) unstick(e);
+  for (const k of [...G.webs.keys()]) if (tile(k % W, Math.floor(k / W)) === '#') G.webs.delete(k);
+}
+// Every body segment that's out of the ground: head first, then the rest trailing along the path.
+function centiSegments(cp) {
+  const out = [];
+  for (let i = 0; i < CENTI_LEN; i++) { const d = cp.d - i * CENTI_GAP; if (d >= 0 && d <= cp.len) out.push({ ...centiAt(cp, d), i }); }
+  return out;
 }
 
 // Freeze the action for a phase change: the boss rages, the bar turns over, and the save checkpoints.
@@ -2408,11 +2544,17 @@ function orbsUpdate(dt) {
     o.x += o.dir.x * d; o.y += o.dir.y * d;
     if (o.x < -1 || o.x > W || o.y < -1 || o.y > H) return false;
     const wall = tile(Math.round(o.x), Math.round(o.y)) === '#';
-    if (!wall) o.armed = true; // orbs leave the boss through pillars, then stop at the first wall
+    if (!wall) { o.armed = true; o.cx = Math.round(o.x); o.cy = Math.round(o.y); } // orbs leave the boss through pillars, then stop at the first wall
+    if (wall && o.armed && o.web) splatWeb(o.cx, o.cy);
     return !(wall && o.armed);
   });
 }
 
+// A web ball bursts into a 3x3 patch of web where it lands.
+function splatWeb(c, r) {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) spinWeb(c + dx, r + dy);
+  SFX.tear();
+}
 function releaseCheck(dt) {
   const g = [pinky, inky, clyde].find(g => G.ghosts.includes(g) && g.mode === 'house');
   if (!g) { G.globalMode = false; return; }
@@ -2696,7 +2838,10 @@ function play(dt) {
     G.state = 'dying'; G.timer = 0;
     return;
   }
-  if (!safe && G.orbs.some(o => Math.abs(o.x - pac.x) < 0.55 && Math.abs(o.y - pac.y) < 0.55)) { G.state = 'dying'; G.timer = 0; }
+  for (const o of G.orbs) if (o.web && Math.abs(o.x - pac.x) < 0.6 && Math.abs(o.y - pac.y) < 0.6) { splatWeb(Math.round(pac.x), Math.round(pac.y)); o.gone = true; } // webs you, doesn't hurt
+  G.orbs = G.orbs.filter(o => !o.gone);
+  for (const cp of G.centipedes) if (!safe && centiSegments(cp).some(s => Math.abs(s.x - pac.x) < 0.65 && Math.abs(s.y - pac.y) < 0.65)) { G.state = 'dying'; G.timer = 0; return; }
+  if (!safe && G.orbs.some(o => !o.web && Math.abs(o.x - pac.x) < 0.55 && Math.abs(o.y - pac.y) < 0.55)) { G.state = 'dying'; G.timer = 0; }
 }
 
 function update(dt) {
@@ -2976,6 +3121,14 @@ function drawBoss(b) {
   }
 }
 function drawOrb(o) {
+  if (o.web) { // a spinning ball of silk
+    const cx = o.x + 0.5, cy = o.y + 0.5, a = G.t * 6;
+    ctx.fillStyle = '#e6e9ff'; ctx.beginPath(); ctx.arc(cx, cy, 0.32, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#9a8fc0'; ctx.lineWidth = 0.05; ctx.beginPath();
+    for (let i = 0; i < 3; i++) { const t = a + i * Math.PI / 3; ctx.moveTo(cx - Math.cos(t) * 0.32, cy - Math.sin(t) * 0.32); ctx.lineTo(cx + Math.cos(t) * 0.32, cy + Math.sin(t) * 0.32); }
+    ctx.stroke();
+    return;
+  }
   if (o.bone) { drawBone(o.x + 0.5, o.y + 0.5, G.t * 12, 1.1, '#ff9a6b'); return; } // thrown bones spin, and burn orange
   const big = Math.floor(G.t * 12) % 2;
   ctx.fillStyle = o.goo ? '#8dff5c' : '#ff5ce1';
@@ -3111,39 +3264,102 @@ function drawSkull(b) {
     drawSkullHead(cx + shake, cy + 0.2 - k * 0.8, 0.72 + k * 0.28, 0.45 * (1 - k), bone, glow, ph, false, false, ice);
     return;
   }
+  if (b === G.boss && G.spell.phase === 'chant') { // casting: runes wheel around him
+    const k = G.spell.t / SPELL_CHANT;
+    ctx.strokeStyle = def.colors[3]; ctx.lineWidth = 0.1; ctx.globalAlpha = 0.5 + 0.5 * Math.sin(G.t * 20);
+    ctx.beginPath(); ctx.arc(cx, cy, 2 + k * 0.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = def.colors[3];
+    for (let i = 0; i < 6; i++) { const a = G.t * 3 + i * Math.PI / 3; ctx.fillRect(cx + Math.cos(a) * (2 + k * 0.8) - 0.12, cy + Math.sin(a) * (2 + k * 0.8) - 0.12, 0.24, 0.24); }
+    ctx.globalAlpha = 1;
+  }
   ctx.strokeStyle = bone; ctx.lineWidth = 0.18; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(cx, cy + 0.1); ctx.lineTo(cx, cy + 1.4); ctx.stroke(); // spine
   for (let i = 0; i < 3; i++) { // ribs
     const y = cy + 0.45 + i * 0.3, w = 0.8 - i * 0.15;
     ctx.beginPath(); ctx.moveTo(cx - w, y + 0.12); ctx.quadraticCurveTo(cx, y - 0.2, cx + w, y + 0.12); ctx.stroke();
   }
-  const wave = G.chill > 0 ? 0 : Math.sin(G.t * 6) * 0.2;
-  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 0.75, cy + 0.4); ctx.lineTo(cx + s * 1.3, cy + 0.95 + s * wave); ctx.lineTo(cx + s * 1.5, cy + 0.35 + s * wave); ctx.stroke(); }
+  const wave = G.chill > 0 ? 0 : Math.sin(G.t * 6) * 0.2, up = b === G.boss && G.spell.phase === 'chant' ? -1.3 : 0;
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 0.75, cy + 0.4); ctx.lineTo(cx + s * 1.3, cy + 0.95 + s * wave + up); ctx.lineTo(cx + s * 1.5, cy + 0.35 + s * wave + up * 1.4); ctx.stroke(); }
   drawSkullHead(cx, cy - 0.55, 1, 0, bone, glow, ph, fr, flash, ice);
 }
-// The cloud cover over quarters that are about to rebuild: a blanket that swells in, holds while the
-// maze changes underneath, then thins away. Characters stay visible on top of it; the walls don't.
-const PUFFS = (() => {
-  let s = 5; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  return Array.from({ length: 34 }, () => ({ x: rnd(), y: rnd(), s: rnd() }));
-})();
+// The cloud cover over quarters that are about to rebuild. Puffs drift in from the nearest edge of the
+// quarter, outer ones first, until they close over it; they hold while the maze changes underneath,
+// then thin out one by one and blow away. Characters stay visible on top; the walls don't.
+function cloudPuffs(q) {
+  if (q.puffs) return q.puffs;
+  let s = q.c0 * 31 + q.r0 * 7 + 11; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const out = [], w = q.c1 - q.c0 + 1, h = q.r1 - q.r0 + 1, deep = Math.min(w, h) / 2;
+  for (let y = q.r0 + 0.3; y <= q.r1 + 0.9; y += 1.4) for (let x = q.c0 + 0.3; x <= q.c1 + 0.9; x += 1.4) {
+    const px = x + (rnd() - 0.5) * 0.6, py = y + (rnd() - 0.5) * 0.6;
+    const dl = px - q.c0, dr = q.c1 + 1 - px, du = py - q.r0, dd = q.r1 + 1 - py, m = Math.min(dl, dr, du, dd);
+    const [ex, ey] = m === dl ? [-1, 0] : m === dr ? [1, 0] : m === du ? [0, -1] : [0, 1];
+    out.push({ x: px, y: py, r: 1.15 + rnd() * 0.45, ex, ey, depth: Math.min(1, m / deep), lag: rnd(), bob: rnd() * 6 });
+  }
+  return (q.puffs = out);
+}
 function drawReform() {
   const R = G.reform;
   if (!R.quads.length) return;
-  const a = R.phase === 'in' ? R.t / REFORM_IN : R.phase === 'hold' ? 1 : R.phase === 'out' ? 1 - R.t / REFORM_OUT : 0;
-  const dust = G.cfg.boss === 'skull', light = dust ? '#cbbd92' : '#e6ecff', shade = dust ? '#7d7254' : '#9fb0f0';
+  const ease = k => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
   for (const qi of R.quads) {
-    const q = meta.reform[qi], w = q.c1 - q.c0 + 1, h = q.r1 - q.r0 + 1;
+    const q = meta.reform[qi], puffs = cloudPuffs(q);
+    const place = p => { // how far this puff is in (0 = out of sight, 1 = settled), and where it is
+      if (R.phase === 'in') { const k = ease((R.t / REFORM_IN - p.depth * 0.45 - p.lag * 0.15) / 0.4); return { k, x: p.x + p.ex * (1 - k) * 4, y: p.y + p.ey * (1 - k) * 4 }; }
+      if (R.phase === 'out') { const k = 1 - ease((R.t / REFORM_OUT - p.lag * 0.55) / 0.45); return { k, x: p.x + (1 - k) * 2.2, y: p.y - (1 - k) * 0.8 }; }
+      return { k: 1, x: p.x, y: p.y };
+    };
+    const at = puffs.map(p => ({ p, ...place(p) }));
     ctx.save();
-    ctx.globalAlpha = Math.min(1, a * 1.15);
-    ctx.fillStyle = shade; roundRect(q.c0 + 0.5 - 0.5 * a, q.r0 + 0.5 - 0.5 * a, w - 1 + a, h - 1 + a, 1); ctx.fill();
-    ctx.fillStyle = light;
-    PUFFS.forEach((p, k) => {
-      const x = q.c0 + p.x * w, y = q.r0 + p.y * h + Math.sin(G.t * 1.3 + k) * 0.2, r = (0.9 + p.s * 1.3) * (0.3 + 0.7 * a);
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    });
+    ctx.fillStyle = '#8f9fe0'; // shadow side first, so the whole bank reads as one mass
+    for (const { p, k, x, y } of at) { if (k <= 0) continue; ctx.globalAlpha = k; ctx.beginPath(); ctx.arc(x + 0.15, y + 0.25 + Math.sin(G.t + p.bob) * 0.1, p.r * (0.55 + 0.45 * k), 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#e6ecff';
+    for (const { p, k, x, y } of at) { if (k <= 0) continue; ctx.globalAlpha = k; ctx.beginPath(); ctx.arc(x, y + Math.sin(G.t + p.bob) * 0.1, p.r * (0.5 + 0.45 * k), 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#ffffff';
+    for (const { p, k, x, y } of at) { if (k < 0.6 || p.lag < 0.5) continue; ctx.globalAlpha = (k - 0.6) * 1.5; ctx.beginPath(); ctx.arc(x - p.r * 0.3, y - p.r * 0.3 + Math.sin(G.t + p.bob) * 0.1, p.r * 0.35, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   }
+}
+// A bone centipede: a crowned skull head with snapping mandibles, vertebrae behind, legs scuttling.
+function drawCentipede(cp) {
+  const segs = centiSegments(cp), frame = Math.floor(G.t * 14) % 2, ice = iceOn();
+  const bone = ice ? '#bdf4ff' : '#ece6cf', dark = ice ? '#4a7f99' : '#5a4a2a';
+  const start = cp.pts[0];
+  if (cp.d < 2.5) { ctx.fillStyle = '#5c5038'; for (const [dx, dy] of [[-0.3, -0.5], [0.4, 0.3], [0, 0.6], [-0.5, 0.2]]) ctx.fillRect(start.x + 0.5 + dx - 0.15, start.y + 0.5 + dy - 0.15, 0.3, 0.3); } // rubble where it burst out
+  for (let k = segs.length - 1; k >= 0; k--) {
+    const s = segs[k], cx = s.x + 0.5, cy = s.y + 0.5, px = -s.dy, py = s.dx; // across the body
+    ctx.strokeStyle = bone; ctx.lineWidth = 0.1; ctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      const kick = (s.i + frame) % 2 ? 0.18 : -0.12;
+      ctx.beginPath(); ctx.moveTo(cx + px * side * 0.3, cy + py * side * 0.3);
+      ctx.lineTo(cx + px * side * 0.75 + s.dx * kick, cy + py * side * 0.75 + s.dy * kick); ctx.stroke();
+    }
+    if (s.i === 0) {
+      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(cx, cy, 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a0010';
+      for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(cx + s.dx * 0.15 + px * side * 0.22, cy + s.dy * 0.15 + py * side * 0.22, 0.13, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = ice ? '#e6fbff' : '#ff3b3b';
+      for (const side of [-1, 1]) ctx.fillRect(cx + s.dx * 0.15 + px * side * 0.22 - 0.05, cy + s.dy * 0.15 + py * side * 0.22 - 0.05, 0.1, 0.1);
+      ctx.strokeStyle = bone; ctx.lineWidth = 0.12; // mandibles
+      const bite = frame ? 0.3 : 0.12;
+      for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s.dx * 0.45 + px * side * 0.2, cy + s.dy * 0.45 + py * side * 0.2); ctx.lineTo(cx + s.dx * 0.8 + px * side * bite, cy + s.dy * 0.8 + py * side * bite); ctx.stroke(); }
+    } else {
+      ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(cx, cy, 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(cx, cy, 0.34, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = dark; ctx.fillRect(cx - 0.06, cy - 0.06, 0.12, 0.12);
+    }
+  }
+}
+// A spider on its way down: the thread from above, the spider sliding down it, and a shadow that grows
+// where it'll land.
+function drawDrop(d) {
+  const k = 1 - d.t / d.t0, x = d.x + 0.5, y = d.y + 0.5;
+  const blink = Math.floor(G.t * 10) % 2; // the landing mark: a purple ring (a plain shadow would vanish on the black floor)
+  ctx.fillStyle = `rgba(201,160,255,${0.15 + 0.3 * k})`; ctx.strokeStyle = blink ? '#ffffff' : '#c9a0ff'; ctx.lineWidth = 0.08;
+  ctx.beginPath(); ctx.ellipse(x, y + 0.3, 0.3 + 0.45 * k, 0.15 + 0.2 * k, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  const sy = d.y - (1 - k) * 8;
+  ctx.strokeStyle = 'rgba(230,233,255,0.6)'; ctx.lineWidth = 0.04;
+  ctx.beginPath(); ctx.moveTo(x, -1); ctx.lineTo(x, sy + 0.2); ctx.stroke();
+  drawSpider({ x: d.x, y: sy, dir: D, state: 'active', fresh: 0 });
 }
 function drawWebs() {
   ctx.save();
@@ -4119,6 +4335,8 @@ function render() {
     for (const m of G.minions) drawGhost({ ...m, frightened: true, eaten: false });
     for (const h of G.hounds) drawHound(h);
     for (const s of G.spiders) drawSpider(s);
+    for (const d of G.drops) drawDrop(d);
+    for (const cp of G.centipedes) drawCentipede(cp);
     for (const g of G.gargoyles) drawGargoyle(g);
     for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) drawBone(s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
     for (const s of G.blobules) drawSlime({ ...s, state: 'bit', blue: true });
