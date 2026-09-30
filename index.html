@@ -2867,7 +2867,7 @@ function drawMenu() {
     text(save.won ? 'THE BLOB IS BEATEN! ROOF OPEN' : `REACHED ${floorLabel(save.unlocked)}: ${FLOOR_NAMES[save.unlocked]}`, 14, pr, save.won ? '#ffd86b' : '#6b6f93', 'center', 0.42);
   }
   if (G.menu.confirm && blink) text('THIS ERASES YOUR SAVE. PRESS AGAIN', 14, pr + 1.4, '#ff2a2a', 'center', 0.42);
-  text('A GOOFY GHOST STORY IN TWENTY FLOORS', 14, 31, '#6b6f93', 'center', 0.4);
+  text('A GOOFY GHOST STORY IN 21 FLOORS', 14, 31, '#6b6f93', 'center', 0.4);
   const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   text(coarse ? 'TAP TO CHOOSE' : 'UP/DOWN + ENTER', 14, 33, '#b9bddc', 'center', 0.45);
 }
