@@ -500,7 +500,7 @@ const STORY = {
       ['NARR', "B4: THE KENNEL. SOMETHING IN HERE HAS BEEN CHEWING ON THE PIPES."],
       ['HOUND', "ARF! SNIFF SNIFF... SNIFF. SMELLS LIKE WAKKA."],
       ['CLYDE', "THAT'S THE BLOB'S BLOODHOUND! HE DOESN'T CHASE YOU. HE FOLLOWS YOUR SMELL!", 'scared'],
-      ['NARR', "SEE THE PAW PRINTS? THAT'S YOUR SCENT. HE WALKS EVERY STEP OF IT, IN ORDER."],
+      ['NARR', "SEE THE PAW PRINTS BEHIND YOU? THAT'S YOUR SCENT. HE WALKS EVERY STEP OF IT."],
       ['NARR', "IN A LONG STRAIGHT HALL HE'S FASTER THAN YOU. BUT HE SKIDS ON EVERY CORNER."],
       ['NARR', "SO TAKE THE STAIRS. ZIGZAG AND HE SLIPS ON EACH STEP."],
       ['NARR', "IF HE GETS CLOSE, DASH. A DASH LEAVES NO SCENT, SO HE HAS TO STOP AND SNIFF."],
@@ -1380,8 +1380,9 @@ function houndsTrack(dashing) {
       if (h.sniff <= 0) { h.sniff = HOUND_SNIFF; popup('?', h.x, h.y - 1, '#ffd23f', HOUND_SNIFF); }
       h.trail = [];
     } else if (h.sniff <= 0 && !h.lost) {
-      const p = pacTile(), last = h.trail[h.trail.length - 1];
-      if (!last || last.x !== p.x || last.y !== p.y) h.trail.push(p);
+      const p = pacTile(), back = h.trail.findIndex(t => t.x === p.x && t.y === p.y);
+      if (back >= 0) h.trail.length = back + 1; // doubled back: the loop drops out of the scent
+      else h.trail.push(p);
       if (h.trail.length > HOUND_TRAIL) reScent(h); // hopelessly far behind: cut across to the fresh scent
     }
   }
@@ -1465,8 +1466,8 @@ function houndUpdate(h, dt, sp) {
 }
 
 // Dot Magnet: for a few seconds every dot near Pac-Man flies straight into his mouth.
-// It reels them in one at a time, nearest first, about 14 a second.
-const MAGNET_TIME = 6, MAGNET_R = 2.8, MAGNET_RATE = 14;
+// It reels them in one at a time, nearest first, about 40 a second.
+const MAGNET_TIME = 6, MAGNET_R = 4, MAGNET_RATE = 40, MAGNET_FLY = 0.15;
 function magnetUpdate(dt) {
   G.magnet = Math.max(0, G.magnet - dt);
   G.pull = Math.min(1, (G.pull || 0) + dt * MAGNET_RATE);
@@ -1883,7 +1884,7 @@ function play(dt) {
   if (G.state !== 'play') return;
   if (G.magnet > 0) { magnetUpdate(dt); if (G.state !== 'play') return; }
   for (const f of G.flyDots) f.t += dt;
-  G.flyDots = G.flyDots.filter(f => f.t < 0.25);
+  G.flyDots = G.flyDots.filter(f => f.t < MAGNET_FLY);
   if (G.hounds.length) {
     const p = pacTile(), k = p.y * W + p.x;
     if (k !== G.pacKey && pac.x > -0.5 && pac.x < W - 0.5) { G.pacKey = k; houndsTrack(dashing); }
@@ -2317,19 +2318,21 @@ function drawOrb(o) {
   ctx.fillRect(o.x + 0.4, o.y + 0.4, 0.2, 0.2);
 }
 // ---------- Basement sprites ----------
-// The scent a hound is still following: paw prints on each tile of your trail, fading toward the dog.
+// Your freshest scent: paw prints on the last few tiles of the trail, fading as they age.
+const SCENT_PRINTS = 5;
 function drawScent(h) {
   if (h.state !== 'hunt' || h.lost || G.fright > 0 || !h.trail.length) return;
   ctx.save();
   ctx.fillStyle = '#ffb46b';
-  let prev = { x: h.x, y: h.y };
-  h.trail.forEach((t, i) => {
-    const dx = t.x - prev.x, dy = t.y - prev.y;
+  const n = h.trail.length, from = Math.max(0, n - SCENT_PRINTS);
+  let prev = from ? h.trail[from - 1] : { x: h.x, y: h.y };
+  h.trail.slice(from).forEach((t, k) => {
+    const i = from + k, dx = t.x - prev.x, dy = t.y - prev.y;
     prev = t;
     if (Math.abs(dx) > 2) return; // wrapped through a tunnel
     const len = Math.hypot(dx, dy) || 1, fx = dx / len, fy = dy / len, side = i % 2 ? 1 : -1;
     const cx = t.x + 0.5 - fy * side * 0.16, cy = t.y + 0.5 + fx * side * 0.16;
-    ctx.globalAlpha = 0.35 + 0.45 * Math.min(1, (i + 1) / 8);
+    ctx.globalAlpha = 0.7 * (k + 1) / (n - from);
     ctx.beginPath(); ctx.ellipse(cx - fx * 0.03, cy - fy * 0.03, 0.15, 0.15, 0, 0, Math.PI * 2); ctx.fill();
     for (const k of [-1, 0, 1]) { // three toes, pointing along the trail
       const a = Math.atan2(fy, fx) + k * 0.6;
@@ -3081,7 +3084,7 @@ function render() {
     ctx.beginPath(); ctx.arc(pac.x + 0.5, pac.y + 0.5, MAGNET_R, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
   }
   for (const f of G.flyDots) { // pulled dots zipping into Pac-Man
-    const k = f.t / 0.25;
+    const k = f.t / MAGNET_FLY;
     ctx.fillStyle = '#ffb8ae';
     ctx.fillRect(f.x + (pac.x - f.x) * k + 0.375, f.y + (pac.y - f.y) * k + 0.375, 0.25, 0.25);
   }
