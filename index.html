@@ -127,7 +127,7 @@
 
 // ---------- Mazes ----------
 // Each maze is written as its left half and mirrored. '.' dot, 'o' power pellet,
-// '*' frost berry, '-' ghost-house door, 'a'/'b' cloud walls that take turns being solid. Pellets and berries only appear on levels
+// '*' frost berry, '-' ghost-house door. Pellets and berries only appear on levels
 // that enable them; otherwise they become plain dots.
 // MAZES-START
 const mirror = rows => rows.map(r => r + [...r].reverse().join(''));
@@ -164,6 +164,22 @@ const CLASSIC = [
   "#.............",
   "##############",
 ];
+// Quarters of a maze that can rebuild mid-level (see "Reforming mazes"). Lattice quarters lay corridors
+// along the given rows and columns; ports are junctions with a fixed way out of the quarter, anchors
+// the ports into the fixed middle band (the other ports only cross to the next quarter, which may be
+// rebuilt too), and fixed tiles never change. Pillar quarters drop 2x2 pillars at the given slot corners.
+const CLOUD_QUADS = [
+  { c0: 1, c1: 13, r0: 1, r1: 8, cols: [1, 6, 9, 12], rows: [1, 5, 8], ports: ['12,5', '6,8', '12,8'], anchors: ['6,8', '12,8'], fixed: [[13, 5]] },
+  { c0: 14, c1: 26, r0: 1, r1: 8, cols: [15, 18, 21, 26], rows: [1, 5, 8], ports: ['15,5', '21,8', '15,8'], anchors: ['21,8', '15,8'], fixed: [[14, 5]] },
+  { c0: 1, c1: 13, r0: 20, r1: 29, cols: [1, 3, 6, 9, 12], rows: [20, 23, 26, 29], ports: ['6,20', '9,20', '12,23', '12,29'], anchors: ['6,20', '9,20'], fixed: [[13, 23], [13, 29]] },
+  { c0: 14, c1: 26, r0: 20, r1: 29, cols: [15, 18, 21, 24, 26], rows: [20, 23, 26, 29], ports: ['21,20', '18,20', '15,23', '15,29'], anchors: ['21,20', '18,20'], fixed: [[14, 23], [14, 29]] },
+].map(q => ({ ...q, kind: 'lattice' }));
+const CRYPT_QUADS = [
+  { c0: 1, c1: 13, r0: 1, r1: 13, sc: [2, 5, 8, 11], sr: [2, 5, 8, 11] },
+  { c0: 14, c1: 26, r0: 1, r1: 13, sc: [15, 18, 21, 24], sr: [2, 5, 8, 11] },
+  { c0: 1, c1: 13, r0: 15, r1: 27, sc: [2, 5, 8, 11], sr: [16, 19, 22, 25] },
+  { c0: 14, c1: 26, r0: 15, r1: 27, sc: [15, 18, 21, 24], sr: [16, 19, 22, 25] },
+].map(q => ({ ...q, kind: 'pillars' }));
 const MAZES = {
   A: { rows: mirror([
     "#########",
@@ -366,103 +382,43 @@ const MAZES = {
     "#...#....#...#",
     "##############",
   ]), pac: { x: 13.5, y: 22 }, fruit: { x: 13.5, y: 17 } },
-  // Cloud Deck mazes: 'a' and 'b' are cloud walls that take turns being solid.
-  N: { rows: mirror([
-    "##############",
-    "#o.......a...#",
-    "#.####.#####.#",
-    "#.####b#####.#",
-    "#.####.#####.#",
-    "#..a..........",
-    "#.##b#.##.####",
-    "#.##b#.##.####",
-    "#......##b...#",
-    "######.##### #",
-    "     #.##### #",
-    "     #.##     ",
-    "     #.## ###-",
-    "######.## #   ",
-    "      .   #   ",
-    "######.## #   ",
-    "     #.## ####",
-    "     #.##     ",
-    "     #.## ####",
-    "######.## ####",
-    "#........b...#",
-    "#.####.#a###.#",
-    "#.####a#a###.#",
-    "#o..##....... ",
-    "###.##.##.####",
-    "###.##.##.####",
-    "#..b...##....#",
-    "#.####b#####.#",
-    "#.####b#####.#",
-    "#.....a.......",
-    "##############",
-  ]), pac: { x: 13.5, y: 23 }, fruit: { x: 13.5, y: 17 } },
-  O: { rows: mirror([
-    "##############",
-    "#o.....a.....#",
-    "#.####.#####.#",
-    "#.####.#####.#",
-    "#.....b.......",
-    "#.####.##.####",
-    "#.####a##b####",
-    "#......##....#",
-    "######.##### #",
-    "     #.##### #",
-    "     #.##     ",
-    "     #.## ###-",
-    "######.## #   ",
-    "      .   #   ",
-    "######.## #   ",
-    "     #.## ####",
-    "######.## ####",
-    "#.....b......#",
-    "#.####.#####.#",
-    "#.####.#####.#",
-    "#o..##...a... ",
-    "###.##.##.####",
-    "###.##a##.####",
-    "#......##....#",
-    "#.####b#####.#",
-    "#.####b#####.#",
-    "#.........b...",
-    "##############",
-  ]), pac: { x: 13.5, y: 20 }, fruit: { x: 13.5, y: 10 } },
-  // The Penthouse Crypt: the Skeleton King's hall of pillars. Its bone gates ('a'/'b') only start
-  // shifting in the last phase; gargoyles perch on the top corridor in the first.
+  // Cloud Deck: the classic layout's ghost-house band is fixed, but its four corner quarters are rebuilt
+  // at random (the level starts on a fresh roll, too). Frost berries sit in the fixed band.
+  N: { rows: mirror(CLASSIC.map(r => r.replace('*', '.'))).map((row, r) => r === 17 ? row.slice(0, 6) + '*' + row.slice(7, 21) + '*' + row.slice(22) : row),
+    pac: { x: 13.5, y: 23 }, fruit: { x: 13.5, y: 17 }, reform: CLOUD_QUADS },
+  // The Penthouse Crypt: the Skeleton King's hall of pillars. In his last phase its quarters rebuild
+  // themselves under clouds of bone dust; gargoyles perch on the top corridor in the first.
   Y: { rows: [
     "############################",
     "#o                        o#",
-    "# ##a## ##b##  ##b## ##a## #",
     "# ## ## ## ##  ## ## ## ## #",
-    "# b                      b #",
-    "# ## ##b## ##  ## ##b## ## #",
     "# ## ## ## ##  ## ## ## ## #",
-    "#       a  b    b  a       #",
-    "#a##b## ##        ## ##b##a#",
+    "#                          #",
+    "# ## ## ## ##  ## ## ## ## #",
+    "# ## ## ## ##  ## ## ## ## #",
+    "#                          #",
     "# ## ## ##        ## ## ## #",
-    "#    a                a    #",
-    "# ## ##a            a## ## #",
+    "# ## ## ##        ## ## ## #",
+    "#                          #",
+    "# ## ##              ## ## #",
     "# ## ##              ## ## #",
     "#                          #",
     "    *                  *    ",
     "#                          #",
     "# ## ##              ## ## #",
     "# ## ##              ## ## #",
-    "#       b          b       #",
-    "# ## ##a##        ##a## ## #",
-    "#b## ## ##        ## ## ##b#",
-    "# a        a    a        a #",
+    "#                          #",
+    "# ## ## ##        ## ## ## #",
+    "# ## ## ##        ## ## ## #",
+    "#                          #",
     "# ## ## ## ##  ## ## ## ## #",
     "# ## ## ## ##  ## ## ## ## #",
-    "#    b                b    #",
-    "# ##a## ##b##  ##b## ##a## #",
+    "#                          #",
+    "# ## ## ## ##  ## ## ## ## #",
     "# ## ## ## ##  ## ## ## ## #",
     "#o                        o#",
     "############################",
-  ], pac: { x: 13.5, y: 24 }, fruit: { x: 13.5, y: 24 }, throne: { x: 13.5, y: 14 }, perches: [[7, 1], [20, 1]] },
+  ], pac: { x: 13.5, y: 24 }, fruit: { x: 13.5, y: 24 }, throne: { x: 13.5, y: 14 }, perches: [[7, 1], [20, 1]], reform: CRYPT_QUADS },
 };
 // MAZES-END
 
@@ -536,11 +492,11 @@ const LEVELS = [
     release: { pinky: 0, inky: 25 }, intro: ['COBWEB CORNER', 'A SPIDER AND A WRAITH'] },
   { stage: 10, lv: 3, maze: 'E', ghosts: ALL4, spiders: 2, pellets: true, frost: true, dash: true, tier: 2, fright: 4, magnets: [[9, 20]],
     release: { pinky: 0, inky: 15, clyde: 35 }, intro: ['SPIDER NEST', 'TWO SPIDERS AND A FULL HOUSE'] },
-  { stage: 11, lv: 1, maze: 'N', ghosts: ['blinky', 'pinky'], clouds: 6, pellets: true, frost: false, dash: true, tier: 2, fright: 6,
-    intro: ['NEW: CLOUD WALLS', 'WALLS DRIFT. WATCH FOR THE SHIMMER'] },
-  { stage: 11, lv: 2, maze: 'O', ghosts: ['blinky', 'pinky', 'inky'], gargoyles: [[3, 1], [24, 1]], clouds: 5.5, pellets: true, frost: true, dash: true, tier: 2, fright: 5, magnets: [[9, 4]],
+  { stage: 11, lv: 1, maze: 'N', ghosts: ['blinky', 'pinky'], reform: 9, pellets: true, frost: false, dash: true, tier: 2, fright: 6,
+    intro: ['NEW: CLOUD COVER', 'THE MAZE REBUILDS UNDER THE CLOUDS'] },
+  { stage: 11, lv: 2, maze: 'N', ghosts: ['blinky', 'pinky', 'inky'], gargoyles: [[3, 1], [24, 1]], reform: 8, pellets: true, frost: true, dash: true, tier: 2, fright: 5, magnets: [[6, 11]],
     release: { pinky: 0, inky: 20 }, intro: ['FOG BANK', 'GARGOYLES IN THE CLOUDS'] },
-  { stage: 11, lv: 3, maze: 'N', ghosts: ['blinky', 'pinky', 'inky'], spiders: 1, gargoyles: [[3, 1], [24, 1]], clouds: 5, pellets: true, frost: true, dash: true, tier: 2, fright: 4,
+  { stage: 11, lv: 3, maze: 'N', ghosts: ['blinky', 'pinky', 'inky'], spiders: 1, gargoyles: [[3, 1], [24, 1]], reform: 7, pellets: true, frost: true, dash: true, tier: 2, fright: 4,
     release: { pinky: 0, inky: 15 }, intro: ['SKY BRIDGE', 'EVERYTHING AT ONCE. AGAIN'] },
   { stage: 12, lv: 1, maze: 'Y', boss: 'skull', ghosts: [], pellets: true, frost: true, dash: true, tier: 2, fright: 6, chill: 4,
     intro: ['SKELETON KING', 'POWER UP, HIT HIM, EAT HIS BONES'] },
@@ -784,8 +740,8 @@ const STORY = {
     ],
     27: [
       ['NARR', "17F: THE CLOUD DECK. THE TOWER IS SO TALL THE CLOUDS COME INDOORS."],
-      ['INKY', "THE CLOUD WALLS DRIFT! A SHIMMER MEANS A WALL IS ABOUT TO FORM."],
-      ['NARR', "A WALL THAT FORMS ON TOP OF YOU JUST PUSHES YOU OUT. ONE THAT DRIFTS AWAY OPENS A SHORTCUT."],
+      ['INKY', "WATCH OUT! WHEN A CLOUD ROLLS OVER PART OF THE MAZE, THE HALLS UNDER IT REARRANGE."],
+      ['NARR', "WHEN IT CLEARS, THAT PART OF THE MAZE IS BRAND NEW. THE DOTS ARE STILL THERE, JUST SHUFFLED."],
       ['PAC', "WAKKA WAKKA."],
     ],
     28: [
@@ -805,7 +761,7 @@ const STORY = {
       ['SKULL', "WHY FRUIT? MY DOCTOR SAYS I NEED MORE CALCIUM."],
       ['KING', "FRUIT DOESN'T HAVE ANY CALCIUM."],
       ['SKULL', "SILENCE, TENANT!", 'angry'],
-      ['NARR', "TIP: POWER UP AND HIT HIM. HE FALLS TO PIECES. EAT HIS BONES BEFORE THEY CRAWL BACK."],
+      ['NARR', "TIP: POWER UP AND HIT HIM TO KNOCK HIM TO PIECES. ONLY EATEN BONES HURT HIM. THE REST HEAL HIM."],
     ],
   },
   post: {
@@ -890,13 +846,17 @@ const house = { doorC: 13, doorX: 13.5, exitY: 11, homeY: 14 };
 let tunnelRows = new Map(), openMask = new Uint8Array(0);
 
 function setMaze(key) {
-  meta = MAZES[key]; M = meta.rows; W = M[0].length; H = M.length;
+  meta = MAZES[key]; M = meta.reform ? meta.rows.slice() : meta.rows; W = M[0].length; H = M.length; // rebuildable mazes get their own copy
   ox = (SCREEN_COLS - W) / 2;
   oy = TOP + Math.floor((SCREEN_MAZE_ROWS - H) / 2);
   for (let r = 0; r < H; r++) {
     const c = M[r].indexOf('-');
     if (c >= 0) Object.assign(house, { doorC: c, doorX: c + 0.5, exitY: r - 1, homeY: r + 2 });
   }
+  if (meta.reform) G.layoutGen++; // a fresh copy: don't reuse art drawn for an earlier rebuild
+  mapMaze();
+}
+function mapMaze() {
   // Tiles Pac-Man can reach; a frozen Wraith gets pushed onto the nearest one.
   openMask = new Uint8Array(W * H);
   const q = [[Math.floor(meta.pac.x), meta.pac.y]];
@@ -922,8 +882,7 @@ function setMaze(key) {
 const tile = (c, r) => {
   if (r < 0 || r >= H) return '#';
   if (c < 0 || c >= W) return tunnelRows.has(r) ? ' ' : '#';
-  const t = M[r][c];
-  return t === 'a' || t === 'b' ? (cloudOn(t) ? '#' : ' ') : t;
+  return M[r][c];
 };
 const pacOK = (c, r) => { const t = tile(c, r); return t !== '#' && t !== '-'; };
 const ghostOK = pacOK;
@@ -998,9 +957,9 @@ function buildMaze(rows, color) {
   return off;
 }
 const artCache = {};
-function mazeArt(key, color) {
-  const k = key + color;
-  return artCache[k] || (artCache[k] = buildMaze(MAZES[key].rows, color));
+function mazeArt(key, color) { // the current maze, keyed by layout for mazes that rebuild themselves
+  const k = key + '#' + (meta.reform ? G.layoutGen : 0) + color;
+  return artCache[k] || (artCache[k] = buildMaze(M, color));
 }
 
 // ---------- Sound ----------
@@ -1055,6 +1014,7 @@ const SFX = {
   crumble() { for (let i = 0; i < 5; i++) beep(320 - i * 50, 60, 0.14, 'sawtooth', 0.08, i * 0.05); beep(1800, 200, 0.2, 'square', 0.04); },
   rattle() { for (let i = 0; i < 4; i++) beep(1300 + (i % 2) * 400, 900, 0.035, 'square', 0.05, i * 0.05); },
   tear() { beep(2200, 500, 0.1, 'sawtooth', 0.05); },
+  rumble() { beep(70, 45, 0.6, 'sawtooth', 0.12); beep(110, 60, 0.5, 'square', 0.05, 0.1); },
   whoosh() { beep(260, 900, 0.5, 'triangle', 0.1); beep(420, 1300, 0.4, 'sine', 0.05, 0.1); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
@@ -1095,7 +1055,8 @@ const G = {
   bossSay: null, bossLast: null, pendingPhase: 0, phaseTo: 0,
   vents: [], ventT: 0, hounds: [], magnet: 0, flyDots: [], light: 0,
   buddies: [], blobules: [], waveT: 0, slurpT: 0,
-  gargoyles: [], spiders: [], webs: new Map(), bones: [], cloudsOn: false, cloudT: 0, cloudPer: 5, gargMoving: false,
+  gargoyles: [], spiders: [], webs: new Map(), bones: [], gargMoving: false,
+  reform: { on: false, every: 8, t: 0, phase: 'idle', quads: [], done: false }, layoutGen: 0,
 };
 const pac = { x: 13.5, y: 23, dir: L, face: L, anim: 0, dash: 0, grace: 0, trail: [] };
 const ghosts = [
@@ -1150,7 +1111,7 @@ function resetActors() {
   G.spiders = [];
   for (let i = 0; i < (G.cfg.spiders || 0); i++) G.spiders.push(makeSpider(i));
   G.webs = new Map(); G.bones = []; G.gargMoving = false;
-  G.cloudsOn = !!G.cfg.clouds; G.cloudT = 0; G.cloudPer = G.cfg.clouds || CLOUD_PER;
+  G.reform = { on: !!G.cfg.reform, every: G.cfg.reform || 7, t: 0, phase: 'idle', quads: [], done: false };
   if (G.cfg.boss) {
     if (!G.boss) G.boss = { kind: G.cfg.boss, hp: BOSSES[G.cfg.boss].hp, eaten: [] };
     Object.assign(G.boss, { x: meta.throne.x, y: meta.throne.y, dir: D, state: 'chase', inv: 1.5, fire: 2.5, burst: 5,
@@ -1164,6 +1125,7 @@ function loadLevel(i) {
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
+  if (G.cfg.reform) initLayout();
   buildFlow(); buildVents();
   resetDots(); resetActors();
   G.globalMode = false; G.globalDots = 0; G.bannerFull = true;
@@ -1879,21 +1841,137 @@ function spiderUpdate(s, dt, sp) {
   step(s, dist, spiderAtCenter, false);
 }
 
-// Cloud walls ('a' and 'b' in the maze) take turns being solid, swapping every few seconds with a
-// shimmer as warning. Anyone caught inside a wall as it forms gets pushed out to the nearest path.
-const CLOUD_PER = 5, CLOUD_WARN = 1.2;
-const cloudOn = ch => G.cloudsOn && G.cloudT >= 0 && ch === (Math.floor(G.cloudT / G.cloudPer) % 2 ? 'b' : 'a');
-const cloudSoon = () => G.cloudsOn && (G.cloudT < 0 ? G.cloudT > -CLOUD_WARN : G.cloudPer - G.cloudT % G.cloudPer < CLOUD_WARN);
+// ---------- Reforming mazes ----------
+// Mazes that rebuild themselves mid-level. Every so often clouds (or, in the crypt, bone dust) roll
+// over two random quarters of the maze; while they're covered, the corridors underneath are torn up
+// and laid out anew, and the dots left there are scattered over the new paths. Anyone standing in a
+// spot that's now wall gets nudged to the nearest path.
+const REFORM_IN = 1.4, REFORM_HOLD = 0.8, REFORM_OUT = 1.1;
+const shuffled = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+// A lattice quarter: corridors run along fixed rows and columns. Starting from the full grid, random
+// stretches are walled off as long as every junction keeps two ways out (so no dead ends) and still
+// reaches an anchor, so no part of the quarter can come loose from the rest of the maze.
+function fillLattice(g, q) {
+  const key = (c, r) => c + ',' + r, edges = [], deg = new Map();
+  q.rows.forEach(r => q.cols.forEach((c, i) => { if (i) edges.push([q.cols[i - 1], r, c, r]); }));
+  q.cols.forEach(c => q.rows.forEach((r, j) => { if (j) edges.push([c, q.rows[j - 1], c, r]); }));
+  const bump = (k, n) => deg.set(k, (deg.get(k) || 0) + n);
+  for (const [a, b, c, d] of edges) { bump(key(a, b), 1); bump(key(c, d), 1); }
+  for (const p of q.ports) bump(p, 1);
+  const open = edges.map(() => true);
+  const linked = () => {
+    const adj = new Map(), link = (u, v) => { if (!adj.has(u)) adj.set(u, []); adj.get(u).push(v); };
+    edges.forEach(([a, b, c, d], i) => { if (open[i]) { link(key(a, b), key(c, d)); link(key(c, d), key(a, b)); } });
+    const seen = new Set(q.anchors), st = [...q.anchors];
+    while (st.length) for (const v of adj.get(st.pop()) || []) if (!seen.has(v)) { seen.add(v); st.push(v); }
+    return [...deg.keys()].every(k => seen.has(k));
+  };
+  for (const i of shuffled([...edges.keys()])) {
+    if (Math.random() < 0.4) continue;
+    const [a, b, c, d] = edges[i], k1 = key(a, b), k2 = key(c, d);
+    if (deg.get(k1) <= 2 || deg.get(k2) <= 2) continue;
+    open[i] = false;
+    if (!linked()) { open[i] = true; continue; }
+    bump(k1, -1); bump(k2, -1);
+  }
+  for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) g[r][c] = '#';
+  edges.forEach(([a, b, c, d], i) => {
+    if (!open[i]) return;
+    for (let r = Math.min(b, d); r <= Math.max(b, d); r++) for (let cc = Math.min(a, c); cc <= Math.max(a, c); cc++) g[r][cc] = meta.rows[r][cc] === 'o' ? 'o' : '.';
+  });
+  for (const [c, r] of q.fixed) g[r][c] = meta.rows[r][c];
+}
+// A pillar quarter: 2x2 pillars dropped on the crypt's grid, some missing, some joined into bars.
+function fillPillars(g, q) {
+  const chamber = (c, r) => ([11, 12, 15, 16].includes(c) && r >= 8 && r <= 20) || ([11, 12, 16, 17].includes(r) && c >= 8 && c <= 19);
+  for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) g[r][c] = 'o*'.includes(meta.rows[r][c]) ? meta.rows[r][c] : ' ';
+  const on = new Set();
+  for (const c of q.sc) for (const r of q.sr) if (Math.random() < 0.72) on.add(c + ',' + r);
+  const block = (c0, r0, w, h) => { for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) if (!chamber(c, r)) g[r][c] = '#'; };
+  for (const k of on) {
+    const [c, r] = k.split(',').map(Number);
+    block(c, r, 2, 2);
+    if (on.has((c + 3) + ',' + r) && Math.random() < 0.3) block(c + 2, r, 1, 2);
+    if (on.has(c + ',' + (r + 3)) && Math.random() < 0.3) block(c, r + 2, 2, 1);
+  }
+}
+// Every open tile in the arena reachable from Pac-Man's start (the tunnel row wraps)?
+function allReachable(g) {
+  const h = g.length, w = g[0].length, sx = Math.floor(meta.pac.x), sy = meta.pac.y, seen = new Uint8Array(w * h), st = [[sx, sy]];
+  seen[sy * w + sx] = 1;
+  while (st.length) {
+    const [c, r] = st.pop();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = (c + dx + w) % w, nr = r + dy;
+      if (nr < 0 || nr >= h || seen[nr * w + nc] || g[nr][nc] === '#') continue;
+      seen[nr * w + nc] = 1; st.push([nc, nr]);
+    }
+  }
+  for (let r = 1; r < h - 1; r++) for (let c = 1; c < w - 1; c++) if (g[r][c] !== '#' && !seen[r * w + c]) return false;
+  return true;
+}
+const region = (g, q) => { let s = ''; for (let r = q.r0; r <= q.r1; r++) s += g[r].slice(q.c0, q.c1 + 1).join(''); return s; };
+function setLayout(g) {
+  M = g.map(a => a.join(''));
+  mapMaze();
+  G.layoutGen++;
+  for (const k in artCache) if (k.startsWith(G.cfg.maze + '#')) delete artCache[k];
+}
+// A fresh Cloud Deck layout for the level start: the left half is rolled at random, the right mirrors it.
+function initLayout() {
+  const g = M.map(r => [...r]), qs = meta.reform;
+  for (const [a, b] of [[0, 1], [2, 3]]) {
+    fillLattice(g, qs[a]);
+    const q = qs[b];
+    for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) g[r][c] = g[r][W - 1 - c];
+  }
+  setLayout(g);
+}
+function reformQuads(list) {
+  const g = M.map(r => [...r]), moved = [];
+  for (const qi of list) {
+    const q = meta.reform[qi], before = region(g, q), keep = [];
+    for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) keep.push(g[r][c]);
+    let ok = false;
+    for (let tries = 0; tries < 30 && !ok; tries++) {
+      (q.kind === 'lattice' ? fillLattice : fillPillars)(g, q);
+      ok = region(g, q) !== before && (q.kind === 'lattice' || allReachable(g));
+    }
+    if (!ok) { let i = 0; for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) g[r][c] = keep[i++]; continue; }
+    moved.push(q);
+  }
+  setLayout(g);
+  // The dots that were under the clouds land on the new corridors; pellets on a new wall hop to a path.
+  for (const q of moved) {
+    const spots = [], extras = [];
+    let n = 0;
+    for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) {
+      const k = r * W + c, v = G.dots[k];
+      if (v === 1) { n++; G.dots[k] = 0; } else if (v && M[r][c] === '#') { extras.push(v); G.dots[k] = 0; }
+      if (M[r][c] === '.' && !G.dots[k]) spots.push(k);
+    }
+    shuffled(spots);
+    for (const v of extras) { const k = spots.pop(); if (k !== undefined) G.dots[k] = v; else G.dotsLeft--; }
+    const placed = Math.min(n, spots.length);
+    for (let i = 0; i < placed; i++) G.dots[spots[i]] = 1;
+    G.dotsLeft -= n - placed;
+  }
+  const movers = [pac, ...G.ghosts.filter(g => g.mode === 'active'), ...G.gargoyles, ...G.spiders.filter(s => s.state === 'active'),
+    ...G.slimes.filter(s => s.state === 'active'), ...G.hounds.filter(h => h.state === 'hunt'), ...G.minions, ...G.bones];
+  for (const e of movers) unstick(e);
+  for (const k of [...G.webs.keys()]) if (tile(k % W, Math.floor(k / W)) === '#') G.webs.delete(k);
+  for (const h of G.hounds) if (h.state === 'hunt' && !h.lost && h.sniff <= 0) reScent(h); // the old trail may run through a wall now
+  if (!G.cfg.boss && G.dotsLeft <= 0) { G.state = 'clear'; G.timer = 0; SFX.clear(); }
+}
 function unstick(e) {
-  const inWall = (c, r) => c >= 0 && c < W && r >= 0 && r < H && (M[r][c] === 'a' || M[r][c] === 'b') && cloudOn(M[r][c]);
   e.decided = -1;
   const cs = [Math.floor(e.x), Math.ceil(e.x)], rs = [Math.floor(e.y), Math.ceil(e.y)];
-  if (!cs.some(c => rs.some(r => inWall(c, r)))) return;
+  if (!cs.some(c => rs.some(r => c >= 0 && c < W && tile(c, r) === '#'))) return;
   const sx = Math.max(0, Math.min(W - 1, Math.round(e.x))), sy = Math.max(0, Math.min(H - 1, Math.round(e.y)));
   const seen = new Set([sy * W + sx]), q = [[sx, sy]];
   for (let i = 0; i < q.length; i++) {
     const [c, r] = q[i];
-    if (pacOK(c, r)) { e.x = c; e.y = r; return; }
+    if (pacOK(c, r) && openMask[r * W + c]) { e.x = c; e.y = r; return; }
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nc = c + dx, nr = r + dy, k = nr * W + nc;
       if (nc < 0 || nc >= W || nr < 0 || nr >= H || seen.has(k)) continue;
@@ -1901,13 +1979,17 @@ function unstick(e) {
     }
   }
 }
-function cloudShift() {
-  SFX.whoosh();
-  const movers = [pac, ...G.ghosts.filter(g => g.mode === 'active'), ...G.gargoyles, ...G.spiders.filter(s => s.state === 'active'),
-    ...G.slimes.filter(s => s.state === 'active'), ...G.hounds.filter(h => h.state === 'hunt'), ...G.minions, ...G.bones];
-  for (const e of movers) unstick(e);
-  for (const k of [...G.webs.keys()]) if (tile(k % W, Math.floor(k / W)) === '#') G.webs.delete(k);
-  for (const h of G.hounds) if (h.state === 'hunt' && !h.lost && h.sniff <= 0) reScent(h); // the old trail may run through a wall now
+function reformUpdate(dt) {
+  const R = G.reform;
+  R.t += dt;
+  if (R.phase === 'idle' && R.t >= R.every) {
+    Object.assign(R, { phase: 'in', t: 0, done: false, quads: shuffled([0, 1, 2, 3]).slice(0, 2) });
+    SFX.whoosh();
+  } else if (R.phase === 'in' && R.t >= REFORM_IN) Object.assign(R, { phase: 'hold', t: 0 });
+  else if (R.phase === 'hold') {
+    if (!R.done && R.t >= REFORM_HOLD / 2) { R.done = true; reformQuads(R.quads); SFX.rumble(); }
+    if (R.t >= REFORM_HOLD) Object.assign(R, { phase: 'out', t: 0 });
+  } else if (R.phase === 'out' && R.t >= REFORM_OUT) Object.assign(R, { phase: 'idle', t: 0, quads: [] });
 }
 
 // ---------- Bosses ----------
@@ -1963,7 +2045,7 @@ const SKULL_LINES = {
   last: "WAIT! LET'S TALK ABOUT A DISCOUNT!",
   phase: {
     2: "GARGOYLES, YOU'RE FIRED. SPIDERS, YOU'RE HIRED!",
-    3: "ENOUGH! THE WALLS OF MY TOWER OBEY ME!",
+    3: "ENOUGH! MY CRYPT REBUILDS ITSELF AT MY COMMAND!",
   },
   start: "RENT IS DUE, PAC-MAN.",
   taunt: ["LATE FEE!", "EVICTED!", "NO REFUNDS.", "I'LL BE KEEPING YOUR DEPOSIT."],
@@ -1975,8 +2057,8 @@ const BOSSES = {
   blob: { name: 'BIG BLOB', hp: 60, per: 20, gauge: true, colors: ['', '#4fe35d', '#c6e83a', '#ff5a7a'], lines: BLOB_LINES, speaker: 'BLOB',
     tips: { 1: 'STARVE IT', 2: 'EAT THE GHOSTS', 3: 'BITE + EAT BITS' },
     retry: ph => `BACK FOR SECONDS? FINE. WE START AT PHASE ${ph}. I SAVED YOU A SEAT. IN MY STOMACH.` },
-  skull: { name: 'SKELETON KING', short: 'SKULL KING', hp: 30, per: 10, gauge: true, colors: ['', '#7dffb0', '#c9a0ff', '#ff5a5a'], lines: SKULL_LINES, speaker: 'SKULL',
-    tips: { 1: 'GARGOYLE GUARDS', 2: 'SPIDERS SPIN WEBS', 3: 'THE WALLS SHIFT' },
+  skull: { name: 'SKELETON KING', short: 'SKULL KING', hp: 36, per: 12, gauge: true, colors: ['', '#7dffb0', '#c9a0ff', '#ff5a5a'], lines: SKULL_LINES, speaker: 'SKULL',
+    tips: { 1: 'GARGOYLE GUARDS', 2: 'SPIDERS SPIN WEBS', 3: 'CRYPT REBUILDS' },
     retry: ph => `BACK ALREADY? FINE. WE START AT PHASE ${ph}. I'M ADDING IT TO YOUR RENT.` },
 };
 const bossPhase = b => { const d = BOSSES[b.kind]; return b.hp > d.per * 2 ? 1 : b.hp > d.per ? 2 : 3; };
@@ -2041,7 +2123,7 @@ function bossDie() {
   const b = G.boss;
   b.state = 'dead'; b.dead = 0;
   G.orbs = []; G.minions = []; G.blobules = []; G.buddies = []; G.bossSay = null;
-  G.bones = []; G.spiders = []; G.gargoyles = []; G.webs = new Map(); G.cloudsOn = false;
+  G.bones = []; G.spiders = []; G.gargoyles = []; G.webs = new Map(); G.reform.on = false; G.reform.quads = [];
   clearCheckpoint();
   addScore(10000); SFX.bossDie();
 }
@@ -2063,9 +2145,13 @@ function hitBoss() {
 // Phase 1 is a race for the dots (they never come back): every dot Pac-Man eats starves it, every
 // dot it slurps feeds it, and once the dots are gone it wastes away.
 // Phase 2 the ghosts turn up scared blue: eat them before it swallows them.
-// Phase 3 it's small and fast: bite it while powered up, then eat the bits before they crawl home.
-const BLOB_DOT = 0.075, BLOB_SLURP = 0.06, BLOB_BITES = [0, 1.5, 2, 5], BLOB_BITE3 = 5, BLOB_SAVE = 2.5, BLOB_GHOST = 3, BLOB_MERGE = 2;
-const blobR = b => 0.8 + Math.max(0, b.hp) / BOSSES.blob.hp * 2; // 2.8 tiles at full health, 0.8 near the end
+// Phase 3 it's small and fast: a bite knocks off bits carrying its health. Eat them and the health is
+// gone; any that crawl home give it all back, so biting alone never finishes it.
+const BLOB_DOT = 0.075, BLOB_SLURP = 0.06, BLOB_BITES = [0, 1.5, 2, 0], BLOB_BITE3 = 5, BLOB_SAVE = 2.5, BLOB_GHOST = 3, BLOB_BITS = 3, BLOB_BIT_HP = 2.5;
+// Health carried off by loose pieces (the Blob's bits, the Skeleton King's bones): lost for good if
+// they're eaten, given back if they make it home.
+const pieceRisk = b => b === G.boss ? [...G.bones, ...G.blobules].reduce((n, s) => n + (s.share || 0), 0) : 0;
+const blobR = b => 0.8 + Math.max(0, b.hp - pieceRisk(b)) / BOSSES.blob.hp * 2; // 2.8 tiles at full health, 0.8 near the end
 const blobTouch = (e, k = 0.8) => Math.hypot(e.x - G.boss.x, e.y - G.boss.y) < blobR(G.boss) * k;
 // Heal, but never back up into an earlier phase.
 function blobFeed(n) { const b = G.boss; b.hp = Math.min(phaseStartHp(b, bossPhase(b)), b.hp + n); }
@@ -2143,15 +2229,15 @@ function biteBlob() {
   popup('1000', b.x, b.y - blobR(b) - 0.5, '#ffd86b', 1.5);
   if (ph === 3) { // chunks fly off and try to crawl back
     const spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
-    for (const [k, d] of [[0, L], [1, R]]) {
+    for (let k = 0; k < BLOB_BITS; k++) {
       const s = spots[k % spots.length];
-      G.blobules.push({ x: s.x, y: s.y, dir: d, decided: -1, t: 0, kind: 'small', state: 'active', group: k, fresh: 0.5 });
+      G.blobules.push({ x: s.x, y: s.y, dir: [L, R, U][k], decided: -1, t: 0, kind: 'small', state: 'active', group: k, fresh: 0.5, share: BLOB_BIT_HP });
     }
     SFX.split();
   }
   blobHurt(BLOB_BITES[ph], true); // early bites only nibble: starving is the real weapon
   if (b.state === 'dead' || G.pendingPhase) return;
-  if (ph === 3 && b.hp <= BLOB_BITE3) bossTalk(BLOB_LINES.last);
+  if (ph === 3 && b.hp - pieceRisk(b) <= BLOB_BITE3) bossTalk(BLOB_LINES.last);
   else bossLine(BLOB_LINES.bite[ph]);
 }
 // Phase 2: the four ghosts pour out of the pipes, scared blue, and the Blob wants them for dinner.
@@ -2213,8 +2299,8 @@ function blobCrewUpdate(dt) {
     step(s, 0.55 * BASE * dt * flowMul(s), bitAtCenter, false);
     if (s.t > 1.2 && b.state !== 'dead' && blobTouch(s, 0.75)) {
       s.state = 'merged';
-      blobFeed(BLOB_MERGE); SFX.slurp();
-      popup('SLURP', s.x, s.y, '#9be86f');
+      SFX.slurp();
+      popup('HEALED', s.x, s.y, '#9be86f');
       if (!G.bossSay) bossLine(BLOB_LINES.merge);
     }
   }
@@ -2223,13 +2309,14 @@ function blobCrewUpdate(dt) {
 
 // The Skeleton King: floats through the crypt's pillars like the King Ghost, hurling bones along
 // your row or column. Hit him while powered up and he collapses into a heap; four bones scatter and
-// crawl back to rebuild him, and every bone you eat before it gets home costs him more health.
+// crawl back to rebuild him. Each bone carries off a share of his health: eat it and that health is
+// gone for good; let it get home and he's whole again, so the hits alone never wear him down.
 // Phase 1 brings gargoyle guards, phase 2 spiders and their webs, phase 3 the shifting bone gates.
-const SKULL_HIT = 3, SKULL_BONES = 4, SKULL_RISE = 0.9;
+const SKULL_BONES = 4, SKULL_BONE_HP = 1.5, SKULL_RISE = 0.9;
 function skullSetup(ph) {
   G.gargoyles = ph === 1 ? meta.perches.map(makeGargoyle) : [];
   G.spiders = []; G.webs = new Map(); G.bones = [];
-  G.cloudsOn = ph === 3; G.cloudT = -2; G.cloudPer = CLOUD_PER;
+  Object.assign(G.reform, { on: ph === 3, every: 7, t: 4, phase: 'idle', quads: [] }); // the first rebuild comes quickly
   if (ph === 2) { spawnSpider(); spawnSpider(); }
 }
 function spawnSpider() {
@@ -2271,11 +2358,9 @@ function hitSkull() {
   const spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
   for (let k = 0; k < SKULL_BONES; k++) {
     const s = spots[k % spots.length];
-    G.bones.push({ x: s.x, y: s.y, dir: ORDER[k], decided: -1, t: 0, fresh: 0.5, spin: k * 1.7 });
+    G.bones.push({ x: s.x, y: s.y, dir: ORDER[k], decided: -1, t: 0, fresh: 0.5, spin: k * 1.7, share: SKULL_BONE_HP });
   }
-  skullHurt(SKULL_HIT);
-  if (b.state === 'dead' || G.pendingPhase) return;
-  if (b.hp <= 4) bossTalk(SKULL_LINES.last); else bossLine(SKULL_LINES.hit[bossPhase(b)]);
+  if (b.hp - pieceRisk(b) <= 6) bossTalk(SKULL_LINES.last); else bossLine(SKULL_LINES.hit[bossPhase(b)]);
 }
 // Bones fly apart, each its own way, then crawl back to the heap (or give up and slide home after a while).
 function boneAtCenter(s) {
@@ -2291,7 +2376,7 @@ function bonesUpdate(dt) {
     if (s.fresh > 0) s.fresh -= dt;
     if (G.chill > 0) continue;
     step(s, (s.t < 0.8 ? 0.9 : 0.45) * BASE * dt, boneAtCenter, false);
-    if (s.t > 1.5 && (Math.hypot(s.x - b.x, s.y - b.y) < 1.6 || s.t > 7)) { s.state = 'home'; SFX.rattle(); }
+    if (s.t > 1.5 && (Math.hypot(s.x - b.x, s.y - b.y) < 1.6 || s.t > 7)) { s.state = 'home'; SFX.rattle(); popup('HEALED', b.x, b.y - 1.6, '#7dffb0', 0.8); }
   }
   G.bones = G.bones.filter(s => s.state !== 'home');
 }
@@ -2419,11 +2504,7 @@ function play(dt) {
     if (dashing && G.webs.delete(webKey(pac.x, pac.y))) { SFX.tear(); popup('RIP!', pac.x, pac.y - 1, '#e6e9ff', 0.5); }
     for (const [k, t] of G.webs) { if (t <= dt) G.webs.delete(k); else G.webs.set(k, t - dt); }
   }
-  if (G.cloudsOn) {
-    const turn = Math.floor(G.cloudT / G.cloudPer);
-    G.cloudT += dt;
-    if (Math.floor(G.cloudT / G.cloudPer) !== turn) cloudShift();
-  }
+  if (G.reform.on) { reformUpdate(dt); if (G.state !== 'play') return; }
   if (G.cfg.flicker) { // every so often the lights die completely and everyone creeps
     if (G.fright > 0) G.blackout = 0; // a power pellet relights the room
     else if (G.blackout > 0) G.blackout = Math.max(0, G.blackout - dt);
@@ -2581,6 +2662,8 @@ function play(dt) {
       if (s.fresh > 0 || Math.abs(s.x - pac.x) >= 0.65 || Math.abs(s.y - pac.y) >= 0.65) continue;
       s.state = 'eaten';
       addScore(300); SFX.ghost(); popup('300', s.x, s.y, '#9be86f');
+      blobHurt(s.share || 0);
+      if (b.state === 'dead') break;
     }
     G.blobules = G.blobules.filter(s => s.state === 'active');
     if (blobTouch(pac)) {
@@ -2593,7 +2676,7 @@ function play(dt) {
       if (s.fresh > 0 || Math.abs(s.x - pac.x) >= 0.65 || Math.abs(s.y - pac.y) >= 0.65) continue;
       s.state = 'home'; // eaten: it never makes it back
       addScore(300); SFX.ghost(); popup('300', s.x, s.y, '#fff4d0');
-      skullHurt(1);
+      skullHurt(s.share);
       if (b.state !== 'dead' && !G.pendingPhase && (!G.bossSay || G.bossSay.t < 1)) bossLine(SKULL_LINES.bone);
     }
     G.bones = G.bones.filter(s => s.state !== 'home');
@@ -3038,31 +3121,29 @@ function drawSkull(b) {
   for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 0.75, cy + 0.4); ctx.lineTo(cx + s * 1.3, cy + 0.95 + s * wave); ctx.lineTo(cx + s * 1.5, cy + 0.35 + s * wave); ctx.stroke(); }
   drawSkullHead(cx, cy - 0.55, 1, 0, bone, glow, ph, fr, flash, ice);
 }
-// Cloud walls (or, in the crypt, bone gates): solid ones are drawn full; a shimmer marks where one
-// is about to form, and a solid one blinks just before it drifts away.
-function drawClouds() {
-  const soon = cloudSoon(), blink = Math.floor(G.t * 8) % 2 === 0, bone = G.cfg.boss === 'skull';
-  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-    const ch = M[r][c];
-    if (ch !== 'a' && ch !== 'b') continue;
-    const solid = cloudOn(ch);
-    const a = solid ? (soon && blink ? 0.45 : 1) : !G.cloudsOn ? 0 : soon ? (blink ? 0.55 : 0.2) : 0.16;
-    if (!a) continue;
-    ctx.globalAlpha = a;
-    if (!solid && !soon) { // drifted away: a faint wisp marks where it will come back
-      ctx.fillStyle = bone ? '#ece6cf' : '#e6ecff';
-      for (const [dx, dy, rr] of [[0.3, 0.55, 0.14], [0.55, 0.45, 0.17], [0.75, 0.58, 0.12]]) { ctx.beginPath(); ctx.arc(c + dx, r + dy, rr, 0, Math.PI * 2); ctx.fill(); }
-    } else if (bone) {
-      const across = M[r][c - 1] === '#' && M[r][c + 1] === '#' ? 0 : Math.PI / 2; // bar lies across the corridor
-      drawBone(c + 0.5, r + 0.5, across + 0.35, 1.45, '#ece6cf'); drawBone(c + 0.5, r + 0.5, across - 0.35, 1.45, '#d8d0b0');
-    } else {
-      ctx.fillStyle = '#aebcff';
-      for (const [dx, dy, rr] of [[0.28, 0.6, 0.3], [0.72, 0.6, 0.3], [0.5, 0.62, 0.34]]) { ctx.beginPath(); ctx.arc(c + dx, r + dy, rr, 0, Math.PI * 2); ctx.fill(); }
-      ctx.fillStyle = '#e6ecff';
-      for (const [dx, dy, rr] of [[0.3, 0.48, 0.26], [0.7, 0.48, 0.26], [0.5, 0.36, 0.3]]) { ctx.beginPath(); ctx.arc(c + dx, r + dy, rr, 0, Math.PI * 2); ctx.fill(); }
-    }
+// The cloud cover over quarters that are about to rebuild: a blanket that swells in, holds while the
+// maze changes underneath, then thins away. Characters stay visible on top of it; the walls don't.
+const PUFFS = (() => {
+  let s = 5; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  return Array.from({ length: 34 }, () => ({ x: rnd(), y: rnd(), s: rnd() }));
+})();
+function drawReform() {
+  const R = G.reform;
+  if (!R.quads.length) return;
+  const a = R.phase === 'in' ? R.t / REFORM_IN : R.phase === 'hold' ? 1 : R.phase === 'out' ? 1 - R.t / REFORM_OUT : 0;
+  const dust = G.cfg.boss === 'skull', light = dust ? '#cbbd92' : '#e6ecff', shade = dust ? '#7d7254' : '#9fb0f0';
+  for (const qi of R.quads) {
+    const q = meta.reform[qi], w = q.c1 - q.c0 + 1, h = q.r1 - q.r0 + 1;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, a * 1.15);
+    ctx.fillStyle = shade; roundRect(q.c0 + 0.5 - 0.5 * a, q.r0 + 0.5 - 0.5 * a, w - 1 + a, h - 1 + a, 1); ctx.fill();
+    ctx.fillStyle = light;
+    PUFFS.forEach((p, k) => {
+      const x = q.c0 + p.x * w, y = q.r0 + p.y * h + Math.sin(G.t * 1.3 + k) * 0.2, r = (0.9 + p.s * 1.3) * (0.3 + 0.7 * a);
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
   }
-  ctx.globalAlpha = 1;
 }
 function drawWebs() {
   ctx.save();
@@ -3551,9 +3632,11 @@ function drawHUD() {
     for (let p = 1; p <= 3; p++) {
       const x0 = gx + (p - 1) * (gw + gap), lo = (3 - p) * per;
       if (blob) {
-        const f = Math.max(0, Math.min(1, (G.boss.hp - lo) / per));
+        const fill = hp => Math.max(0, Math.min(1, (hp - lo) / per)) * (gw - 0.12);
+        const f = fill(G.boss.hp - pieceRisk(G.boss)), fr = fill(G.boss.hp); // fr - f: health the loose pieces carry
         ctx.fillStyle = '#1a1d44'; ctx.fillRect(x0 + 0.06, TOP + 0.28, gw - 0.12, 0.44);
-        ctx.fillStyle = bdef.colors[p]; ctx.fillRect(x0 + 0.06, TOP + 0.28, (gw - 0.12) * f, 0.44);
+        ctx.fillStyle = bdef.colors[p]; ctx.fillRect(x0 + 0.06, TOP + 0.28, f, 0.44);
+        if (fr > f && Math.floor(G.t * 6) % 2) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x0 + 0.06 + f, TOP + 0.28, fr - f, 0.44); }
       } else for (let k = 0; k < segs; k++) {
         const hpIdx = lo + per - k; // HP value this segment stands for
         ctx.fillStyle = G.boss.hp >= hpIdx ? bdef.colors[p] : '#1a1d44';
@@ -3976,7 +4059,6 @@ function render() {
   if (G.state !== 'clear' && M.some(r => r.includes('-'))) { ctx.fillStyle = '#ffb8ff'; ctx.fillRect(house.doorC, house.exitY + 1.38, 2, 0.24); }
   if (hasFlow && G.state !== 'cast') drawWater();
   if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
-  if (G.state !== 'cast' && M.some(r => r.includes('a'))) drawClouds();
 
   const pelletOn = G.state !== 'play' || Math.floor(G.t * 5) % 2 === 0;
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
@@ -3991,6 +4073,7 @@ function render() {
 
   if (G.webs.size) drawWebs();
   if (G.fruit) drawFruit(G.fruit.kind, meta.fruit.x, meta.fruit.y);
+  drawReform();
   if (G.magnet > 0 && (G.magnet > 1.5 || Math.floor(G.t * 8) % 2)) { // the pull radius, spinning
     ctx.save(); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 0.08; ctx.setLineDash([0.4, 0.35]); ctx.lineDashOffset = -G.t * 3;
     ctx.beginPath(); ctx.arc(pac.x + 0.5, pac.y + 0.5, MAGNET_R, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
@@ -4081,7 +4164,7 @@ function render() {
       screenSpace();
       ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(4, 24.6, 20, 3);
       const def = BOSSES[G.boss.kind], col = def.colors[G.phaseTo];
-      const tip = G.boss.kind === 'blob' ? (G.phaseTo === 2 ? 'EAT THE GHOSTS BEFORE IT DOES' : 'BITE IT, THEN EAT THE BITS') : def.tips[G.phaseTo];
+      const tip = G.boss.kind === 'blob' ? (G.phaseTo === 2 ? 'EAT THE GHOSTS BEFORE IT DOES' : 'EAT THE BITS BEFORE THEY HEAL IT') : def.tips[G.phaseTo];
       ctx.strokeStyle = col; ctx.lineWidth = 0.14; ctx.strokeRect(4, 24.6, 20, 3);
       text(`PHASE ${G.phaseTo}`, 14, 25.1, col, 'center', 1);
       text(tip, 14, 26.5, '#ffffff', 'center', 0.4);
