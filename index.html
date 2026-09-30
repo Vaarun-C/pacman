@@ -127,7 +127,7 @@
 
 // ---------- Mazes ----------
 // Each maze is written as its left half and mirrored. '.' dot, 'o' power pellet,
-// '*' frost berry, '-' ghost-house door. Pellets and berries only appear on levels
+// '*' frost berry, '-' ghost-house door, 'a'/'b' cloud walls that take turns being solid. Pellets and berries only appear on levels
 // that enable them; otherwise they become plain dots.
 // MAZES-START
 const mirror = rows => rows.map(r => r + [...r].reverse().join(''));
@@ -298,6 +298,171 @@ const MAZES = {
     // Current direction for a tile, or null: top band right, right band down, bottom band left, left band up.
     flow: (c, r) => c >= 25 && c <= 26 && r >= 1 && r <= 25 ? 'D' : r >= 26 && r <= 27 && c >= 3 && c <= 26 ? 'L'
       : c >= 1 && c <= 2 && r >= 3 && r <= 27 ? 'U' : r >= 1 && r <= 2 && c >= 1 && c <= 24 ? 'R' : null },
+  // The Belfry: the Act 3 opener. Long aisles under the bells, where a gargoyle behind you has room to creep.
+  G: { rows: mirror([
+    "##############",
+    "#o....#......#",
+    "#.###.#.####.#",
+    "#.###.#.####.#",
+    "#.............",
+    "#.##.####.####",
+    "#.##.####....#",
+    "#....#######.#",
+    "####...#####.#",
+    "######.##### #",
+    "     #.##### #",
+    "     #.##     ",
+    "     #.## ###-",
+    "######.## #   ",
+    "      .   #   ",
+    "######.## #   ",
+    "     #.## ####",
+    "     #.##     ",
+    "     #.## ####",
+    "######.## ####",
+    "#............#",
+    "#.###.###.##.#",
+    "#.....#.......",
+    "###.#.#.####.#",
+    "#o..#...#....#",
+    "#.####.##.##.#",
+    "#......##.##.#",
+    "#.####.......#",
+    "#.#....#####.#",
+    "#...##.......#",
+    "##############",
+  ]), pac: { x: 13.5, y: 22 }, fruit: { x: 13.5, y: 17 } },
+  // The Attic: the roof slopes down in stairs on both sides, rafters below.
+  T: { rows: mirror([
+    "##############",
+    "#######o......",
+    "######..####.#",
+    "#####..#####.#",
+    "####..######.#",
+    "###..#.......#",
+    "##..##.####.##",
+    "#..###.####.##",
+    "#.####.......#",
+    "#.####.##### #",
+    "#.####.##### #",
+    "#......##     ",
+    "#.####.## ###-",
+    "#.####.## #   ",
+    "#o....... #   ",
+    "#.####.## #   ",
+    "#.####.## ####",
+    "#.####.##     ",
+    "#.####.## ####",
+    "#.####.## ####",
+    "#............#",
+    "#.####.##.##.#",
+    "#.#.......#...",
+    "#.#.#.###.#.##",
+    "#...#.....#...",
+    "###.####.#####",
+    "#.....##.#....",
+    "#.###.##.#.#.#",
+    "#.#...##...#.#",
+    "#...#....#...#",
+    "##############",
+  ]), pac: { x: 13.5, y: 22 }, fruit: { x: 13.5, y: 17 } },
+  // Cloud Deck mazes: 'a' and 'b' are cloud walls that take turns being solid.
+  N: { rows: mirror([
+    "##############",
+    "#o.......a...#",
+    "#.####.#####.#",
+    "#.####b#####.#",
+    "#.####.#####.#",
+    "#..a..........",
+    "#.##b#.##.####",
+    "#.##b#.##.####",
+    "#......##b...#",
+    "######.##### #",
+    "     #.##### #",
+    "     #.##     ",
+    "     #.## ###-",
+    "######.## #   ",
+    "      .   #   ",
+    "######.## #   ",
+    "     #.## ####",
+    "     #.##     ",
+    "     #.## ####",
+    "######.## ####",
+    "#........b...#",
+    "#.####.#a###.#",
+    "#.####a#a###.#",
+    "#o..##....... ",
+    "###.##.##.####",
+    "###.##.##.####",
+    "#..b...##....#",
+    "#.####b#####.#",
+    "#.####b#####.#",
+    "#.....a.......",
+    "##############",
+  ]), pac: { x: 13.5, y: 23 }, fruit: { x: 13.5, y: 17 } },
+  O: { rows: mirror([
+    "##############",
+    "#o.....a.....#",
+    "#.####.#####.#",
+    "#.####.#####.#",
+    "#.....b.......",
+    "#.####.##.####",
+    "#.####a##b####",
+    "#......##....#",
+    "######.##### #",
+    "     #.##### #",
+    "     #.##     ",
+    "     #.## ###-",
+    "######.## #   ",
+    "      .   #   ",
+    "######.## #   ",
+    "     #.## ####",
+    "######.## ####",
+    "#.....b......#",
+    "#.####.#####.#",
+    "#.####.#####.#",
+    "#o..##...a... ",
+    "###.##.##.####",
+    "###.##a##.####",
+    "#......##....#",
+    "#.####b#####.#",
+    "#.####b#####.#",
+    "#.........b...",
+    "##############",
+  ]), pac: { x: 13.5, y: 20 }, fruit: { x: 13.5, y: 10 } },
+  // The Penthouse Crypt: the Skeleton King's hall of pillars. Its bone gates ('a'/'b') only start
+  // shifting in the last phase; gargoyles perch on the top corridor in the first.
+  Y: { rows: [
+    "############################",
+    "#o                        o#",
+    "# ##a## ##b##  ##b## ##a## #",
+    "# ## ## ## ##  ## ## ## ## #",
+    "# b                      b #",
+    "# ## ##b## ##  ## ##b## ## #",
+    "# ## ## ## ##  ## ## ## ## #",
+    "#       a  b    b  a       #",
+    "#a##b## ##        ## ##b##a#",
+    "# ## ## ##        ## ## ## #",
+    "#    a                a    #",
+    "# ## ##a            a## ## #",
+    "# ## ##              ## ## #",
+    "#                          #",
+    "    *                  *    ",
+    "#                          #",
+    "# ## ##              ## ## #",
+    "# ## ##              ## ## #",
+    "#       b          b       #",
+    "# ## ##a##        ##a## ## #",
+    "#b## ## ##        ## ## ##b#",
+    "# a        a    a        a #",
+    "# ## ## ## ##  ## ## ## ## #",
+    "# ## ## ## ##  ## ## ## ## #",
+    "#    b                b    #",
+    "# ##a## ##b##  ##b## ##a## #",
+    "# ## ## ## ##  ## ## ## ## #",
+    "#o                        o#",
+    "############################",
+  ], pac: { x: 13.5, y: 24 }, fruit: { x: 13.5, y: 24 }, throne: { x: 13.5, y: 14 }, perches: [[7, 1], [20, 1]] },
 };
 // MAZES-END
 
@@ -358,8 +523,29 @@ const LEVELS = [
     release: { pinky: 0, inky: 0, clyde: 20 }, intro: ['PITCH BLACK', 'IN THE BLACKOUTS, GHOSTS CREEP'] },
   { stage: 8, lv: 1, maze: 'S', boss: 'blob', ghosts: [], pellets: true, frost: true, dash: true, tier: 2, fright: 6, chill: 4, magnets: [[13, 1]],
     intro: ['THE BIG BLOB', 'PHASE 1: EAT THE DOTS BEFORE IT DOES'] },
+  // ---- Act 3: the sky floors ----
+  { stage: 9, lv: 1, maze: 'G', ghosts: [], gargoyles: [[3, 1], [24, 1]], pellets: false, frost: false, dash: true, tier: 1, fright: 0,
+    intro: ['NEW: GARGOYLES', 'FACE THEM TO FREEZE. DASH TO SMASH'] },
+  { stage: 9, lv: 2, maze: 'C', ghosts: ['blinky', 'pinky'], gargoyles: [[5, 1], [20, 1]], pellets: true, frost: false, dash: true, tier: 2, fright: 5, magnets: [[3, 4]],
+    intro: ['BELL LOFT', 'PELLETS WON\'T SOFTEN STONE'] },
+  { stage: 9, lv: 3, maze: 'E', ghosts: ['blinky', 'pinky', 'inky'], hounds: 1, gargoyles: [[1, 1], [26, 1]], pellets: true, frost: true, dash: true, tier: 2, fright: 5,
+    release: { pinky: 0, inky: 20 }, intro: ['GARGOYLE PERCH', 'WATCH THE STATUES. RUN FROM THE DOG'] },
+  { stage: 10, lv: 1, maze: 'T', ghosts: [], spiders: 1, pellets: true, frost: false, dash: true, tier: 1, fright: 6,
+    intro: ['NEW: SPIDERS + WEBS', 'WEBS SLOW YOU. DASH THROUGH THEM'] },
+  { stage: 10, lv: 2, maze: 'D', ghosts: ['blinky', 'pinky', 'inky'], spiders: 1, wraiths: 1, pellets: true, frost: true, dash: true, tier: 2, fright: 5, magnets: [[9, 4]],
+    release: { pinky: 0, inky: 25 }, intro: ['COBWEB CORNER', 'A SPIDER AND A WRAITH'] },
+  { stage: 10, lv: 3, maze: 'E', ghosts: ALL4, spiders: 2, pellets: true, frost: true, dash: true, tier: 2, fright: 4, magnets: [[9, 20]],
+    release: { pinky: 0, inky: 15, clyde: 35 }, intro: ['SPIDER NEST', 'TWO SPIDERS AND A FULL HOUSE'] },
+  { stage: 11, lv: 1, maze: 'N', ghosts: ['blinky', 'pinky'], clouds: 6, pellets: true, frost: false, dash: true, tier: 2, fright: 6,
+    intro: ['NEW: CLOUD WALLS', 'WALLS DRIFT. WATCH FOR THE SHIMMER'] },
+  { stage: 11, lv: 2, maze: 'O', ghosts: ['blinky', 'pinky', 'inky'], gargoyles: [[3, 1], [24, 1]], clouds: 5.5, pellets: true, frost: true, dash: true, tier: 2, fright: 5, magnets: [[9, 4]],
+    release: { pinky: 0, inky: 20 }, intro: ['FOG BANK', 'GARGOYLES IN THE CLOUDS'] },
+  { stage: 11, lv: 3, maze: 'N', ghosts: ['blinky', 'pinky', 'inky'], spiders: 1, gargoyles: [[3, 1], [24, 1]], clouds: 5, pellets: true, frost: true, dash: true, tier: 2, fright: 4,
+    release: { pinky: 0, inky: 15 }, intro: ['SKY BRIDGE', 'EVERYTHING AT ONCE. AGAIN'] },
+  { stage: 12, lv: 1, maze: 'Y', boss: 'skull', ghosts: [], pellets: true, frost: true, dash: true, tier: 2, fright: 6, chill: 4,
+    intro: ['SKELETON KING', 'POWER UP, HIT HIM, EAT HIS BONES'] },
 ];
-const KING_FLOOR = LEVELS.findIndex(l => l.boss === 'king'), BLOB_FLOOR = LEVELS.findIndex(l => l.boss === 'blob');
+const KING_FLOOR = LEVELS.findIndex(l => l.boss === 'king'), BLOB_FLOOR = LEVELS.findIndex(l => l.boss === 'blob'), SKULL_FLOOR = LEVELS.findIndex(l => l.boss === 'skull');
 function levelConfig(i) {
   if (i < LEVELS.length) return LEVELS[i];
   // Roof rounds alternate between the 3-3 free-for-all and the 5-3 steam maze, speeding up as they go.
@@ -379,22 +565,30 @@ const SCHEDULES = [
   [5, 20, 5, 20, 5, 1037, 1 / 60, Infinity],
 ];
 const FRUITS = ['cherry', 'strawberry', 'orange', 'apple', 'melon', 'grapes', 'pear', 'banana', 'peach', 'pineapple',
-  'lemon', 'plum', 'kiwi', 'coconut', 'mango', 'blueberry', 'avocado', 'dragonfruit', 'pomegranate', 'starfruit', 'watermelon'];
+  'lemon', 'plum', 'kiwi', 'coconut', 'mango', 'blueberry', 'avocado', 'dragonfruit', 'pomegranate', 'starfruit', 'watermelon',
+  'fig', 'lime', 'apricot', 'raspberry', 'lychee', 'papaya', 'passionfruit', 'persimmon', 'durian', 'goldapple'];
 const FRUIT_PTS = { cherry: 100, strawberry: 300, orange: 500, apple: 700, melon: 1000, grapes: 2000, pear: 3000, banana: 4000, peach: 5000, pineapple: 6000,
-  lemon: 6500, plum: 7000, kiwi: 7500, coconut: 8000, mango: 8500, blueberry: 9000, avocado: 9500, dragonfruit: 10000, pomegranate: 11000, starfruit: 12000, watermelon: 15000 };
+  lemon: 6500, plum: 7000, kiwi: 7500, coconut: 8000, mango: 8500, blueberry: 9000, avocado: 9500, dragonfruit: 10000, pomegranate: 11000, starfruit: 12000, watermelon: 15000,
+  fig: 16000, lime: 17000, apricot: 18000, raspberry: 19000, lychee: 20000, papaya: 21000, passionfruit: 22000, persimmon: 23000, durian: 24000, goldapple: 30000 };
 const fruitFor = i => FRUITS[Math.min(i, FRUITS.length - 1)];
-const WALL_COLORS = { 1: '#2a3cff', 2: '#1fc4a3', 3: '#ff4fa3', 4: '#e8b400', 5: '#ff6a1a', 6: '#2bb5e8', 7: '#b8b094', 8: '#58b82e' };
-const STAGE_INK = { 1: '#8f9bff', 2: '#6ff0d4', 3: '#ff9bd0', 4: '#ffd86b', 5: '#ffa36b', 6: '#8fdcff', 7: '#e2dcc4', 8: '#9be86f' };
+const WALL_COLORS = { 1: '#2a3cff', 2: '#1fc4a3', 3: '#ff4fa3', 4: '#e8b400', 5: '#ff6a1a', 6: '#2bb5e8', 7: '#b8b094', 8: '#58b82e',
+  9: '#8a8fb8', 10: '#b8783c', 11: '#7a9cff', 12: '#d8cfa8' };
+const STAGE_INK = { 1: '#8f9bff', 2: '#6ff0d4', 3: '#ff9bd0', 4: '#ffd86b', 5: '#ffa36b', 6: '#8fdcff', 7: '#e2dcc4', 8: '#9be86f',
+  9: '#c3c7dc', 10: '#e8b27a', 11: '#b8ccff', 12: '#fff4d0' };
 
 // ---------- Story ----------
-const ROOF = LEVELS.length; // floor above the throne room: endless bonus rounds, opened by beating the Big Blob
+const ROOF = LEVELS.length; // the very top of the tower: endless bonus rounds, opened by beating the Skeleton King
 const FLOOR_NAMES = ['LOBBY', 'GIFT SHOP', 'BALLROOM', 'WALK-IN FREEZER', 'ICE RINK', 'COLD STORAGE', 'GOO LAB', 'SLIME SPA', 'SPLIT LEVEL', 'THRONE ROOM',
-  'BOILER ROOM', 'PIPE WORKS', 'STEAM TUNNELS', 'THE KENNEL', 'SPILLWAY', 'HOUND POUND', 'THE FLUME', 'CATACOMBS', 'BONE HALL', 'PITCH BLACK', 'THE SEWER'];
-const STAGE_NAMES = { 1: 'HAUNTED HALLS', 2: 'THE FREEZER', 3: 'GOO LABS', 4: 'PENTHOUSE', 5: 'BOILER ROOM', 6: 'FLOODED PIPES', 7: 'CATACOMBS', 8: 'THE SEWER' };
-const STAGE_SHORT = { 1: 'HALLS', 2: 'FREEZER', 3: 'LABS', 4: 'CROWN', 5: 'BOILER', 6: 'PIPES', 7: 'CRYPT', 8: 'SEWER' };
+  'BOILER ROOM', 'PIPE WORKS', 'STEAM TUNNELS', 'THE KENNEL', 'SPILLWAY', 'HOUND POUND', 'THE FLUME', 'CATACOMBS', 'BONE HALL', 'PITCH BLACK', 'THE SEWER',
+  'THE BELFRY', 'BELL LOFT', 'GARGOYLE PERCH', 'THE ATTIC', 'COBWEB CORNER', 'SPIDER NEST', 'CLOUD DECK', 'FOG BANK', 'SKY BRIDGE', 'PENTHOUSE CRYPT'];
+const STAGE_NAMES = { 1: 'HAUNTED HALLS', 2: 'THE FREEZER', 3: 'GOO LABS', 4: 'PENTHOUSE', 5: 'BOILER ROOM', 6: 'FLOODED PIPES', 7: 'CATACOMBS', 8: 'THE SEWER',
+  9: 'THE BELFRY', 10: 'THE ATTIC', 11: 'CLOUD DECK', 12: 'THE LANDLORD' };
+const STAGE_SHORT = { 1: 'HALLS', 2: 'FREEZER', 3: 'LABS', 4: 'CROWN', 5: 'BOILER', 6: 'PIPES', 7: 'CRYPT', 8: 'SEWER', 9: 'BELFRY', 10: 'ATTIC', 11: 'CLOUDS', 12: 'BONES' };
 const BASEMENT = KING_FLOOR + 1; // first floor below ground
-const underground = i => i >= BASEMENT && i < ROOF;
-const floorLabel = i => i >= ROOF ? 'ROOF' : underground(i) ? `B${i - KING_FLOOR}` : `${i + 1}F`;
+const SKY = BLOB_FLOOR + 1; // first of the Act 3 floors, stacked above the throne room
+const underground = i => i >= BASEMENT && i <= BLOB_FLOOR;
+const skyFloor = i => i >= SKY && i < ROOF;
+const floorLabel = i => i >= ROOF ? 'ROOF' : underground(i) ? `B${i - KING_FLOOR}` : skyFloor(i) ? `${i - SKY + KING_FLOOR + 2}F` : `${i + 1}F`;
 const SPEAKERS = {
   NARR:   { name: 'NARRATOR', color: '#b9bddc', voice: 520, wave: 'triangle' },
   PAC:    { name: 'PAC-MAN', color: '#ffe600', voice: 880, portrait: true },
@@ -407,6 +601,9 @@ const SPEAKERS = {
   KING:   { name: 'KING GHOST', color: '#ffd86b', voice: 140, wave: 'sawtooth', portrait: true },
   HOUND:  { name: 'THE BLOODHOUND', color: '#e8a25c', voice: 300, portrait: true },
   BLOB:   { name: 'THE BIG BLOB', color: '#7dff5c', voice: 85, wave: 'sawtooth', portrait: true },
+  GARGOYLE: { name: 'THE GARGOYLE', color: '#c3c7dc', voice: 110, wave: 'sawtooth', portrait: true },
+  SPIDER: { name: 'THE SPIDER', color: '#c9a0ff', voice: 980, portrait: true },
+  SKULL:  { name: 'SKELETON KING', color: '#ece6cf', voice: 190, portrait: true },
 };
 // Lines are [speaker, text, mood]. Mood 'scared' shows the blue frightened face; 'angry' the King's red rage.
 const STORY = {
@@ -548,6 +745,68 @@ const STORY = {
       ['BLOB', "I EAT DOTS. I EAT GHOSTS. I EAT EVERYTHING. THE MORE I EAT, THE BIGGER I GET.", 'angry'],
       ['NARR', "TIP: EAT THE DOTS BEFORE IT DOES. NO DOTS, NO BLOB."],
     ],
+    21: [
+      ['NARR', "11F: THE BELFRY. THE BELLS HAVEN'T RUNG IN 300 YEARS. THE GARGOYLES HAVEN'T BLINKED IN 400."],
+      ['GARGOYLE', "..."],
+      ['NARR', "GARGOYLES ONLY MOVE WHEN YOU'RE NOT LOOKING. FACE ONE AND IT TURNS BACK TO STONE."],
+      ['NARR', "ANYTHING IN FRONT OF PAC-MAN IS BEING WATCHED. ANYTHING BEHIND HIM IS SNEAKING UP."],
+      ['NARR', "PELLETS WON'T HURT STONE. BUT A DASH STRAIGHT INTO ONE SMASHES IT TO RUBBLE."],
+      ['GARGOYLE', "...I SAW NOTHING. I AM A STATUE.", 'angry'],
+      ['PAC', "WAKKA."],
+    ],
+    22: [
+      ['BLINKY', "WE'RE BACK! THE LANDLORD HIRED US. HE PAYS IN EXPOSURE."],
+      ['PINKY', "WHAT'S EXPOSURE?"],
+      ['BLINKY', "NO IDEA. BUT THERE'S A LOT OF IT UP HERE. IT'S VERY WINDY."],
+      ['NARR', "TIP: A GARGOYLE BEHIND YOU IS A GARGOYLE ON THE MOVE."],
+    ],
+    23: [
+      ['HOUND', "ARF! I GOT A NEW JOB TOO! I GUARD THE BELLS!"],
+      ['GARGOYLE', "...HE WILL NOT STOP LICKING ME."],
+      ['CLYDE', "YOU CAN'T STARE DOWN A STATUE AND OUTRUN A HOUND AT THE SAME TIME. GOOD LUCK!"],
+    ],
+    24: [
+      ['NARR', "14F: THE ATTIC. NOBODY HAS DUSTED UP HERE SINCE THE TOWER WAS BUILT."],
+      ['SPIDER', "OH! A VISITOR! SORRY ABOUT THE MESS. I'VE BEEN DECORATING."],
+      ['NARR', "SPIDERS SPIN WEBS WHEREVER THEY WALK. WEBS SLOW PAC-MAN WAY DOWN."],
+      ['NARR', "DASH TO TEAR RIGHT THROUGH A WEB. OLD WEBS FRAY AWAY ON THEIR OWN."],
+      ['NARR', "POWER PELLETS WORK ON SPIDERS. EAT THEM WHILE THEY'RE BLUE."],
+      ['SPIDER', "EIGHT LEGS, EIGHT EYES, ZERO FRIENDS. WANT TO BE FRIENDS? ...NO? THEN I'LL EAT YOU."],
+    ],
+    25: [
+      ['WRAITH', "THE ATTIC. WHERE MEMORIES GATHER DUST. AND DUST GATHERS... MORE DUST."],
+      ['SPIDER', "I LIKE HIM. HE GETS IT."],
+    ],
+    26: [
+      ['SPIDER', "I CALLED MY SISTER! SHE HAS EVEN MORE LEGS THAN ME."],
+      ['CLYDE', "HOW MANY LEGS?"],
+      ['SPIDER', "ALSO EIGHT. BUT SHE'S VERY PROUD OF THEM."],
+    ],
+    27: [
+      ['NARR', "17F: THE CLOUD DECK. THE TOWER IS SO TALL THE CLOUDS COME INDOORS."],
+      ['INKY', "THE CLOUD WALLS DRIFT! A SHIMMER MEANS A WALL IS ABOUT TO FORM."],
+      ['NARR', "A WALL THAT FORMS ON TOP OF YOU JUST PUSHES YOU OUT. ONE THAT DRIFTS AWAY OPENS A SHORTCUT."],
+      ['PAC', "WAKKA WAKKA."],
+    ],
+    28: [
+      ['GARGOYLE', "..."],
+      ['NARR', "THE GARGOYLE WANTS YOU TO KNOW IT IS A CLOUD NOW. IT IS NOT. IT IS STILL A GARGOYLE."],
+    ],
+    29: [
+      ['KING', "PAC-MAN! WAIT UP! I'M COMING WITH YOU. HE RAISED MY RENT AGAIN!", 'angry'],
+      ['BLOB', "ME TOO. HE CHARGES ME BY THE POUND."],
+      ['PAC', "WAKKA WAKKA."],
+      ['NARR', "ONE FLOOR LEFT: THE PENTHOUSE CRYPT. SOMETHING UP THERE IS RATTLING."],
+    ],
+    30: [
+      ['SKULL', "WELL, WELL. PAC-MAN. THE TENANT WHO EATS EVERYTHING."],
+      ['SKULL', "I AM THE SKELETON KING. I OWN THIS TOWER, EVERY FLOOR IN IT, AND THAT FRUIT SALAD."],
+      ['PAC', "WAKKA?"],
+      ['SKULL', "WHY FRUIT? MY DOCTOR SAYS I NEED MORE CALCIUM."],
+      ['KING', "FRUIT DOESN'T HAVE ANY CALCIUM."],
+      ['SKULL', "SILENCE, TENANT!", 'angry'],
+      ['NARR', "TIP: POWER UP AND HIT HIM. HE FALLS TO PIECES. EAT HIS BONES BEFORE THEY CRAWL BACK."],
+    ],
   },
   post: {
     0: [
@@ -596,8 +855,31 @@ const STORY = {
       ['SLIME', "BLORP!"],
       ['NARR', "TRANSLATION: \"DAD, YOU PROMISED YOU'D STOP EATING THE BUILDING.\""],
       ['KING', "MY FRUIT SALAD! SLIGHTLY USED!"],
+      ['NARR', "*KNOCK KNOCK KNOCK*"],
+      ['SKULL', "GOOD EVENING, TENANTS. RENT IS DUE."],
+      ['KING', "THE LANDLORD?!", 'scared'],
+      ['SKULL', "I OWN THIS WHOLE SPOOKSCRAPER. THE KING RENTS THE PENTHOUSE. THE BLOB RENTS THE BASEMENT."],
+      ['SKULL', "YOU ARE BOTH VERY LATE. RENT IS PAID IN FRUIT, SO I'LL TAKE THE SALAD. SEE YOU UPSTAIRS."],
+      ['NARR', "THE FRUIT SALAD FLOATS UP THE STAIRWELL. PAST THE THRONE ROOM. TO FLOORS NOBODY KNEW WERE THERE."],
+      ['KING', "THERE ARE MORE FLOORS?! I WAS TOLD THERE WERE TEN!", 'scared'],
       ['PAC', "WAKKA."],
-      ['NARR', "AND SO THE FRUIT CAME HOME. AGAIN. THE BLOB JOINED A GYM. AND UP ON THE ROOF, SOMETHING WAITS..."],
+    ],
+    23: [
+      ['GARGOYLE', "..."],
+      ['NARR', "THE GARGOYLE SAYS THE ATTIC IS NEXT. ALSO THAT IT SAW NOTHING."],
+    ],
+    26: [
+      ['SPIDER', "WAIT! BEFORE YOU GO UP... BRING A JACKET. IT'S CLOUDY."],
+    ],
+    30: [
+      ['SKULL', "MY BONES! MY BEAUTIFUL BONES! I'M JUST A PILE!", 'scared'],
+      ['SKULL', "FINE. FINE! TAKE THE FRUIT. THE RENT IS WAIVED. FOREVER."],
+      ['KING', "FRUIT HAS NO CALCIUM, BY THE WAY."],
+      ['SKULL', "...THEN WHAT DOES?"],
+      ['BLOB', "MILK. I ATE ALL OF IT. SORRY."],
+      ['NARR', "SO THEY MADE A SMOOTHIE. FRUIT, MILK, AND A LITTLE BIT OF BLOB. NOBODY ASKED ABOUT THE BLOB."],
+      ['PAC', "WAKKA."],
+      ['NARR', "AND SO THE FRUIT CAME HOME. FOR GOOD, THIS TIME. PROBABLY."],
     ],
   },
 };
@@ -640,7 +922,8 @@ function setMaze(key) {
 const tile = (c, r) => {
   if (r < 0 || r >= H) return '#';
   if (c < 0 || c >= W) return tunnelRows.has(r) ? ' ' : '#';
-  return M[r][c];
+  const t = M[r][c];
+  return t === 'a' || t === 'b' ? (cloudOn(t) ? '#' : ' ') : t;
 };
 const pacOK = (c, r) => { const t = tile(c, r); return t !== '#' && t !== '-'; };
 const ghostOK = pacOK;
@@ -769,6 +1052,11 @@ const SFX = {
   howl() { beep(420, 700, 0.35, 'triangle', 0.14); beep(700, 520, 0.5, 'triangle', 0.12, 0.35); },
   burp() { beep(120, 70, 0.35, 'sawtooth', 0.18); beep(95, 60, 0.3, 'square', 0.07, 0.05); },
   slurp() { beep(260, 700, 0.12, 'triangle', 0.14); },
+  crumble() { for (let i = 0; i < 5; i++) beep(320 - i * 50, 60, 0.14, 'sawtooth', 0.08, i * 0.05); beep(1800, 200, 0.2, 'square', 0.04); },
+  rattle() { for (let i = 0; i < 4; i++) beep(1300 + (i % 2) * 400, 900, 0.035, 'square', 0.05, i * 0.05); },
+  tear() { beep(2200, 500, 0.1, 'sawtooth', 0.05); },
+  whoosh() { beep(260, 900, 0.5, 'triangle', 0.1); beep(420, 1300, 0.4, 'sine', 0.05, 0.1); },
+  grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
   clear() { [523, 659, 784, 1047].forEach((f, i) => beep(f, f, 0.14, 'square', 0.07, i * 0.1)); },
@@ -807,6 +1095,7 @@ const G = {
   bossSay: null, bossLast: null, pendingPhase: 0, phaseTo: 0,
   vents: [], ventT: 0, hounds: [], magnet: 0, flyDots: [], light: 0,
   buddies: [], blobules: [], waveT: 0, slurpT: 0,
+  gargoyles: [], spiders: [], webs: new Map(), bones: [], cloudsOn: false, cloudT: 0, cloudPer: 5, gargMoving: false,
 };
 const pac = { x: 13.5, y: 23, dir: L, face: L, anim: 0, dash: 0, grace: 0, trail: [] };
 const ghosts = [
@@ -857,11 +1146,17 @@ function resetActors() {
   G.hounds = [];
   for (let i = 0; i < (G.cfg.hounds || 0); i++) G.hounds.push(makeHound(i));
   G.magnet = 0; G.flyDots = []; G.pacKey = -1;
+  G.gargoyles = (G.cfg.gargoyles || []).map(makeGargoyle);
+  G.spiders = [];
+  for (let i = 0; i < (G.cfg.spiders || 0); i++) G.spiders.push(makeSpider(i));
+  G.webs = new Map(); G.bones = []; G.gargMoving = false;
+  G.cloudsOn = !!G.cfg.clouds; G.cloudT = 0; G.cloudPer = G.cfg.clouds || CLOUD_PER;
   if (G.cfg.boss) {
     if (!G.boss) G.boss = { kind: G.cfg.boss, hp: BOSSES[G.cfg.boss].hp, eaten: [] };
     Object.assign(G.boss, { x: meta.throne.x, y: meta.throne.y, dir: D, state: 'chase', inv: 1.5, fire: 2.5, burst: 5,
-      summon: bossPhase(G.boss) > 1 ? 2.5 : 8, dead: 0, tgt: null, retarget: 0, flash: 0 });
+      summon: bossPhase(G.boss) > 1 ? 2.5 : 8, dead: 0, tgt: null, retarget: 0, flash: 0, rt: 0 });
     G.pendingPhase = 0;
+    if (G.boss.kind === 'skull') skullSetup(bossPhase(G.boss));
   } else G.boss = null;
 }
 function loadLevel(i) {
@@ -887,20 +1182,24 @@ function addScore(n) {
 }
 // ---------- Story progress (saved per browser) ----------
 const SAVE_KEY = 'pacman.story';
-// unlocked: highest floor you may enter. won: the Big Blob is beaten (opens the roof).
+// unlocked: highest floor you may enter. won: the Skeleton King is beaten (opens the roof).
 // ck: boss checkpoints, the HP a retry starts from, keyed by floor.
-const freshSave = () => ({ v: 3, unlocked: 0, won: false, best: [], ck: {} });
+const freshSave = () => ({ v: 4, unlocked: 0, won: false, best: [], ck: {} });
 const KENNEL = LEVELS.findIndex(l => l.maze === 'H'); // floor added in save v3
 let save = freshSave();
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
   if (s && typeof s.unlocked === 'number') {
-    save = { v: 3, unlocked: s.unlocked, won: !!s.won, best: Array.isArray(s.best) ? s.best : [],
+    save = { v: 4, unlocked: s.unlocked, won: !!s.won, best: Array.isArray(s.best) ? s.best : [],
       ck: s.ck && typeof s.ck === 'object' ? s.ck : {} };
     if ((s.v || 1) < 3) { // saves from before the Kennel: every floor from it down moved one deeper
       if (save.unlocked > KENNEL) save.unlocked++; // already past it: count it as cleared
       if (save.best.length > KENNEL) save.best.splice(KENNEL, 0, 0);
       save.ck = Object.fromEntries(Object.entries(save.ck).map(([k, v]) => [+k >= KENNEL ? +k + 1 : +k, v]));
+    }
+    if (s.v >= 2 && s.v < 4) { // saves from before the sky floors: beating the Blob opened the roof, now it opens 11F
+      if (s.won) { save.unlocked = Math.max(save.unlocked, SKY); save.won = false; }
+      if (save.best[SKY]) { save.best[ROOF] = save.best[SKY]; save.best[SKY] = 0; } // the old roof's best score
     }
     save.unlocked = Math.min(save.unlocked, LEVELS.length - 1);
     if (!s.v) { // saves from before the basement: 'won' meant the King was beaten, so open B1 instead of the roof
@@ -913,11 +1212,11 @@ try {
 const writeSave = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} };
 const hasProgress = () => save.unlocked > 0 || save.won;
 const topFloor = () => save.won ? ROOF : Math.min(save.unlocked, LEVELS.length - 1);
-const isCleared = i => i < ROOF && (i < save.unlocked || (i === BLOB_FLOOR && save.won));
+const isCleared = i => i < ROOF && (i < save.unlocked || (i === SKULL_FLOOR && save.won));
 function recordClear(i, score) {
   if (i >= ROOF) return;
   save.unlocked = Math.max(save.unlocked, Math.min(i + 1, LEVELS.length - 1));
-  if (i === BLOB_FLOOR) save.won = true;
+  if (i === SKULL_FLOOR) save.won = true;
   if (save.ck) delete save.ck[i];
   if (score > (save.best[i] || 0)) save.best[i] = score;
   writeSave();
@@ -957,23 +1256,29 @@ function toCast() {
 }
 
 const FLOOR_H = 2.3, GROUND = 31.5, TOWER_X = 8, TOWER_W = 12, VIEW_TOP = 2.3, VIEW_BOT = 31.3;
-// World rows: the tower stands on the ground line; the basement floors stack downward beneath it.
-const floorTop = i => underground(i) ? GROUND + 0.6 + (i - BASEMENT) * FLOOR_H : GROUND - (i + 1) * FLOOR_H;
-const floorMid = i => i >= ROOF ? floorTop(KING_FLOOR) - 1.7 : floorTop(i) + FLOOR_H / 2;
-const floorStage = i => i >= ROOF ? 0 : LEVELS[i].stage;
+// World rows: the tower stands on the ground line; the basement floors stack downward beneath it,
+// and the sky floors stack on above the throne room once the Blob is beaten.
+const floorTop = i => underground(i) ? GROUND + 0.6 + (i - BASEMENT) * FLOOR_H
+  : skyFloor(i) ? GROUND - (i - SKY + KING_FLOOR + 2) * FLOOR_H : GROUND - (i + 1) * FLOOR_H;
 const basementOpen = () => save.unlocked >= BASEMENT;
+const skyOpen = () => save.unlocked >= SKY;
+const topStory = () => skyOpen() ? SKULL_FLOOR : KING_FLOOR; // the floor the roof sits on
+const floorMid = i => i >= ROOF ? floorTop(topStory()) - 1.7 : floorTop(i) + FLOOR_H / 2;
+const floorStage = i => i >= ROOF ? 0 : LEVELS[i].stage;
 const canEnter = i => i === ROOF ? save.won : i >= 0 && i <= save.unlocked;
-// The map scrolls to follow Pac-Man down the basement shaft; above ground it all fits on one screen.
+// The map scrolls to follow Pac-Man down the basement shaft and up the sky floors; before either
+// opens, the ten floors above ground fit on one screen.
 function towerCam(py) {
-  if (!basementOpen()) return 0;
-  return Math.max(0, Math.min(floorTop(ROOF - 1) + FLOOR_H + 1.4 - VIEW_BOT, py - 17));
+  const lo = skyOpen() ? floorTop(SKULL_FLOOR) - 6.2 - VIEW_TOP : 0;
+  const hi = basementOpen() ? floorTop(BLOB_FLOOR) + FLOOR_H + 1.4 - VIEW_BOT : 0;
+  return Math.max(lo, Math.min(hi, py - 17));
 }
 // sel: floor Pac-Man ends on. from: floor the trip starts at. fresh: a just-unlocked floor to flag.
 function toTower(sel, from = sel, fresh = -1) {
   sel = Math.max(0, Math.min(sel, topFloor()));
   G.state = 'tower'; G.timer = 0; G.paused = false;
-  G.tower = { sel, py: floorMid(Math.min(from, ROOF)), fresh, fall: from === KING_FLOOR && sel === BASEMENT };
-  if (from !== sel) G.tower.fall ? SFX.fall() : SFX.climb();
+  G.tower = { sel, py: floorMid(Math.min(from, ROOF)), fresh, fall: from === KING_FLOOR && sel === BASEMENT, rise: from === BLOB_FLOOR && sel === SKY };
+  if (from !== sel) G.tower.fall ? SFX.fall() : G.tower.rise ? (SFX.whoosh(), SFX.climb()) : SFX.climb();
 }
 // Up/down move to the floor physically above/below, so the basement reads downward.
 function towerMove(up) {
@@ -983,9 +1288,9 @@ function towerMove(up) {
 }
 function towerEnter() { startLevel(G.tower.sel); }
 function floorAt(row) { // row in world space
-  const ry = floorTop(KING_FLOOR);
+  const ry = floorTop(topStory());
   if (row >= ry - 4.4 && row < ry) return ROOF;
-  for (let i = 0; i < ROOF; i++) if (row >= floorTop(i) && row < floorTop(i) + FLOOR_H) return i;
+  for (let i = 0; i < ROOF; i++) if (!(skyFloor(i) && !skyOpen()) && row >= floorTop(i) && row < floorTop(i) + FLOOR_H) return i;
   return null;
 }
 
@@ -1012,7 +1317,7 @@ function finishLevel() {
   const before = topFloor();
   recordClear(i, G.score);
   G.freshFloor = topFloor() > before ? topFloor() : -1;
-  const then = i === BLOB_FLOOR ? 'ending' : 'tower';
+  const then = i === SKULL_FLOOR ? 'ending' : 'tower';
   if (STORY.post[i]) openDialog(STORY.post[i], then); else afterDialog(then);
 }
 
@@ -1489,6 +1794,122 @@ function magnetUpdate(dt) {
   }
 }
 
+// ---------- Sky floor hazards ----------
+// Gargoyles: stone statues that only move while Pac-Man is facing away from them. Anything in
+// front of him (the way he faces) is being watched and stays put. Pellets can't hurt stone, but
+// a dash straight into one smashes it to rubble; it re-forms on its perch a few seconds later.
+const GARG_SPEED = 1.15, GARG_REST = 6, GARG_FORM = 1.2;
+function makeGargoyle([c, r], i) {
+  return { px: c, py: r, x: c, y: r, dir: D, state: 'perch', t: 2 + i * 2, decided: -1, moving: false };
+}
+const watched = g => (g.x - pac.x) * pac.face.x + (g.y - pac.y) * pac.face.y > 0;
+function gargAtCenter(g) { // no dithering: always the step that closes on Pac-Man
+  const opts = ORDER.filter(d => d !== g.dir.o && ghostOK(g.x + d.x, g.y + d.y));
+  if (!opts.length) { g.dir = g.dir.o; return true; }
+  const tx = Math.round(pac.x), ty = Math.round(pac.y);
+  let best = opts[0], bd = Infinity;
+  for (const d of opts) {
+    const dd = (g.x + d.x - tx) ** 2 + (g.y + d.y - ty) ** 2;
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  g.dir = best;
+  return true;
+}
+function gargoyleUpdate(g, dt, sp) {
+  g.moving = false;
+  if (g.state === 'rubble') { if ((g.t -= dt) <= 0) Object.assign(g, { state: 'form', t: GARG_FORM, x: g.px, y: g.py, dir: D, decided: -1 }); return; }
+  if (g.state === 'form') { if ((g.t -= dt) <= 0) { g.state = 'perch'; g.t = 1; } return; }
+  if (G.chill > 0 || watched(g)) return;
+  if (g.state === 'perch') { if ((g.t -= dt) <= 0) g.state = 'active'; return; }
+  g.moving = true;
+  step(g, sp.ghost * GARG_SPEED * BASE * dt, gargAtCenter, false);
+}
+function smashGargoyle(g) {
+  Object.assign(g, { state: 'rubble', t: GARG_REST, rx: g.x, ry: g.y });
+  addScore(500); SFX.crumble();
+  popup('SMASH!', g.x, g.y - 1, '#c3c7dc');
+}
+
+// Spiders crawl out of the ghost house spinning a web on every tile they cross. A web slows
+// Pac-Man down until it frays away; a dash tears straight through. Power pellets make them edible.
+const SPIDER_SPEED = 0.9, WEB_LIFE = 14, WEB_SLOW = 0.5, WEB_MAX = 40;
+function makeSpider(i, at) {
+  if (at) return { x: at.x, y: at.y, dir: ORDER[i % 4], state: 'active', decided: -1, fresh: 0.8, boss: true };
+  const hx = house.doorX + (i ? 1.5 : -1.5);
+  return { hx, x: hx, y: house.homeY, dir: U, bob: i ? 1 : -1, state: 'house', t: 2 + i * 6, decided: -1, fresh: 0 };
+}
+const webKey = (x, y) => { const c = Math.round(x), r = Math.round(y); return c < 0 || c >= W || r < 0 || r >= H ? -1 : r * W + c; };
+function spinWeb(c, r) {
+  const k = webKey(c, r);
+  if (k < 0 || !openMask[k]) return;
+  G.webs.delete(k); G.webs.set(k, WEB_LIFE); // re-set so the oldest web stays first in line
+  if (G.webs.size > WEB_MAX) G.webs.delete(G.webs.keys().next().value);
+}
+function spiderAtCenter(s) {
+  if (G.fright === 0) spinWeb(s.x, s.y);
+  return slimeAtCenter(s);
+}
+function spiderUpdate(s, dt, sp) {
+  if (s.fresh > 0) s.fresh -= dt;
+  if (s.state === 'eaten') {
+    if (!s.boss && wraithStep(s, 1.7 * BASE * dt, Math.floor(s.hx), house.homeY)) Object.assign(s, { x: s.hx, y: house.homeY, state: 'house', t: 3, dir: U });
+    return;
+  }
+  if (G.chill > 0) return;
+  if (s.state === 'house') {
+    s.y += s.bob * 0.5 * BASE * dt;
+    if (s.y < house.homeY - 0.5) { s.y = house.homeY - 0.5; s.bob = 1; }
+    if (s.y > house.homeY + 0.5) { s.y = house.homeY + 0.5; s.bob = -1; }
+    s.dir = s.bob < 0 ? U : D;
+    if ((s.t -= dt) <= 0) s.state = 'leave';
+    return;
+  }
+  const dist = (G.fright > 0 ? sp.ghostF : sp.ghost * SPIDER_SPEED) * BASE * dt;
+  if (s.state === 'leave') {
+    if (Math.abs(s.x - house.doorX) > 1e-6) {
+      if (Math.abs(s.y - house.homeY) > 1e-6) moveToward(s, 'y', house.homeY, dist);
+      else moveToward(s, 'x', house.doorX, dist);
+    } else {
+      s.x = house.doorX;
+      moveToward(s, 'y', house.exitY, dist);
+      if (s.y === house.exitY) { s.state = 'active'; s.dir = s.hx < house.doorX ? L : R; s.decided = -1; }
+    }
+    return;
+  }
+  step(s, dist, spiderAtCenter, false);
+}
+
+// Cloud walls ('a' and 'b' in the maze) take turns being solid, swapping every few seconds with a
+// shimmer as warning. Anyone caught inside a wall as it forms gets pushed out to the nearest path.
+const CLOUD_PER = 5, CLOUD_WARN = 1.2;
+const cloudOn = ch => G.cloudsOn && G.cloudT >= 0 && ch === (Math.floor(G.cloudT / G.cloudPer) % 2 ? 'b' : 'a');
+const cloudSoon = () => G.cloudsOn && (G.cloudT < 0 ? G.cloudT > -CLOUD_WARN : G.cloudPer - G.cloudT % G.cloudPer < CLOUD_WARN);
+function unstick(e) {
+  const inWall = (c, r) => c >= 0 && c < W && r >= 0 && r < H && (M[r][c] === 'a' || M[r][c] === 'b') && cloudOn(M[r][c]);
+  e.decided = -1;
+  const cs = [Math.floor(e.x), Math.ceil(e.x)], rs = [Math.floor(e.y), Math.ceil(e.y)];
+  if (!cs.some(c => rs.some(r => inWall(c, r)))) return;
+  const sx = Math.max(0, Math.min(W - 1, Math.round(e.x))), sy = Math.max(0, Math.min(H - 1, Math.round(e.y)));
+  const seen = new Set([sy * W + sx]), q = [[sx, sy]];
+  for (let i = 0; i < q.length; i++) {
+    const [c, r] = q[i];
+    if (pacOK(c, r)) { e.x = c; e.y = r; return; }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = c + dx, nr = r + dy, k = nr * W + nc;
+      if (nc < 0 || nc >= W || nr < 0 || nr >= H || seen.has(k)) continue;
+      seen.add(k); q.push([nc, nr]);
+    }
+  }
+}
+function cloudShift() {
+  SFX.whoosh();
+  const movers = [pac, ...G.ghosts.filter(g => g.mode === 'active'), ...G.gargoyles, ...G.spiders.filter(s => s.state === 'active'),
+    ...G.slimes.filter(s => s.state === 'active'), ...G.hounds.filter(h => h.state === 'hunt'), ...G.minions, ...G.bones];
+  for (const e of movers) unstick(e);
+  for (const k of [...G.webs.keys()]) if (tile(k % W, Math.floor(k / W)) === '#') G.webs.delete(k);
+  for (const h of G.hounds) if (h.state === 'hunt' && !h.lost && h.sniff <= 0) reScent(h); // the old trail may run through a wall now
+}
+
 // ---------- Bosses ----------
 // King Ghost: a 3x3 ghost that floats through pillars on a half-tile-offset grid. Power pellets make
 // it flee; touching it while powered costs it one hit (and uses up your power). Phases change
@@ -1531,13 +1952,32 @@ const BLOB_LINES = {
   start: "OOH. A SNACK THAT FIGHTS BACK.",
   taunt: ["SLURP! ...PTOO. TOO YELLOW.", "MORE DOTS FOR ME!", "DELICIOUS DEFEAT.", "YOU WERE SNACK-SIZED ANYWAY."],
 };
+const SKULL_LINES = {
+  hit: {
+    1: ["MY RIBS! MY BEAUTIFUL RIBS!", "YOU RATTLED ME!", "THAT WAS MY FUNNY BONE!", "OOF. I'M ALL TO PIECES."],
+    2: ["STOP SCATTERING ME!", "THAT'S COMING OUT OF YOUR DEPOSIT!", "BONES! ASSEMBLE!", "HOW RUDE. HOW VERY RUDE."],
+    3: ["NOT AGAIN!", "I'M RUNNING OUT OF SKELETON!", "OW! MY EVERYTHING!", "PUT ME BACK TOGETHER!"],
+  },
+  bone: ["GIVE THAT BACK!", "THAT'S MY FEMUR!", "NOT MY TOE BONE!", "I NEEDED THAT ONE!", "DROP IT! BAD PAC-MAN!"],
+  rise: ["GOOD AS NEW. MOSTLY.", "WHO TOOK MY RIB?", "BACK ON MY FEET. WELL, FOOT."],
+  last: "WAIT! LET'S TALK ABOUT A DISCOUNT!",
+  phase: {
+    2: "GARGOYLES, YOU'RE FIRED. SPIDERS, YOU'RE HIRED!",
+    3: "ENOUGH! THE WALLS OF MY TOWER OBEY ME!",
+  },
+  start: "RENT IS DUE, PAC-MAN.",
+  taunt: ["LATE FEE!", "EVICTED!", "NO REFUNDS.", "I'LL BE KEEPING YOUR DEPOSIT."],
+};
 const BOSSES = {
   king: { name: 'KING GHOST', hp: 12, per: 4, colors: BOSS_COLORS, lines: KING_LINES, speaker: 'KING',
     tips: { 2: 'MINIONS JOIN THE FIGHT', 3: 'ORB BURSTS + FASTER KING' },
     retry: ph => `YOU AGAIN?! FINE. WE PICK UP FROM PHASE ${ph}. I'VE BEEN PRACTICING MY EVIL LAUGH.` },
-  blob: { name: 'BIG BLOB', hp: 60, per: 20, colors: ['', '#4fe35d', '#c6e83a', '#ff5a7a'], lines: BLOB_LINES, speaker: 'BLOB',
+  blob: { name: 'BIG BLOB', hp: 60, per: 20, gauge: true, colors: ['', '#4fe35d', '#c6e83a', '#ff5a7a'], lines: BLOB_LINES, speaker: 'BLOB',
     tips: { 1: 'STARVE IT', 2: 'EAT THE GHOSTS', 3: 'BITE + EAT BITS' },
     retry: ph => `BACK FOR SECONDS? FINE. WE START AT PHASE ${ph}. I SAVED YOU A SEAT. IN MY STOMACH.` },
+  skull: { name: 'SKELETON KING', short: 'SKULL KING', hp: 30, per: 10, gauge: true, colors: ['', '#7dffb0', '#c9a0ff', '#ff5a5a'], lines: SKULL_LINES, speaker: 'SKULL',
+    tips: { 1: 'GARGOYLE GUARDS', 2: 'SPIDERS SPIN WEBS', 3: 'THE WALLS SHIFT' },
+    retry: ph => `BACK ALREADY? FINE. WE START AT PHASE ${ph}. I'M ADDING IT TO YOUR RENT.` },
 };
 const bossPhase = b => { const d = BOSSES[b.kind]; return b.hp > d.per * 2 ? 1 : b.hp > d.per ? 2 : 3; };
 const phaseStartHp = (b, ph) => BOSSES[b.kind].hp - (ph - 1) * BOSSES[b.kind].per;
@@ -1556,7 +1996,7 @@ function bossStep(b, dist, tx, ty) {
 }
 function fireOrb(b, d, lane) {
   const x = d.x ? b.x + d.x * 1.6 : lane ?? Math.round(b.x), y = d.y ? b.y + d.y * 1.6 : lane ?? Math.round(b.y);
-  G.orbs.push({ x, y, dir: d, armed: false, goo: b.kind === 'blob' });
+  G.orbs.push({ x, y, dir: d, armed: false, goo: b.kind === 'blob', bone: b.kind === 'skull' });
   SFX.orb();
 }
 function spawnMinion() {
@@ -1601,6 +2041,7 @@ function bossDie() {
   const b = G.boss;
   b.state = 'dead'; b.dead = 0;
   G.orbs = []; G.minions = []; G.blobules = []; G.buddies = []; G.bossSay = null;
+  G.bones = []; G.spiders = []; G.gargoyles = []; G.webs = new Map(); G.cloudsOn = false;
   clearCheckpoint();
   addScore(10000); SFX.bossDie();
 }
@@ -1780,6 +2221,81 @@ function blobCrewUpdate(dt) {
   G.blobules = G.blobules.filter(s => s.state === 'active');
 }
 
+// The Skeleton King: floats through the crypt's pillars like the King Ghost, hurling bones along
+// your row or column. Hit him while powered up and he collapses into a heap; four bones scatter and
+// crawl back to rebuild him, and every bone you eat before it gets home costs him more health.
+// Phase 1 brings gargoyle guards, phase 2 spiders and their webs, phase 3 the shifting bone gates.
+const SKULL_HIT = 3, SKULL_BONES = 4, SKULL_RISE = 0.9;
+function skullSetup(ph) {
+  G.gargoyles = ph === 1 ? meta.perches.map(makeGargoyle) : [];
+  G.spiders = []; G.webs = new Map(); G.bones = [];
+  G.cloudsOn = ph === 3; G.cloudT = -2; G.cloudPer = CLOUD_PER;
+  if (ph === 2) { spawnSpider(); spawnSpider(); }
+}
+function spawnSpider() {
+  const b = G.boss, spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
+  G.spiders.push(makeSpider(G.spiders.length, spots[G.spiders.length % spots.length]));
+}
+function skullUpdate(dt, sp) {
+  const b = G.boss;
+  if (b.inv > 0) b.inv -= dt;
+  const ph = bossPhase(b);
+  if (b.state === 'pile') { // waits in a heap until every bone is home or eaten
+    if (!G.bones.length) { b.state = 'rise'; b.rt = SKULL_RISE; SFX.rattle(); if (!G.bossSay || G.bossSay.t < 1) bossLine(SKULL_LINES.rise); }
+    return;
+  }
+  if (b.state === 'rise') { if ((b.rt -= dt) <= 0) { b.state = 'chase'; b.inv = 1.6; } return; } // a moment's grace to step clear
+  if (G.chill > 0) return;
+  if (ph === 2 && (b.summon -= dt) <= 0) { if (G.spiders.length < 2) spawnSpider(); b.summon = 7; }
+  if (G.fright > 0) {
+    const [tx, ty] = fleeCorner();
+    bossStep(b, 0.42 * BASE * dt, tx, ty);
+    return;
+  }
+  bossStep(b, [0, 0.34, 0.4, 0.46][ph] * BASE * dt, Math.round(pac.x - 0.5), Math.round(pac.y));
+  aimOrbs(b, dt, [0, 2.2, 1.8, 1.3][ph]);
+  if (ph === 3 && (b.burst -= dt) <= 0) { for (const d of ORDER) fireOrb(b, d); b.burst = 5; }
+}
+function skullHurt(n) {
+  const b = G.boss, before = bossPhase(b);
+  b.hp = Math.max(0, b.hp - n);
+  if (b.hp <= 0) { bossDie(); return; }
+  if (bossPhase(b) !== before) G.pendingPhase = bossPhase(b);
+}
+function hitSkull() {
+  const b = G.boss;
+  G.fright = 0; G.shake = 0.5; G.orbs = [];
+  b.state = 'pile'; b.inv = 0;
+  addScore(1000); SFX.bossHit(); SFX.crumble();
+  popup('1000', b.x, b.y - 2, '#ffd86b', 1.5);
+  const spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
+  for (let k = 0; k < SKULL_BONES; k++) {
+    const s = spots[k % spots.length];
+    G.bones.push({ x: s.x, y: s.y, dir: ORDER[k], decided: -1, t: 0, fresh: 0.5, spin: k * 1.7 });
+  }
+  skullHurt(SKULL_HIT);
+  if (b.state === 'dead' || G.pendingPhase) return;
+  if (b.hp <= 4) bossTalk(SKULL_LINES.last); else bossLine(SKULL_LINES.hit[bossPhase(b)]);
+}
+// Bones fly apart, each its own way, then crawl back to the heap (or give up and slide home after a while).
+function boneAtCenter(s) {
+  const opts = ORDER.filter(d => d !== s.dir.o && ghostOK(s.x + d.x, s.y + d.y));
+  if (!opts.length) { s.dir = s.dir.o; return true; }
+  if (s.t < 1.5) { if (!opts.includes(s.dir)) s.dir = opts[(Math.random() * opts.length) | 0]; return true; }
+  return bitAtCenter(s);
+}
+function bonesUpdate(dt) {
+  const b = G.boss;
+  for (const s of G.bones) {
+    s.t += dt;
+    if (s.fresh > 0) s.fresh -= dt;
+    if (G.chill > 0) continue;
+    step(s, (s.t < 0.8 ? 0.9 : 0.45) * BASE * dt, boneAtCenter, false);
+    if (s.t > 1.5 && (Math.hypot(s.x - b.x, s.y - b.y) < 1.6 || s.t > 7)) { s.state = 'home'; SFX.rattle(); }
+  }
+  G.bones = G.bones.filter(s => s.state !== 'home');
+}
+
 // Freeze the action for a phase change: the boss rages, the bar turns over, and the save checkpoints.
 function startPhase(ph) {
   const b = G.boss;
@@ -1787,6 +2303,7 @@ function startPhase(ph) {
   G.state = 'phase'; G.timer = 3.4; G.phaseTo = ph;
   G.orbs = []; G.fright = 0; G.shake = 1.2; G.popups = [];
   if (b.kind === 'blob') { b.hp = Math.min(b.hp, phaseStartHp(b, ph)); G.blobules = []; }
+  if (b.kind === 'skull') { b.hp = Math.min(b.hp, phaseStartHp(b, ph)); G.bones = []; b.state = 'rise'; b.rt = SKULL_RISE; } // pulls himself together after the cut-in
   bossTalk(BOSSES[b.kind].lines.phase[ph], 3.4);
   SFX.roar();
   if (G.lvIndex < ROOF) { save.ck = { ...save.ck, [G.lvIndex]: phaseStartHp(b, ph) }; writeSave(); }
@@ -1796,6 +2313,7 @@ function endPhase() {
   G.state = 'play';
   b.fire = 1.5;
   if (b.kind === 'king') { for (let i = 1; i < ph; i++) spawnMinion(); b.summon = 10; b.burst = 3; }
+  else if (b.kind === 'skull') { skullSetup(ph); b.summon = 7; b.burst = 3; }
   else if (ph === 2) { spawnWave(); G.waveT = 2.5; }
   else G.buddies = [];
 }
@@ -1870,7 +2388,8 @@ function play(dt) {
   }
   if (G.want && pac.dir && G.want === pac.dir.o) { pac.dir = G.want; pac.face = G.want; }
   const dashing = pac.dash > 0;
-  const moved = step(pac, dt * BASE * (G.fright > 0 ? sp.pacF : sp.pac) * (dashing ? DASH_SPEED : flowMul(pac)), pacAtCenter, true);
+  const webbed = !dashing && G.webs.size > 0 && G.webs.has(webKey(pac.x, pac.y)); // stuck in a web: half speed
+  const moved = step(pac, dt * BASE * (G.fright > 0 ? sp.pacF : sp.pac) * (dashing ? DASH_SPEED : flowMul(pac) * (webbed ? WEB_SLOW : 1)), pacAtCenter, true);
   pac.anim += moved;
   if (dashing) {
     pac.trail.unshift({ x: pac.x, y: pac.y });
@@ -1896,6 +2415,15 @@ function play(dt) {
     const want = G.cfg.dark + (G.fright > 0 ? 3.5 : 0);
     G.light += (want - G.light) * Math.min(1, dt * 3);
   }
+  if (G.webs.size) {
+    if (dashing && G.webs.delete(webKey(pac.x, pac.y))) { SFX.tear(); popup('RIP!', pac.x, pac.y - 1, '#e6e9ff', 0.5); }
+    for (const [k, t] of G.webs) { if (t <= dt) G.webs.delete(k); else G.webs.set(k, t - dt); }
+  }
+  if (G.cloudsOn) {
+    const turn = Math.floor(G.cloudT / G.cloudPer);
+    G.cloudT += dt;
+    if (Math.floor(G.cloudT / G.cloudPer) !== turn) cloudShift();
+  }
   if (G.cfg.flicker) { // every so often the lights die completely and everyone creeps
     if (G.fright > 0) G.blackout = 0; // a power pellet relights the room
     else if (G.blackout > 0) G.blackout = Math.max(0, G.blackout - dt);
@@ -1919,9 +2447,15 @@ function play(dt) {
   for (const w of G.wraiths) wraithUpdate(w, edt, sp);
   for (const s of G.slimes) slimeUpdate(s, edt, sp);
   for (const h of G.hounds) houndUpdate(h, edt, sp);
+  for (const g of G.gargoyles) gargoyleUpdate(g, edt, sp);
+  for (const s of G.spiders) spiderUpdate(s, edt, sp);
+  const creeping = G.gargoyles.some(g => g.moving);
+  if (creeping && !G.gargMoving) SFX.grind(); // stone grinding as a statue starts to move
+  G.gargMoving = creeping;
   if (G.vents.length) ventsUpdate(dt);
   if (G.boss) {
     if (G.boss.kind === 'blob') { blobUpdate(dt, sp); blobCrewUpdate(dt); }
+    else if (G.boss.kind === 'skull') { skullUpdate(dt, sp); bonesUpdate(dt); G.spiders = G.spiders.filter(s => !(s.boss && s.state === 'eaten')); }
     else bossUpdate(dt, sp);
     for (const m of G.minions) { if (m.fresh > 0) m.fresh -= dt; if (G.chill === 0) step(m, (G.fright > 0 ? 0.45 : 0.7) * BASE * dt, slimeAtCenter, false); }
     orbsUpdate(dt);
@@ -2005,6 +2539,30 @@ function play(dt) {
     G.state = 'dying'; G.timer = 0;
     return;
   }
+  for (const g of G.gargoyles) {
+    if (g.state !== 'active' && g.state !== 'perch') continue;
+    let dx = Math.abs(g.x - pac.x);
+    if (dx > W / 2) dx = W + 2 - dx;
+    if (dx >= 0.6 || Math.abs(g.y - pac.y) >= 0.6) continue;
+    if (safe || G.chill > 0) { smashGargoyle(g); continue; } // dashing (or frozen solid): shatter it
+    G.state = 'dying'; G.timer = 0;
+    return;
+  }
+  for (const s of G.spiders) {
+    if (s.state !== 'active' || s.fresh > 0) continue;
+    let dx = Math.abs(s.x - pac.x);
+    if (dx > W / 2) dx = W + 2 - dx;
+    if (dx >= 0.6 || Math.abs(s.y - pac.y) >= 0.6) continue;
+    if (G.fright > 0 || G.chill > 0) {
+      s.state = 'eaten';
+      addScore(400); G.chill > 0 ? SFX.shatter() : SFX.ghost();
+      popup('400', s.x, s.y, '#d9b3ff');
+      continue;
+    }
+    if (safe) continue;
+    G.state = 'dying'; G.timer = 0;
+    return;
+  }
   if (!safe && G.vents.length && inSteam(pac.x, pac.y)) { G.state = 'dying'; G.timer = 0; return; }
   const b = G.boss;
   if (b && b.kind === 'king' && b.state !== 'dead' && Math.abs(b.x - pac.x) < 1.5 && Math.abs(b.y - pac.y) < 1.5) {
@@ -2028,6 +2586,20 @@ function play(dt) {
     if (blobTouch(pac)) {
       if (G.fright > 0 && b.inv <= 0 && b.state !== 'recoil') { biteBlob(); return; }
       if (!(G.chill > 0 || safe || b.state === 'recoil' || b.inv > 1)) { G.state = 'dying'; G.timer = 0; return; }
+    }
+  }
+  if (b && b.kind === 'skull' && b.state !== 'dead') {
+    for (const s of G.bones) {
+      if (s.fresh > 0 || Math.abs(s.x - pac.x) >= 0.65 || Math.abs(s.y - pac.y) >= 0.65) continue;
+      s.state = 'home'; // eaten: it never makes it back
+      addScore(300); SFX.ghost(); popup('300', s.x, s.y, '#fff4d0');
+      skullHurt(1);
+      if (b.state !== 'dead' && !G.pendingPhase && (!G.bossSay || G.bossSay.t < 1)) bossLine(SKULL_LINES.bone);
+    }
+    G.bones = G.bones.filter(s => s.state !== 'home');
+    if (b.state !== 'dead' && Math.abs(b.x - pac.x) < 1.5 && Math.abs(b.y - pac.y) < 1.5 && b.state === 'chase') {
+      if (G.fright > 0 && b.inv <= 0) { hitSkull(); return; }
+      if (!(G.chill > 0 || safe || b.inv > 1)) { G.state = 'dying'; G.timer = 0; return; }
     }
   }
   for (const m of [...G.minions]) {
@@ -2246,6 +2818,7 @@ function drawSlime(s) {
 }
 function drawBoss(b) {
   if (b.kind === 'blob') { drawBlob(b); return; }
+  if (b.kind === 'skull') { drawSkull(b); return; }
   const cx = b.x + 0.5, cy = b.y + 0.5, r = 1.55;
   if (b.state === 'dead') {
     const p = b.dead / 2.8;
@@ -2320,11 +2893,189 @@ function drawBoss(b) {
   }
 }
 function drawOrb(o) {
+  if (o.bone) { drawBone(o.x + 0.5, o.y + 0.5, G.t * 12, 1.1, '#ff9a6b'); return; } // thrown bones spin, and burn orange
   const big = Math.floor(G.t * 12) % 2;
   ctx.fillStyle = o.goo ? '#8dff5c' : '#ff5ce1';
   ctx.beginPath(); ctx.arc(o.x + 0.5, o.y + 0.5, big ? 0.4 : 0.32, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(o.x + 0.4, o.y + 0.4, 0.2, 0.2);
+}
+// ---------- Sky floor sprites ----------
+// Frightened face shared by the new critters: two square eyes and a wobbly mouth.
+function scaredFace(cx, cy, w, flash) {
+  const face = flash ? '#ff2a2a' : '#ffb8ae';
+  ctx.fillStyle = face;
+  ctx.fillRect(cx - w * 0.45, cy - w * 0.3, w * 0.22, w * 0.22); ctx.fillRect(cx + w * 0.23, cy - w * 0.3, w * 0.22, w * 0.22);
+  ctx.strokeStyle = face; ctx.lineWidth = w * 0.1; ctx.beginPath();
+  for (let i = 0; i <= 6; i++) ctx.lineTo(cx - w * 0.5 + i * w / 6, cy + w * 0.25 + (i % 2 ? -w * 0.1 : 0));
+  ctx.stroke();
+}
+// A crouching stone gargoyle with folded wings. Its eyes glow red only while it's moving.
+function drawGargoyle(g) {
+  if (g.state === 'rubble') {
+    ctx.fillStyle = '#5c6078';
+    for (const [dx, dy, s] of [[-0.35, 0.35, 0.36], [0.15, 0.42, 0.42], [0.45, 0.22, 0.26], [-0.1, 0.08, 0.28]]) ctx.fillRect(g.rx + 0.5 + dx - s / 2, g.ry + 0.5 + dy - s / 2, s, s * 0.75);
+    return;
+  }
+  if (g.state === 'form' && Math.floor(G.t * 10) % 2 === 0) return;
+  const cx = g.x + 0.5, cy = g.y + 0.5, ice = iceOn(), live = g.moving, d = g.dir || D;
+  const stone = ice ? '#bdf4ff' : '#9a9fb8', dark = ice ? '#8fd6ec' : '#5c6078';
+  const flap = live && Math.floor(G.t * 10) % 2 ? 0.12 : 0;
+  ctx.fillStyle = dark;
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(cx + s * 0.3, cy - 0.3); ctx.lineTo(cx + s * (0.95 + flap), cy - 0.8 - flap); ctx.lineTo(cx + s * 0.88, cy + 0.1);
+    ctx.lineTo(cx + s * 0.68, cy - 0.02); ctx.lineTo(cx + s * 0.62, cy + 0.5); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = stone;
+  ctx.beginPath(); ctx.moveTo(cx - 0.55, cy + 0.78); ctx.lineTo(cx - 0.42, cy - 0.05); ctx.lineTo(cx + 0.42, cy - 0.05); ctx.lineTo(cx + 0.55, cy + 0.78); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy - 0.3, 0.45, 0, Math.PI * 2); ctx.fill();
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 0.14, cy - 0.66); ctx.lineTo(cx + s * 0.42, cy - 1.02); ctx.lineTo(cx + s * 0.38, cy - 0.56); ctx.fill(); }
+  ctx.fillStyle = dark;
+  ctx.fillRect(cx - 0.52, cy + 0.64, 0.3, 0.14); ctx.fillRect(cx + 0.22, cy + 0.64, 0.3, 0.14);
+  ctx.fillRect(cx - 0.16, cy - 0.1, 0.32, 0.07);
+  if (live) {
+    ctx.fillStyle = '#ff3b3b';
+    for (const s of [-1, 1]) ctx.fillRect(cx + s * 0.2 - 0.09 + d.x * 0.06, cy - 0.4 + d.y * 0.05, 0.18, 0.15);
+  } else {
+    ctx.fillStyle = '#2a2d3d';
+    for (const s of [-1, 1]) ctx.fillRect(cx + s * 0.2 - 0.1, cy - 0.34, 0.2, 0.06);
+  }
+}
+// A purple spider: round body, eight scuttling legs, a cluster of red eyes.
+function drawSpider(s) {
+  const cx = s.x + 0.5, cy = s.y + 0.5, d = s.dir || D;
+  if (s.state === 'eaten') {
+    ctx.fillStyle = '#ff3b6b';
+    for (const k of [-1, 1]) ctx.fillRect(cx + k * 0.16 - 0.07, cy - 0.1, 0.14, 0.14);
+    return;
+  }
+  if (s.fresh > 0 && Math.floor(G.t * 12) % 2 === 0) return;
+  const fr = G.fright > 0 && s.state === 'active', ice = iceOn();
+  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 10) % 2;
+  const body = ice ? '#bdf4ff' : fr ? (flash ? '#ffffff' : '#2121ff') : '#9a5cd6', leg = ice ? '#8fd6ec' : fr ? '#1414a8' : '#6a38a8';
+  ctx.strokeStyle = leg; ctx.lineWidth = 0.1; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const sd of [-1, 1]) for (let k = 0; k < 4; k++) {
+    const y0 = cy - 0.18 + k * 0.17, lift = (k + frame) % 2 ? -0.12 : 0.08;
+    ctx.beginPath(); ctx.moveTo(cx + sd * 0.25, y0); ctx.lineTo(cx + sd * 0.62, y0 - 0.26 + lift); ctx.lineTo(cx + sd * 0.88, y0 + 0.26 + lift * 0.5); ctx.stroke();
+  }
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(cx, cy + 0.14, 0.42, 0.46, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + d.x * 0.08, cy - 0.32 + d.y * 0.05, 0.3, 0, Math.PI * 2); ctx.fill();
+  if (fr) { scaredFace(cx, cy + 0.05, 0.7, flash); return; }
+  ctx.fillStyle = ice ? '#8fd6ec' : '#d9b3ff'; // hourglass marking
+  ctx.beginPath(); ctx.moveTo(cx - 0.12, cy + 0.02); ctx.lineTo(cx + 0.12, cy + 0.02); ctx.lineTo(cx - 0.12, cy + 0.36); ctx.lineTo(cx + 0.12, cy + 0.36); ctx.fill();
+  ctx.fillStyle = ice ? '#e6fbff' : '#ff3b3b';
+  for (const [ex, ey, r] of [[-0.11, -0.36, 0.075], [0.11, -0.36, 0.075], [-0.21, -0.27, 0.05], [0.21, -0.27, 0.05]]) {
+    ctx.beginPath(); ctx.arc(cx + ex + d.x * 0.1, cy + ey + d.y * 0.06, r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+function drawBone(cx, cy, ang, s = 1, color = '#f2ecd6') {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang); ctx.scale(s, s);
+  ctx.fillStyle = color;
+  ctx.fillRect(-0.28, -0.07, 0.56, 0.14);
+  for (const x of [-0.3, 0.3]) for (const y of [-0.08, 0.08]) { ctx.beginPath(); ctx.arc(x, y, 0.1, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+// The Skeleton King's skull, crowned, drawn around (cx, cy) at scale k and tilted by tilt.
+function drawSkullHead(cx, cy, k, tilt, bone, glow, ph, fr, flash, ice) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt); ctx.scale(k, k);
+  ctx.fillStyle = bone;
+  ctx.beginPath(); ctx.arc(0, -0.1, 0.95, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(-0.55, 0.45, 1.1, 0.5);
+  if (fr) scaredFace(0, 0.05, 1.4, flash);
+  else {
+    ctx.fillStyle = '#1a0010';
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * 0.38, -0.05, 0.28, 0.32, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = glow;
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(s * 0.38, -0.02, 0.11, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#1a0010';
+    ctx.beginPath(); ctx.moveTo(-0.12, 0.42); ctx.lineTo(0.12, 0.42); ctx.lineTo(0, 0.2); ctx.fill();
+    for (let i = 0; i < 5; i++) ctx.fillRect(-0.47 + i * 0.22, 0.62, 0.05, 0.3);
+    if (ph >= 2) { // furious brow ridges
+      ctx.strokeStyle = '#1a0010'; ctx.lineWidth = 0.12;
+      for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 0.66, -0.46); ctx.lineTo(s * 0.12, -0.3); ctx.stroke(); }
+    }
+  }
+  drawCrown(0, -1.18, 0.72, ice ? '#e6fbff' : '#ffd23f');
+  ctx.restore();
+}
+function drawSkull(b) {
+  const cx = b.x + 0.5, cy = b.y + 0.5, def = BOSSES.skull;
+  if (b.state === 'dead') {
+    const p = b.dead / 2.8;
+    ctx.lineWidth = 0.14;
+    for (let k = 0; k < 3; k++) {
+      const q = p * 1.4 - k * 0.2;
+      if (q <= 0 || q > 1) continue;
+      ctx.strokeStyle = ['#ffd86b', '#ece6cf', '#ffffff'][k];
+      ctx.beginPath(); ctx.arc(cx, cy, 0.5 + q * 6, 0, Math.PI * 2); ctx.stroke();
+    }
+    for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + p, d = p * 7; drawBone(cx + Math.cos(a) * d, cy + Math.sin(a) * d + p * p * 3, a * 2 + p * 9, 1.3); }
+    if (p < 0.5) drawSkullHead(cx, cy - 0.4 - p * 2, 1 - p, p * 6, '#ece6cf', '#ffffff', 1, false, false, false);
+    return;
+  }
+  const ph = b.look || bossPhase(b), ice = iceOn();
+  const fr = G.fright > 0 && b.state === 'chase';
+  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const hit = b.inv > 0 && Math.floor(b.inv * 12) % 2 === 0;
+  const cut = G.state === 'phase' && b === G.boss && Math.floor(G.t * 8) % 2 === 0;
+  const bone = ice ? '#bdf4ff' : hit ? '#ffffff' : fr ? (flash ? '#ffffff' : '#2121ff') : '#ece6cf';
+  const glow = cut ? def.colors[ph - 1] || '#ffffff' : def.colors[ph];
+  if (b.state === 'pile' || b.state === 'rise') {
+    const k = b.state === 'rise' ? 1 - b.rt / SKULL_RISE : 0, shake = b.state === 'rise' ? Math.sin(G.t * 40) * 0.08 : 0;
+    for (const [dx, dy, a] of [[-0.8, 1.0, 0.3], [0.7, 1.05, -0.4], [0, 1.2, 0.1], [-0.35, 0.8, -1.2], [0.4, 0.75, 1.1]]) drawBone(cx + dx + shake, cy + dy, a, 1.3, bone);
+    drawSkullHead(cx + shake, cy + 0.2 - k * 0.8, 0.72 + k * 0.28, 0.45 * (1 - k), bone, glow, ph, false, false, ice);
+    return;
+  }
+  ctx.strokeStyle = bone; ctx.lineWidth = 0.18; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx, cy + 0.1); ctx.lineTo(cx, cy + 1.4); ctx.stroke(); // spine
+  for (let i = 0; i < 3; i++) { // ribs
+    const y = cy + 0.45 + i * 0.3, w = 0.8 - i * 0.15;
+    ctx.beginPath(); ctx.moveTo(cx - w, y + 0.12); ctx.quadraticCurveTo(cx, y - 0.2, cx + w, y + 0.12); ctx.stroke();
+  }
+  const wave = G.chill > 0 ? 0 : Math.sin(G.t * 6) * 0.2;
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 0.75, cy + 0.4); ctx.lineTo(cx + s * 1.3, cy + 0.95 + s * wave); ctx.lineTo(cx + s * 1.5, cy + 0.35 + s * wave); ctx.stroke(); }
+  drawSkullHead(cx, cy - 0.55, 1, 0, bone, glow, ph, fr, flash, ice);
+}
+// Cloud walls (or, in the crypt, bone gates): solid ones are drawn full; a shimmer marks where one
+// is about to form, and a solid one blinks just before it drifts away.
+function drawClouds() {
+  const soon = cloudSoon(), blink = Math.floor(G.t * 8) % 2 === 0, bone = G.cfg.boss === 'skull';
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const ch = M[r][c];
+    if (ch !== 'a' && ch !== 'b') continue;
+    const solid = cloudOn(ch);
+    const a = solid ? (soon && blink ? 0.45 : 1) : !G.cloudsOn ? 0 : soon ? (blink ? 0.55 : 0.2) : 0.16;
+    if (!a) continue;
+    ctx.globalAlpha = a;
+    if (!solid && !soon) { // drifted away: a faint wisp marks where it will come back
+      ctx.fillStyle = bone ? '#ece6cf' : '#e6ecff';
+      for (const [dx, dy, rr] of [[0.3, 0.55, 0.14], [0.55, 0.45, 0.17], [0.75, 0.58, 0.12]]) { ctx.beginPath(); ctx.arc(c + dx, r + dy, rr, 0, Math.PI * 2); ctx.fill(); }
+    } else if (bone) {
+      const across = M[r][c - 1] === '#' && M[r][c + 1] === '#' ? 0 : Math.PI / 2; // bar lies across the corridor
+      drawBone(c + 0.5, r + 0.5, across + 0.35, 1.45, '#ece6cf'); drawBone(c + 0.5, r + 0.5, across - 0.35, 1.45, '#d8d0b0');
+    } else {
+      ctx.fillStyle = '#aebcff';
+      for (const [dx, dy, rr] of [[0.28, 0.6, 0.3], [0.72, 0.6, 0.3], [0.5, 0.62, 0.34]]) { ctx.beginPath(); ctx.arc(c + dx, r + dy, rr, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = '#e6ecff';
+      for (const [dx, dy, rr] of [[0.3, 0.48, 0.26], [0.7, 0.48, 0.26], [0.5, 0.36, 0.3]]) { ctx.beginPath(); ctx.arc(c + dx, r + dy, rr, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+function drawWebs() {
+  ctx.save();
+  ctx.strokeStyle = '#e6e9ff'; ctx.lineWidth = 0.05;
+  for (const [k, t] of G.webs) {
+    const c = k % W, r = (k - c) / W, cx = c + 0.5, cy = r + 0.5;
+    ctx.globalAlpha = 0.6 * Math.min(1, t / 3); // fading as it frays
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 4; ctx.moveTo(cx - Math.cos(a) * 0.5, cy - Math.sin(a) * 0.5); ctx.lineTo(cx + Math.cos(a) * 0.5, cy + Math.sin(a) * 0.5); }
+    for (const rr of [0.2, 0.4]) for (let i = 0; i <= 8; i++) { const a = i * Math.PI / 4; ctx[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 // ---------- Basement sprites ----------
 // Your freshest scent: paw prints on the last few tiles of the trail, fading as they age.
@@ -2708,6 +3459,63 @@ function drawFruit(kind, x, y) {
       ctx.fillStyle = '#ff3b4f'; ctx.beginPath(); ctx.moveTo(cx - 0.56, cy - 0.35); ctx.arc(cx, cy - 0.35, 0.56, 0, Math.PI); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#1a1a1a'; for (const [a, b] of [[-0.25, 0.05], [0, 0.18], [0.25, 0.05], [-0.1, -0.02], [0.12, -0.02]]) ctx.fillRect(cx + a - 0.04, cy + b - 0.25, 0.08, 0.1);
       break;
+    case 'fig':
+      ctx.fillStyle = '#7a3b8f'; ctx.beginPath(); ctx.moveTo(cx, cy - 0.55);
+      ctx.bezierCurveTo(cx + 0.25, cy - 0.3, cx + 0.62, cy + 0.05, cx + 0.5, cy + 0.42);
+      ctx.bezierCurveTo(cx + 0.35, cy + 0.75, cx - 0.35, cy + 0.75, cx - 0.5, cy + 0.42);
+      ctx.bezierCurveTo(cx - 0.62, cy + 0.05, cx - 0.25, cy - 0.3, cx, cy - 0.55); ctx.fill();
+      line([[cx, cy - 0.5], [cx + 0.05, cy - 0.75]], '#6b4a14');
+      circle(cx - 0.22, cy + 0.15, 0.08, '#c89be0'); circle(cx, cy + 0.6, 0.06, '#ffb0c8'); break;
+    case 'lime':
+      circle(cx, cy + 0.1, 0.55, '#5ccc2e'); circle(cx, cy + 0.1, 0.45, '#8fe85a');
+      ctx.strokeStyle = '#5ccc2e'; ctx.lineWidth = 0.06; ctx.beginPath();
+      for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; ctx.moveTo(cx - Math.cos(a) * 0.42, cy + 0.1 - Math.sin(a) * 0.42); ctx.lineTo(cx + Math.cos(a) * 0.42, cy + 0.1 + Math.sin(a) * 0.42); }
+      ctx.stroke(); circle(cx, cy + 0.1, 0.07, '#eaffc2'); break;
+    case 'apricot':
+      circle(cx, cy + 0.12, 0.55, '#ffb347');
+      ctx.strokeStyle = '#e8903a'; ctx.lineWidth = 0.07; ctx.beginPath(); ctx.arc(cx + 0.28, cy + 0.12, 0.48, Math.PI * 0.7, Math.PI * 1.3); ctx.stroke();
+      circle(cx - 0.2, cy - 0.05, 0.1, '#ffe0b0');
+      ctx.fillStyle = '#3ddc5a'; ctx.beginPath(); ctx.ellipse(cx - 0.2, cy - 0.52, 0.22, 0.09, 0.5, 0, Math.PI * 2); ctx.fill(); break;
+    case 'raspberry':
+      [[-0.22, -0.12], [0.22, -0.12], [0, -0.12], [-0.12, 0.12], [0.12, 0.12], [-0.3, 0.1], [0.3, 0.1], [0, 0.35], [-0.16, 0.34], [0.16, 0.34], [0, 0.55]]
+        .forEach(([a, b]) => circle(cx + a, cy + b, 0.15, '#e8174f'));
+      [[-0.2, -0.15], [0.12, 0.08], [-0.05, 0.36]].forEach(([a, b]) => circle(cx + a, cy + b, 0.05, '#ff8aa8'));
+      ctx.fillStyle = '#3ddc5a'; ctx.beginPath(); ctx.moveTo(cx - 0.35, cy - 0.3); ctx.lineTo(cx, cy - 0.5); ctx.lineTo(cx + 0.35, cy - 0.3); ctx.lineTo(cx, cy - 0.2); ctx.fill();
+      line([[cx, cy - 0.45], [cx, cy - 0.72]], '#3f8a2a'); break;
+    case 'lychee':
+      circle(cx, cy + 0.12, 0.55, '#d8344f');
+      ctx.fillStyle = '#9e1f36';
+      for (let i = 0; i < 9; i++) { const a = i * 2.4, rr = 0.15 + (i % 3) * 0.12; ctx.fillRect(cx + Math.cos(a) * rr - 0.04, cy + 0.12 + Math.sin(a) * rr - 0.04, 0.08, 0.08); }
+      line([[cx, cy - 0.4], [cx - 0.08, cy - 0.72]], '#6b4a14');
+      circle(cx - 0.24, cy - 0.08, 0.08, '#ffb0bc'); break;
+    case 'papaya': // cut in half: orange flesh around a pocket of black seeds
+      ctx.fillStyle = '#6fbf3a'; ctx.beginPath(); ctx.ellipse(cx, cy + 0.08, 0.42, 0.7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff8c3a'; ctx.beginPath(); ctx.ellipse(cx, cy + 0.08, 0.34, 0.62, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffc07a'; ctx.beginPath(); ctx.ellipse(cx, cy + 0.2, 0.16, 0.34, 0, 0, Math.PI * 2); ctx.fill();
+      [[0, 0.02], [-0.07, 0.16], [0.07, 0.16], [0, 0.3], [-0.06, 0.42], [0.06, 0.42]].forEach(([a, b]) => circle(cx + a, cy + b, 0.055, '#1a1a1a')); break;
+    case 'passionfruit': // cut open: purple rind, golden pulp, dark seeds
+      circle(cx, cy + 0.1, 0.58, '#5b2a6e'); circle(cx, cy + 0.1, 0.46, '#ffd23f');
+      [[0, 0], [-0.2, -0.1], [0.2, -0.1], [-0.15, 0.25], [0.15, 0.25], [0, 0.38], [-0.28, 0.12], [0.28, 0.12]].forEach(([a, b]) => circle(cx + a, cy + 0.1 + b, 0.06, '#2a1a00'));
+      break;
+    case 'persimmon':
+      ctx.fillStyle = '#ff6a1a'; ctx.beginPath(); ctx.ellipse(cx, cy + 0.15, 0.6, 0.48, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3f8a2a';
+      for (let i = 0; i < 4; i++) { const a = -Math.PI / 2 + (i - 1.5) * 0.7; ctx.beginPath(); ctx.ellipse(cx + Math.cos(a) * 0.2, cy - 0.3 + Math.sin(a) * 0.08 + 0.1, 0.18, 0.07, a, 0, Math.PI * 2); ctx.fill(); }
+      circle(cx - 0.25, cy + 0.02, 0.08, '#ffc09a'); break;
+    case 'durian':
+      ctx.fillStyle = '#9e8a2a'; ctx.beginPath();
+      for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, rr = i % 2 ? 0.46 : 0.66; ctx.lineTo(cx + Math.cos(a) * rr * 0.9, cy + 0.12 + Math.sin(a) * rr); }
+      ctx.fill();
+      circle(cx, cy + 0.12, 0.4, '#c6b43a');
+      ctx.fillStyle = '#9e8a2a'; for (const [a, b] of [[-0.15, -0.05], [0.15, 0.05], [0, 0.3], [-0.18, 0.28], [0.2, -0.15]]) ctx.fillRect(cx + a - 0.04, cy + 0.12 + b - 0.04, 0.08, 0.08);
+      line([[cx, cy - 0.5], [cx + 0.05, cy - 0.75]], '#6b4a14'); break;
+    case 'goldapple': // the rent, paid in full
+      circle(cx - 0.22, cy + 0.12, 0.45, '#ffd23f'); circle(cx + 0.22, cy + 0.12, 0.45, '#ffd23f');
+      line([[cx, cy - 0.3], [cx + 0.15, cy - 0.7]], '#8a5a1e');
+      ctx.fillStyle = '#3ddc5a'; ctx.beginPath(); ctx.ellipse(cx + 0.35, cy - 0.58, 0.2, 0.08, -0.4, 0, Math.PI * 2); ctx.fill();
+      circle(cx - 0.35, cy - 0.05, 0.1, '#fff6c8');
+      if (Math.floor(G.t * 4) % 2) { ctx.fillStyle = '#ffffff'; ctx.fillRect(cx + 0.3, cy + 0.15, 0.08, 0.3); ctx.fillRect(cx + 0.19, cy + 0.26, 0.3, 0.08); }
+      break;
   }
 }
 
@@ -2729,14 +3537,15 @@ function drawHUD() {
   }
   for (let l = G.lvIndex, i = 0; l >= 0 && i < 4; l--, i++) { screenSpace(); drawFruit(fruitFor(l), 25 - i * 2, row); }
   const bdef = G.boss && BOSSES[G.boss.kind], ph = G.boss && (G.state === 'phase' ? G.phaseTo : bossPhase(G.boss));
-  const label = G.lvIndex >= ROOF ? `ROOF ${G.lvIndex - ROOF + 1}` : G.boss && G.boss.kind === 'blob' ? bdef.tips[ph]
+  const tipped = G.boss && G.boss.kind !== 'king'; // the Blob and the Skeleton King show what each phase wants
+  const label = G.lvIndex >= ROOF ? `ROOF ${G.lvIndex - ROOF + 1}` : tipped ? bdef.tips[ph]
     : G.cfg.boss ? 'BOSS FIGHT' : `STAGE ${G.cfg.stage}-${G.cfg.lv}`;
-  text(label, 14, row, G.boss && G.boss.kind === 'blob' ? bdef.colors[ph] : STAGE_INK[G.cfg.stage], 'center', 0.55);
+  text(label, 14, row, tipped ? bdef.colors[ph] : STAGE_INK[G.cfg.stage], 'center', 0.55);
   if (G.boss) {
     // Three blocks, one per phase, emptied right to left; the live block blinks its frame.
-    // The King's blocks are four hit segments; the Blob's are a continuous mass gauge.
-    const per = bdef.per, blob = G.boss.kind === 'blob';
-    text(`${bdef.name}  PHASE ${ph}/3`, 0.8, TOP, bdef.colors[ph], 'left', 0.4);
+    // The King's blocks are four hit segments; the Blob's and the Skeleton King's are continuous gauges.
+    const per = bdef.per, blob = !!bdef.gauge;
+    text(`${bdef.short || bdef.name}  PHASE ${ph}/3`, 0.8, TOP, bdef.colors[ph], 'left', 0.4);
     screenSpace();
     const gx = 10.4, gw = 5.3, gap = 0.5, segs = blob ? 1 : per, segW = gw / segs;
     for (let p = 1; p <= 3; p++) {
@@ -2768,20 +3577,24 @@ function drawHUD() {
 function drawTitle() {
   screenSpace();
   ctx.fillStyle = 'rgba(0,0,0,0.85)';
-  ctx.fillRect(1, TOP + 2.2, 26, 23.9);
+  ctx.fillRect(1, TOP + 2.2, 26, 24.4);
   const blink = Math.floor(G.t * 2) % 2 === 0;
   text('CHARACTER / NICKNAME', 14, TOP + 3, '#ffffff', 'center', 0.62);
-  const cast = [['-SHADOW', '"BLINKY"'], ['-SPEEDY', '"PINKY"'], ['-BASHFUL', '"INKY"'], ['-POKEY', '"CLYDE"'], ['-DRIFTER', '"WRAITH"'], ['-OOZER', '"SLIME"']];
-  if (save.unlocked > LEVELS.findIndex(l => l.hounds)) cast.push(['-SNIFFER', '"HOUND"']); // joins the cast once you've met one
-  const dy = (cast.length - 6) * 1.8;
-  cast.forEach(([a, b], i) => {
-    const row = 4.9 + i * 1.8;
+  const at = row => ({ x: 3.5, y: row, dir: R });
+  const cast = [
+    ...ghosts.map((g, i) => [['-SHADOW', '-SPEEDY', '-BASHFUL', '-POKEY'][i], `"${g.name.toUpperCase()}"`, g.color, row => drawGhost({ ...at(row), color: g.color, frightened: false, eaten: false })]),
+    ['-DRIFTER', '"WRAITH"', '#c9b8ff', row => drawWraith({ ...at(row), state: 'active' })],
+    ['-OOZER', '"SLIME"', '#5cff6b', row => drawSlime({ ...at(row), kind: 'big', state: 'active', group: 0 })],
+  ];
+  const met = key => save.unlocked > LEVELS.findIndex(l => l[key]); // the rest join the cast once you've met them
+  if (met('hounds')) cast.push(['-SNIFFER', '"HOUND"', '#e8a25c', row => drawHound({ ...at(row), state: 'hunt', sniff: 0 })]);
+  if (met('gargoyles')) cast.push(['-STATUE', '"GARGOYLE"', '#c3c7dc', row => drawGargoyle({ ...at(row), dir: D, state: 'active', moving: true })]);
+  if (met('spiders')) cast.push(['-WEAVER', '"SPIDER"', '#c9a0ff', row => drawSpider({ ...at(row), state: 'active', fresh: 0 })]);
+  const gap = cast.length > 7 ? 1.45 : 1.8, dy = 4.9 + (cast.length - 1) * gap - 13.9;
+  cast.forEach(([a, b, color, draw], i) => {
+    const row = 4.9 + i * gap;
     screenSpace(); ctx.translate(0, TOP);
-    let color;
-    if (i < 4) { color = ghosts[i].color; drawGhost({ x: 3.5, y: row, dir: R, color, frightened: false, eaten: false }); }
-    else if (i === 4) { color = '#c9b8ff'; drawWraith({ x: 3.5, y: row, state: 'active', dir: R }); }
-    else if (i === 5) { color = '#5cff6b'; drawSlime({ kind: 'big', x: 3.5, y: row, dir: R, state: 'active', group: 0 }); }
-    else { color = '#e8a25c'; drawHound({ x: 3.5, y: row, dir: R, state: 'hunt', sniff: 0 }); }
+    draw(row);
     text(a, 6, TOP + row, color, 'left', 0.6);
     text(b, 25, TOP + row, color, 'right', 0.6);
   });
@@ -2803,7 +3616,7 @@ function drawBanner() {
     ctx.fillRect(2.5, 13.2, 23, 8.2);
     ctx.strokeStyle = stageColor; ctx.lineWidth = 0.12;
     ctx.strokeRect(2.5, 13.2, 23, 8.2);
-    text(G.lvIndex >= ROOF ? `THE ROOF - ROUND ${G.lvIndex - ROOF + 1}` : G.cfg.boss === 'blob' ? 'FINAL BOSS' : G.cfg.boss ? 'BOSS FIGHT'
+    text(G.lvIndex >= ROOF ? `THE ROOF - ROUND ${G.lvIndex - ROOF + 1}` : G.cfg.boss === 'skull' ? 'FINAL BOSS' : G.cfg.boss ? 'BOSS FIGHT'
       : `${floorLabel(G.lvIndex)} - ${FLOOR_NAMES[G.lvIndex]}`, 14, 14.2, G.cfg.boss ? '#ffd86b' : '#ffffff', 'center', 0.7);
     text(G.cfg.intro[0], 14, 16.2, '#ffe600', 'center', 0.6);
     const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
@@ -2844,8 +3657,9 @@ function drawCharacter(who, mood, cx, cy, k, face = R, open = 0.4) {
   screenSpace();
   ctx.save();
   ctx.translate(cx, cy);
-  if (who === 'KING') { ctx.scale(k * 0.5, k * 0.5); ctx.translate(0, 0.45); }
+  if (who === 'KING' || who === 'SKULL') { ctx.scale(k * 0.5, k * 0.5); ctx.translate(0, 0.45); }
   else if (who === 'BLOB') { ctx.scale(k * 0.42, k * 0.42); ctx.translate(0, 0.3); }
+  else if (who === 'GARGOYLE') { ctx.scale(k * 0.9, k * 0.9); ctx.translate(0, 0.2); }
   else ctx.scale(k, k);
   const at = { x: -0.5, y: -0.5 };
   withFright(mood === 'scared', () => {
@@ -2856,6 +3670,9 @@ function drawCharacter(who, mood, cx, cy, k, face = R, open = 0.4) {
     else if (who === 'KING') drawBoss({ ...at, kind: 'king', state: 'chase', hp: mood === 'angry' ? 1 : BOSSES.king.hp, inv: 0 });
     else if (who === 'BLOB') drawBlob({ ...at, kind: 'blob', state: 'chase', hp: BOSSES.blob.hp, look: mood === 'angry' ? 3 : 1, inv: 0, flash: 0, eaten: [] });
     else if (who === 'HOUND') drawHound({ ...at, dir: face, state: 'hunt', sniff: mood === 'sniff' ? 1 : 0 });
+    else if (who === 'GARGOYLE') drawGargoyle({ ...at, dir: D, state: 'active', moving: mood === 'angry' });
+    else if (who === 'SPIDER') drawSpider({ ...at, dir: face, state: 'active', fresh: 0 });
+    else if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: mood === 'scared' ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
   });
   ctx.restore();
 }
@@ -2944,10 +3761,10 @@ function drawMenu() {
   });
   const pr = 17 + items.length * 2.2 + 0.6;
   if (hasProgress()) {
-    text(save.won ? 'THE BLOB IS BEATEN! ROOF OPEN' : `REACHED ${floorLabel(save.unlocked)}: ${FLOOR_NAMES[save.unlocked]}`, 14, pr, save.won ? '#ffd86b' : '#6b6f93', 'center', 0.42);
+    text(save.won ? 'THE LANDLORD IS BEATEN! ROOF OPEN' : `REACHED ${floorLabel(save.unlocked)}: ${FLOOR_NAMES[save.unlocked]}`, 14, pr, save.won ? '#ffd86b' : '#6b6f93', 'center', 0.42);
   }
   if (G.menu.confirm && blink) text('THIS ERASES YOUR SAVE. PRESS AGAIN', 14, pr + 1.4, '#ff2a2a', 'center', 0.42);
-  text('A GOOFY GHOST STORY IN 21 FLOORS', 14, 31, '#6b6f93', 'center', 0.4);
+  text('A GOOFY GHOST STORY IN 31 FLOORS', 14, 31, '#6b6f93', 'center', 0.4);
   const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   text(coarse ? 'TAP TO CHOOSE' : 'UP/DOWN + ENTER', 14, 33, '#b9bddc', 'center', 0.45);
 }
@@ -2982,7 +3799,7 @@ function drawTower() {
   ctx.fillStyle = '#2a1a10';
   for (const p of PEBBLES) ctx.fillRect(p.x, gy + p.y, p.w, p.w * 0.6);
   if (open) {
-    const bot = Y(floorTop(ROOF - 1) + FLOOR_H);
+    const bot = Y(floorTop(BLOB_FLOOR) + FLOOR_H);
     ctx.fillStyle = '#000000'; ctx.fillRect(TOWER_X - 0.3, gy, TOWER_W + 0.6, bot - gy + 0.3);
     ctx.fillStyle = '#3a2418'; ctx.fillRect(TOWER_X - 0.5, gy, 0.2, bot - gy + 0.3); ctx.fillRect(TOWER_X + TOWER_W + 0.3, gy, 0.2, bot - gy + 0.3);
     // Pipes run down the shaft; the sewer pools at the bottom.
@@ -2992,8 +3809,15 @@ function drawTower() {
     ctx.fillStyle = '#9be86f'; ctx.fillRect(TOWER_X - 1.4, gy + 1 + drip * (bot - gy - 1) / 12, 0.15, 0.3);
   }
   ctx.fillStyle = '#1a1d44'; ctx.fillRect(0, gy + 0.05, SCREEN_COLS, 0.18);
-  // Roof: dark until the Blob is beaten, gold after.
-  const ry = Y(floorTop(KING_FLOOR)), peak = ry - 4.3, roofCol = save.won ? '#ffd86b' : '#2a2d55';
+  if (skyOpen()) { // clouds drift past the sky floors
+    ctx.fillStyle = '#141738';
+    for (let k = 0; k < 6; k++) {
+      const x = (k * 9.7 + G.t * (0.4 + k * 0.07)) % 36 - 4, y = Y(floorTop(SKY + k * 2)) + 1.1;
+      for (const [dx, dy, r] of [[0, 0, 0.9], [1, -0.4, 1.1], [2.1, 0, 0.8]]) { ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  // Roof: dark until the Skeleton King is beaten, gold after. It sits on the top floor built so far.
+  const ry = Y(floorTop(topStory())), peak = ry - 4.3, roofCol = save.won ? '#ffd86b' : '#2a2d55';
   ctx.fillStyle = '#000000'; ctx.strokeStyle = roofCol; ctx.lineWidth = 0.12; ctx.lineJoin = 'round';
   ctx.beginPath(); ctx.moveTo(TOWER_X - 0.8, ry); ctx.lineTo(14, peak); ctx.lineTo(TOWER_X + TOWER_W + 0.8, ry); ctx.closePath();
   ctx.fill(); ctx.stroke();
@@ -3006,7 +3830,7 @@ function drawTower() {
   // Floors
   for (let i = 0; i < ROOF; i++) {
     const under = underground(i);
-    if (under && !open) continue;
+    if ((under && !open) || (skyFloor(i) && !skyOpen())) continue;
     const y = Y(floorTop(i)), st = floorStage(i), locked = i > top, cleared = isCleared(i), mid = y + FLOOR_H / 2;
     if (y > VIEW_BOT || y + FLOOR_H < VIEW_TOP) continue;
     const col = locked ? '#2a2d55' : WALL_COLORS[st];
@@ -3029,9 +3853,9 @@ function drawTower() {
     else if (locked) drawIconLock(TOWER_X + TOWER_W + 0.9, mid, '#2a2d55');
   }
   // Stage brackets
-  for (let st = 1; st <= 8; st++) {
+  for (let st = 1; st <= 12; st++) {
     const idx = LEVELS.map((l, i) => l.stage === st ? i : -1).filter(i => i >= 0);
-    if (!open && underground(idx[0])) continue;
+    if ((!open && underground(idx[0])) || (!skyOpen() && skyFloor(idx[0]))) continue;
     const tops = idx.map(floorTop), y0 = Y(Math.min(...tops)) + 0.3, y1 = Y(Math.max(...tops)) + FLOOR_H - 0.3;
     const on = idx[0] <= top;
     screenSpace();
@@ -3047,11 +3871,11 @@ function drawTower() {
     if (sel === ROOF) { ctx.beginPath(); ctx.moveTo(TOWER_X - 1.2, ry + 0.25); ctx.lineTo(14, peak - 0.5); ctx.lineTo(TOWER_X + TOWER_W + 1.2, ry + 0.25); ctx.closePath(); ctx.stroke(); }
     else { roundRect(TOWER_X - 0.2, Y(floorTop(sel)) - 0.12, TOWER_W + 0.4, FLOOR_H + 0.24, 0.55); ctx.stroke(); }
   }
-  const roofY = floorMid(ROOF), m9 = floorMid(KING_FLOOR);
-  const pacX = T.py >= m9 ? 12.3 : 12.3 + (m9 - T.py) / (m9 - roofY) * 1.7;
-  const falling = T.fall && !still;
+  const roofY = floorMid(ROOF), mTop = floorMid(topStory());
+  const pacX = T.py >= mTop ? 12.3 : 12.3 + (mTop - T.py) / (mTop - roofY) * 1.7;
   drawCharacter('PAC', null, pacX, Y(T.py), 0.75, still ? R : (floorMid(sel) < T.py ? U : D), still ? 0.4 : (1 - Math.cos(G.t * 18)) / 2);
-  if (falling && blink) text('AAAAH!', pacX + 1.2, Y(T.py) - 1, '#ffe600', 'left', 0.4);
+  if (T.fall && !still && blink) text('AAAAH!', pacX + 1.2, Y(T.py) - 1, '#ffe600', 'left', 0.4);
+  if (T.rise && !still && blink) text('WHEEE!', pacX + 1.2, Y(T.py) - 1, '#ffe600', 'left', 0.4);
   ctx.restore();
   // Header, the Act 2 title card, and the info panel sit on top of the scrolling view.
   text('THE SPOOKSCRAPER', 14, 0.35, '#ff4fa3', 'center', 0.72);
@@ -3063,6 +3887,14 @@ function drawTower() {
     text('ACT 2', 14, 4.7, '#9be86f', 'center', 1.1);
     text('THE BASEMENT', 14, 6.5, '#ffffff', 'center', 0.6);
     text('FIND THE FRUIT SALAD. BEWARE THE BLOB.', 14, 7.6, '#b9bddc', 'center', 0.34);
+  }
+  if (T.fresh === SKY && still && G.timer < 6) {
+    screenSpace();
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(3, 4, 22, 4.6);
+    ctx.strokeStyle = '#7a9cff'; ctx.lineWidth = 0.12; ctx.strokeRect(3, 4, 22, 4.6);
+    text('ACT 3', 14, 4.7, '#b8ccff', 'center', 1.1);
+    text('THE SKY FLOORS', 14, 6.5, '#ffffff', 'center', 0.6);
+    text('THE LANDLORD WANTS HIS RENT. IN FRUIT.', 14, 7.6, '#b9bddc', 'center', 0.34);
   }
   const st = floorStage(sel), ink = sel >= ROOF ? '#ffd86b' : STAGE_INK[st];
   text(sel >= ROOF ? 'THE ROOF' : `${floorLabel(sel)}  ${FLOOR_NAMES[sel]}`, 14, 32.1, ink, 'center', 0.62);
@@ -3077,18 +3909,19 @@ function drawEnding() {
   drawSky();
   text('THE END', 14.2, 4.7, '#2a3cff', 'center', 1.9);
   text('THE END', 14, 4.5, '#ffe600', 'center', 1.9);
-  text('THE FRUIT IS HOME. AGAIN.', 14, 8, '#ffffff', 'center', 0.55);
-  text('THE GHOSTS GOT THEIR OLD JOBS BACK.', 14, 9.3, '#b9bddc', 'center', 0.42);
+  text('THE FRUIT IS HOME. FOR GOOD.', 14, 8, '#ffffff', 'center', 0.55);
+  text('THE LANDLORD WAIVED THE RENT.', 14, 9.3, '#b9bddc', 'center', 0.42);
   // Victory lap: Pac-Man leads, the fruit follows, the whole cast tags along happily.
-  const x = (G.t * 5) % 58 - 4;
+  const x = (G.t * 5) % 66 - 4;
   drawCharacter('PAC', null, x, 14, 1, R, (1 - Math.cos(G.t * 18)) / 2);
   FRUITS.slice(0, 5).forEach((f, k) => { screenSpace(); drawFruit(f, x - 2 - k * 1.6 - 0.5, 13.5); });
-  ['BLINKY', 'PINKY', 'INKY', 'CLYDE', 'WRAITH', 'SLIME', 'HOUND'].forEach((c, k) => drawCharacter(c, null, x - 11 - k * 2.3, 14, 1, R));
+  ['BLINKY', 'PINKY', 'INKY', 'CLYDE', 'WRAITH', 'SLIME', 'HOUND', 'GARGOYLE', 'SPIDER'].forEach((c, k) => drawCharacter(c, null, x - 11 - k * 2.3, 14, 1, R));
   const bob = Math.floor(G.t * 3) % 2 ? 0.15 : 0;
-  drawCharacter('KING', 'scared', 8.5, 20 + bob, 1.5);
-  drawCharacter('BLOB', 'scared', 19.5, 20.2 - bob, 1.5);
-  text('THE KING AND THE BLOB', 14, 24, '#ffd86b', 'center', 0.45);
-  text('JOINED THE SAME GYM.', 14, 25.2, '#ffd86b', 'center', 0.45);
+  drawCharacter('KING', 'scared', 6, 20 + bob, 1.3);
+  drawCharacter('SKULL', null, 14, 19.8 - bob, 1.3);
+  drawCharacter('BLOB', 'scared', 22, 20.2 + bob, 1.3);
+  text('THE KING, THE BLOB AND THE LANDLORD', 14, 24, '#ffd86b', 'center', 0.42);
+  text('NOW SHARE A SMOOTHIE.', 14, 25.2, '#ffd86b', 'center', 0.42);
   text('ROOF UNLOCKED: ENDLESS MODE', 14, 27.8, '#ffe600', 'center', 0.5);
   text('THANKS FOR PLAYING!', 14, 29.4, '#ff4fa3', 'center', 0.55);
   if (G.timer > 1.5 && Math.floor(G.t * 2) % 2 === 0) text('PRESS ENTER', 14, 32.5, '#ffffff', 'center', 0.6);
@@ -3143,6 +3976,7 @@ function render() {
   if (G.state !== 'clear' && M.some(r => r.includes('-'))) { ctx.fillStyle = '#ffb8ff'; ctx.fillRect(house.doorC, house.exitY + 1.38, 2, 0.24); }
   if (hasFlow && G.state !== 'cast') drawWater();
   if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
+  if (G.state !== 'cast' && M.some(r => r.includes('a'))) drawClouds();
 
   const pelletOn = G.state !== 'play' || Math.floor(G.t * 5) % 2 === 0;
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
@@ -3155,6 +3989,7 @@ function render() {
 
   if (G.state === 'cast') { ctx.restore(); drawTitle(); return; }
 
+  if (G.webs.size) drawWebs();
   if (G.fruit) drawFruit(G.fruit.kind, meta.fruit.x, meta.fruit.y);
   if (G.magnet > 0 && (G.magnet > 1.5 || Math.floor(G.t * 8) % 2)) { // the pull radius, spinning
     ctx.save(); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 0.08; ctx.setLineDash([0.4, 0.35]); ctx.lineDashOffset = -G.t * 3;
@@ -3200,6 +4035,9 @@ function render() {
     for (const w of G.wraiths) if (w.state !== 'house') drawWraith(w);
     for (const m of G.minions) drawGhost({ ...m, frightened: true, eaten: false });
     for (const h of G.hounds) drawHound(h);
+    for (const s of G.spiders) drawSpider(s);
+    for (const g of G.gargoyles) drawGargoyle(g);
+    for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) drawBone(s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
     for (const s of G.blobules) drawSlime({ ...s, state: 'bit', blue: true });
     for (const s of G.buddies) drawGhost({ ...s, dir: s.state === 'saved' ? U : s.dir, panic: true, frightened: false, eaten: s.state === 'saved' });
   }
@@ -3221,10 +4059,10 @@ function render() {
     screenSpace();
     ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(2.5, 14.8, 23, 6.6);
     ctx.strokeStyle = '#ffd86b'; ctx.lineWidth = 0.12; ctx.strokeRect(2.5, 14.8, 23, 6.6);
-    const blob = G.cfg.boss === 'blob';
-    text(`${BOSSES[G.cfg.boss].name} DEFEATED!`, 14, 15.8, '#ffd86b', 'center', 0.7);
-    if (Math.floor(G.t * 3) % 2 === 0) text(blob ? 'YOU WIN!' : 'VICTORY!', 14, 17.6, '#ffe600', 'center', 1);
-    text(blob ? 'THE FRUIT IS SAVED. AGAIN!' : 'THE FRUIT IS SAVED!', 14, 19.6, '#b9bddc', 'center', 0.5);
+    const kind = G.cfg.boss;
+    text(`${BOSSES[kind].name} DEFEATED!`, 14, 15.8, '#ffd86b', 'center', 0.7);
+    if (Math.floor(G.t * 3) % 2 === 0) text(kind === 'skull' ? 'YOU WIN!' : 'VICTORY!', 14, 17.6, '#ffe600', 'center', 1);
+    text({ king: 'THE FRUIT IS SAVED!', blob: 'THE FRUIT IS SAVED. AGAIN!', skull: 'THE RENT IS PAID IN FULL!' }[kind], 14, 19.6, '#b9bddc', 'center', 0.5);
   }
   if (G.state === 'over') {
     text('GAME  OVER', 14, 19.6, '#ff2a2a', 'center');
@@ -3321,7 +4159,7 @@ function confirmKey() {
     case 'cast': toMenu(); break;
     case 'tower': towerEnter(); break;
     case 'dialog': dialogNext(); break;
-    case 'ending': if (G.timer > 1.5) toTower(ROOF, BLOB_FLOOR); break;
+    case 'ending': if (G.timer > 1.5) toTower(ROOF, SKULL_FLOOR); break;
     case 'over':
       if (G.timer <= 1.5) break;
       if (G.lvIndex >= ROOF && G.score > (save.best[ROOF] || 0)) { save.best[ROOF] = G.score; writeSave(); }
