@@ -2328,7 +2328,7 @@ function blobCrewUpdate(dt) {
 // of the crypt, rebuilding the pillars behind them, and his bones run off to hide in those quarters.
 const SKULL_BONES = 4, SKULL_BONE_HP = 1.5, SKULL_RISE = 0.9;
 const DROP_TIME = 1.1, DROP_EVERY = 4, SPIDER_MAX = 3;
-const SPELL_CHANT = 1.3, SPELL_EVERY = 6, CENTI_SPEED = 12, CENTI_LEN = 9, CENTI_GAP = 0.6;
+const SPELL_CHANT = 1.3, SPELL_EVERY = 6, CENTI_SPEED = 11, CENTI_LEN = 8, CENTI_GAP = 1.1, CENTI_R = 0.95, CENTI_BLOCK = 4;
 function skullSetup(ph) {
   G.gargoyles = ph === 1 ? meta.perches.map(makeGargoyle) : [];
   G.spiders = []; G.webs = new Map(); G.bones = []; G.drops = []; G.centipedes = [];
@@ -2438,9 +2438,9 @@ function bonesUpdate(dt) {
   G.bones = G.bones.filter(s => s.state !== 'home');
 }
 
-// The spell: the King stops and chants, then a bone centipede bursts out of the wall in each of two
-// quarters and zigzags across it, three rows per sweep. Every pillar within reach of its head is rebuilt
-// as it passes, so the new layout appears right behind it. Its body is deadly; a dash gets you through.
+// The spell: the King stops and chants, then a giant bone centipede bursts out of the wall in each of
+// two quarters and zigzags across it. The quarter is cut into 4x4 blocks; each block it crawls into
+// flips to its new layout all at once. Its body is deadly; a dash gets you through.
 function castSpell() {
   const S = G.spell;
   Object.assign(S, { phase: 'chant', t: 0, quads: shuffled([0, 1, 2, 3]).slice(0, 2) });
@@ -2476,16 +2476,16 @@ function spellUpdate(dt) {
   }
 }
 function makeCentipede(q, g) {
-  const rows = [];
-  for (let r = q.r0 + 1; r - 1 <= q.r1; r += 3) rows.push(r);
-  const left = q.c0 < W / 2, outer = left ? q.c0 - 1 : q.c1 + 1, inner = left ? q.c1 : q.c0; // out of the side wall, sweep across and back
+  const B = CENTI_BLOCK, rows = [];
+  for (let r = q.r0 + (B - 1) / 2; r - (B - 1) / 2 <= q.r1; r += B) rows.push(r); // through the middle of each band of blocks
+  const left = q.c0 < W / 2, outer = left ? q.c0 - 2 : q.c1 + 2, inner = left ? q.c1 : q.c0; // out of the side wall, sweep across and back
   const edge = left ? q.c0 : q.c1, pts = [];
   rows.forEach((r, i) => { const [a, b] = i % 2 ? [inner, edge] : [i ? edge : outer, inner]; pts.push({ x: a, y: r }, { x: b, y: r }); });
   let len = 0;
   for (let i = 1; i < pts.length; i++) len += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
   const next = [];
   for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) next.push(g[r][c]);
-  return { q, pts, len, d: 0, next, laid: new Uint8Array(next.length) };
+  return { q, pts, len, d: 0, next, laid: new Set(), flashes: [] };
 }
 // Position (and heading) a given distance along the centipede's zigzag.
 function centiAt(cp, d) {
@@ -2498,18 +2498,29 @@ function centiAt(cp, d) {
 }
 function centipedeUpdate(cp, dt) {
   cp.d += CENTI_SPEED * dt;
-  const h = centiAt(cp, cp.d), q = cp.q, w = q.c1 - q.c0 + 1;
-  const done = cp.d >= cp.len;
+  for (const f of cp.flashes) f.t -= dt;
+  cp.flashes = cp.flashes.filter(f => f.t > 0);
+  const h = centiAt(cp, cp.d), q = cp.q, w = q.c1 - q.c0 + 1, B = CENTI_BLOCK;
+  const bx = Math.floor((h.x + 0.5 - q.c0) / B), by = Math.floor((h.y + 0.5 - q.r0) / B);
+  const blocks = [];
+  if (cp.d >= cp.len) { for (let y = 0; y * B <= q.r1 - q.r0; y++) for (let x = 0; x * B <= q.c1 - q.c0; x++) blocks.push([x, y]); } // finished: lay whatever's left
+  else if (bx >= 0 && by >= 0 && q.c0 + bx * B <= q.c1 && q.r0 + by * B <= q.r1) blocks.push([bx, by]);
   let changed = false;
-  for (let r = q.r0; r <= q.r1; r++) for (let c = q.c0; c <= q.c1; c++) {
-    const i = (r - q.r0) * w + (c - q.c0);
-    if (cp.laid[i] || !(done || (Math.abs(c - h.x) <= 1.5 && Math.abs(r - h.y) <= 1.5))) continue;
-    cp.laid[i] = 1;
-    if (M[r][c] === cp.next[i]) continue;
-    M[r] = M[r].slice(0, c) + cp.next[i] + M[r].slice(c + 1);
-    changed = true;
+  for (const [x, y] of blocks) {
+    if (cp.laid.has(x + ',' + y)) continue;
+    cp.laid.add(x + ',' + y);
+    const c0 = q.c0 + x * B, r0 = q.r0 + y * B, c1 = Math.min(q.c1, c0 + B - 1), r1 = Math.min(q.r1, r0 + B - 1);
+    let flipped = false;
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const ch = cp.next[(r - q.r0) * w + (c - q.c0)];
+      if (M[r][c] === ch) continue;
+      M[r] = M[r].slice(0, c) + ch + M[r].slice(c + 1);
+      flipped = true;
+    }
+    if (flipped) { changed = true; cp.flashes.push({ c0, r0, c1, r1, t: 0.35 }); }
   }
   if (!changed) return;
+  SFX.thud();
   mapMaze(); G.layoutDirty = true;
   for (const e of [pac, ...G.bones, ...G.spiders.filter(s => s.state === 'active')]) unstick(e);
   for (const k of [...G.webs.keys()]) if (tile(k % W, Math.floor(k / W)) === '#') G.webs.delete(k);
@@ -2849,7 +2860,7 @@ function play(dt) {
   }
   for (const o of G.orbs) if (o.web && Math.abs(o.x - pac.x) < 0.6 && Math.abs(o.y - pac.y) < 0.6) { splatWeb(Math.round(pac.x), Math.round(pac.y)); o.gone = true; } // webs you, doesn't hurt
   G.orbs = G.orbs.filter(o => !o.gone);
-  for (const cp of G.centipedes) if (!safe && centiSegments(cp).some(s => Math.abs(s.x - pac.x) < 0.65 && Math.abs(s.y - pac.y) < 0.65)) { G.state = 'dying'; G.timer = 0; return; }
+  for (const cp of G.centipedes) if (!safe && centiSegments(cp).some(s => Math.hypot(s.x - pac.x, s.y - pac.y) < CENTI_R + 0.25)) { G.state = 'dying'; G.timer = 0; return; }
   if (!safe && G.orbs.some(o => !o.web && Math.abs(o.x - pac.x) < 0.55 && Math.abs(o.y - pac.y) < 0.55)) { G.state = 'dying'; G.timer = 0; }
 }
 
@@ -3330,32 +3341,40 @@ function drawReform() {
 }
 // A bone centipede: a crowned skull head with snapping mandibles, vertebrae behind, legs scuttling.
 function drawCentipede(cp) {
-  const segs = centiSegments(cp), frame = Math.floor(G.t * 14) % 2, ice = iceOn();
-  const bone = ice ? '#bdf4ff' : '#ece6cf', dark = ice ? '#4a7f99' : '#5a4a2a';
+  const segs = centiSegments(cp), frame = Math.floor(G.t * 12) % 2, ice = iceOn();
+  const bone = ice ? '#bdf4ff' : '#ece6cf', dark = ice ? '#4a7f99' : '#5a4a2a', k = CENTI_R / 0.55; // drawn at head size 0.55, scaled up
+  for (const f of cp.flashes) { // a block that just flipped to its new layout
+    ctx.strokeStyle = '#ff5a5a'; ctx.globalAlpha = f.t / 0.35; ctx.lineWidth = 0.15;
+    ctx.strokeRect(f.c0 + 0.05, f.r0 + 0.05, f.c1 - f.c0 + 0.9, f.r1 - f.r0 + 0.9); ctx.globalAlpha = 1;
+  }
   const start = cp.pts[0];
-  if (cp.d < 2.5) { ctx.fillStyle = '#5c5038'; for (const [dx, dy] of [[-0.3, -0.5], [0.4, 0.3], [0, 0.6], [-0.5, 0.2]]) ctx.fillRect(start.x + 0.5 + dx - 0.15, start.y + 0.5 + dy - 0.15, 0.3, 0.3); } // rubble where it burst out
-  for (let k = segs.length - 1; k >= 0; k--) {
-    const s = segs[k], cx = s.x + 0.5, cy = s.y + 0.5, px = -s.dy, py = s.dx; // across the body
+  if (cp.d < 4) { ctx.fillStyle = '#5c5038'; for (const [dx, dy] of [[-0.6, -0.9], [0.7, 0.5], [0, 1], [-0.9, 0.3], [0.5, -0.6]]) ctx.fillRect(start.x + 0.5 + dx - 0.25, start.y + 0.5 + dy - 0.25, 0.5, 0.5); } // rubble where it burst out
+  for (let n = segs.length - 1; n >= 0; n--) {
+    const s = segs[n], px = -s.dy, py = s.dx; // across the body
+    ctx.save(); ctx.translate(s.x + 0.5, s.y + 0.5); ctx.scale(k, k);
     ctx.strokeStyle = bone; ctx.lineWidth = 0.1; ctx.lineCap = 'round';
     for (const side of [-1, 1]) {
       const kick = (s.i + frame) % 2 ? 0.18 : -0.12;
-      ctx.beginPath(); ctx.moveTo(cx + px * side * 0.3, cy + py * side * 0.3);
-      ctx.lineTo(cx + px * side * 0.75 + s.dx * kick, cy + py * side * 0.75 + s.dy * kick); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px * side * 0.3, py * side * 0.3);
+      ctx.lineTo(px * side * 0.62 + s.dx * kick, py * side * 0.62 + s.dy * kick); ctx.lineTo(px * side * 0.8 + s.dx * kick * 1.6, py * side * 0.8 + s.dy * kick * 1.6); ctx.stroke();
     }
     if (s.i === 0) {
-      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(cx, cy, 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(0, 0, 0.55, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#1a0010';
-      for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(cx + s.dx * 0.15 + px * side * 0.22, cy + s.dy * 0.15 + py * side * 0.22, 0.13, 0, Math.PI * 2); ctx.fill(); }
+      for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(s.dx * 0.15 + px * side * 0.22, s.dy * 0.15 + py * side * 0.22, 0.14, 0, Math.PI * 2); ctx.fill(); }
       ctx.fillStyle = ice ? '#e6fbff' : '#ff3b3b';
-      for (const side of [-1, 1]) ctx.fillRect(cx + s.dx * 0.15 + px * side * 0.22 - 0.05, cy + s.dy * 0.15 + py * side * 0.22 - 0.05, 0.1, 0.1);
-      ctx.strokeStyle = bone; ctx.lineWidth = 0.12; // mandibles
-      const bite = frame ? 0.3 : 0.12;
-      for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s.dx * 0.45 + px * side * 0.2, cy + s.dy * 0.45 + py * side * 0.2); ctx.lineTo(cx + s.dx * 0.8 + px * side * bite, cy + s.dy * 0.8 + py * side * bite); ctx.stroke(); }
+      for (const side of [-1, 1]) ctx.fillRect(s.dx * 0.15 + px * side * 0.22 - 0.055, s.dy * 0.15 + py * side * 0.22 - 0.055, 0.11, 0.11);
+      ctx.fillStyle = '#1a0010'; for (let t = -2; t <= 2; t++) ctx.fillRect(s.dx * 0.38 + px * t * 0.08 - 0.02, s.dy * 0.38 + py * t * 0.08 - 0.02, 0.04, 0.04); // teeth
+      ctx.strokeStyle = bone; ctx.lineWidth = 0.1; // mandibles
+      const bite = frame ? 0.32 : 0.12;
+      for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s.dx * 0.45 + px * side * 0.2, s.dy * 0.45 + py * side * 0.2); ctx.quadraticCurveTo(s.dx * 0.75 + px * side * 0.4, s.dy * 0.75 + py * side * 0.4, s.dx * 0.85 + px * side * bite, s.dy * 0.85 + py * side * bite); ctx.stroke(); }
     } else {
-      ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(cx, cy, 0.42, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(cx, cy, 0.34, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = dark; ctx.fillRect(cx - 0.06, cy - 0.06, 0.12, 0.12);
+      ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(0, 0, 0.46, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(0, 0, 0.38, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = dark; ctx.fillRect(-0.07, -0.07, 0.14, 0.14);
+      ctx.fillRect(px * 0.2 - 0.03, py * 0.2 - 0.03, 0.06, 0.06); ctx.fillRect(-px * 0.2 - 0.03, -py * 0.2 - 0.03, 0.06, 0.06);
     }
+    ctx.restore();
   }
 }
 // A spider on its way down: the thread from above, the spider sliding down it, and a shadow that grows
