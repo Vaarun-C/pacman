@@ -1089,7 +1089,7 @@ function resetDots() {
   ghosts.forEach(g => { g.dotCount = 0; });
 }
 function resetActors() {
-  Object.assign(pac, { x: meta.pac.x, y: meta.pac.y, dir: L, face: L, anim: 0, dash: 0, grace: 0, trail: [] });
+  Object.assign(pac, { x: meta.pac.x, y: meta.pac.y, dir: null, face: L, anim: 0, dash: 0, grace: 0, trail: [] });
   G.dashCharge = 1;
   G.want = null; G.fright = 0; G.chill = 0; G.combo = 0; G.modeIdx = 0; G.modeTime = 0; G.idle = 0;
   G.fruit = null; G.popups = []; G.eatenGhost = null;
@@ -1341,6 +1341,7 @@ function step(e, dist, atCenter, always) {
         if (!atCenter(e) || !e.dir) break;
       }
     }
+    if (!e.dir) break;
     const axis = e.dir.x ? 'x' : 'y', d = e.dir.x || e.dir.y, pos = e[axis];
     const next = d > 0 ? Math.floor(pos + 1e-9) + 1 : Math.ceil(pos - 1e-9) - 1;
     const toNext = Math.abs(next - pos);
@@ -1359,9 +1360,12 @@ function moveToward(g, axis, target, dist) {
   if (diff) g.dir = axis === 'x' ? (diff > 0 ? R : L) : (diff > 0 ? D : U);
 }
 
+// Pac-Man only moves while a direction is held: let go and he stops at the next tile. While held, a
+// direction he can't take yet is remembered, so he turns at the next opening (and a dash runs its course).
 function pacAtCenter(p) {
   const w = G.want;
-  if (w && pacOK(p.x + w.x, p.y + w.y)) p.dir = w;
+  if (!held.length && !(p.dash > 0)) p.dir = null;
+  else if (w && pacOK(p.x + w.x, p.y + w.y)) p.dir = w;
   else if (p.dir && !pacOK(p.x + p.dir.x, p.y + p.dir.y)) p.dir = null;
   if (!p.dir) { const f = flowAt(p.x, p.y); if (f && pacOK(p.x + f.x, p.y + f.y)) p.dir = f; } // a stopped Pac-Man drifts with the current
   if (p.dir) p.face = p.dir;
@@ -2613,7 +2617,12 @@ function play(dt) {
     if (G.boss.dead >= 2.8) { G.state = 'clear'; G.timer = 0; SFX.clear(); }
     return;
   }
-  if (G.want && pac.dir && G.want === pac.dir.o) { pac.dir = G.want; pac.face = G.want; }
+  if (held.length && G.want && pac.dir && G.want === pac.dir.o) { pac.dir = G.want; pac.face = G.want; }
+  if (held.length && G.want && !pac.dir && !onCenter(pac)) { // standing between two tiles (like at the start): head along the corridor
+    const alongX = Math.abs(pac.x - Math.round(pac.x)) > 1e-6, w = G.want;
+    pac.dir = (alongX ? w.x : w.y) ? w : alongX ? (pac.x % 1 < 0.5 ? L : R) : (pac.y % 1 < 0.5 ? U : D);
+    pac.face = pac.dir;
+  }
   const dashing = pac.dash > 0;
   const webbed = !dashing && G.webs.size > 0 && G.webs.has(webKey(pac.x, pac.y)); // stuck in a web: half speed
   const moved = step(pac, dt * BASE * (G.fright > 0 ? sp.pacF : sp.pac) * (dashing ? DASH_SPEED : flowMul(pac) * (webbed ? WEB_SLOW : 1)), pacAtCenter, true);
@@ -4477,8 +4486,12 @@ function backKey() {
   else if (G.state !== 'menu' && G.state !== 'ending' && G.state !== 'over') togglePause();
 }
 const KEYS = { ArrowUp: U, ArrowDown: D, ArrowLeft: L, ArrowRight: R, w: U, s: D, a: L, d: R, W: U, S: D, A: L, D: R };
+// Directions currently held down, most recent last.
+let held = [];
+function press(dir) { held = [...held.filter(d => d !== dir), dir]; }
+function release(dir) { held = held.filter(d => d !== dir); if (held.length) G.want = held[held.length - 1]; }
 window.addEventListener('keydown', e => {
-  if (KEYS[e.key]) { e.preventDefault(); steer(KEYS[e.key]); return; }
+  if (KEYS[e.key]) { e.preventDefault(); if (!e.repeat) press(KEYS[e.key]); steer(KEYS[e.key]); return; }
   if (e.key === ' ' && G.state === 'play' && G.cfg.dash && !G.paused) { e.preventDefault(); triggerDash(); return; }
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmKey(); return; }
   if (e.key === 'Escape') { backKey(); return; }
@@ -4520,16 +4533,22 @@ canvas.addEventListener('pointermove', e => {
   if (!swipe || MENU_STATES.has(G.state)) return;
   const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return;
-  steer(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? R : L) : (dy > 0 ? D : U));
-  swipe = { x: e.clientX, y: e.clientY };
+  const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? R : L) : (dy > 0 ? D : U);
+  if (swipe.dir && swipe.dir !== dir) release(swipe.dir);
+  press(dir); steer(dir); // a swipe keeps him moving that way until the finger lifts
+  swipe = { x: e.clientX, y: e.clientY, dir };
 });
-window.addEventListener('pointerup', () => { swipe = null; });
+window.addEventListener('keyup', e => { if (KEYS[e.key]) release(KEYS[e.key]); });
+window.addEventListener('blur', () => { held = []; });
+window.addEventListener('pointerup', () => { if (swipe && swipe.dir) release(swipe.dir); swipe = null; });
 const dashBtn = document.getElementById('dashBtn');
 // The d-pad centre doubles as an OK button on menus, dialog and the tower.
 const menuish = () => MENU_STATES.has(G.state) || G.state === 'over';
 dashBtn.addEventListener('pointerdown', e => { e.preventDefault(); if (menuish()) confirmKey(); else triggerDash(); });
 dpad.querySelectorAll('button[data-dir]').forEach(b => {
-  b.addEventListener('pointerdown', e => { e.preventDefault(); steer(DIR_BY_NAME[b.dataset.dir]); });
+  const dir = DIR_BY_NAME[b.dataset.dir];
+  b.addEventListener('pointerdown', e => { e.preventDefault(); press(dir); steer(dir); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => release(dir));
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && !G.paused && !MENU_STATES.has(G.state) && G.state !== 'over') togglePause();
