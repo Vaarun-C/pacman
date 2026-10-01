@@ -4233,7 +4233,7 @@ function drawBossSay() {
 // up with hard edges, so everything shares one pixel grid. Mazes bake into themed 3/4-view pixel art,
 // a camera follows Pac-Man around a maze bigger than the screen, and a dithered light map, particles
 // and a few screen effects add the atmosphere.
-const UNIT = 10, VIEW_W = SCREEN_COLS * UNIT, VIEW_H = SCREEN_MAZE_ROWS * UNIT, ZOOM_T = 24;
+const UNIT = 10, VIEW_W = SCREEN_COLS * UNIT, VIEW_H = SCREEN_MAZE_ROWS * UNIT, ZOOM_T = 18;
 function mkCanvas(w, h, read) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   c.g = c.getContext('2d', read ? { willReadFrequently: true } : undefined); c.g.imageSmoothingEnabled = false;
