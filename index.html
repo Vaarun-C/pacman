@@ -112,9 +112,10 @@
     <button class="c" id="dashBtn" type="button" aria-label="Dash" disabled>DASH</button>
   </div>
   <div class="bar" id="bar">
-    <span class="keys"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> move · <kbd>Enter</kbd> select / next · <kbd>Esc</kbd> back / skip talk · <kbd>P</kbd> pause · <kbd>Space</kbd> dash · <kbd>M</kbd> sound · <kbd>I</kbd> infinite lives · <kbd>N</kbd> skip level · <kbd>U</kbd> unlock all</span>
+    <span class="keys"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> move · <kbd>Enter</kbd> select / next · <kbd>Esc</kbd> back / skip talk · <kbd>P</kbd> pause · <kbd>Space</kbd> dash · <kbd>M</kbd> sound · <kbd>F</kbd> effects · <kbd>I</kbd> infinite lives · <kbd>N</kbd> skip level · <kbd>U</kbd> unlock all</span>
     <button class="btn" id="pauseBtn" type="button">PAUSE</button>
     <button class="btn" id="soundBtn" type="button">SOUND ON</button>
+    <button class="btn" id="fxBtn" type="button" aria-pressed="true">FX: ON</button>
     <button class="btn" id="infBtn" type="button" aria-pressed="false">INFINITE LIVES: OFF</button>
     <button class="btn" id="skipBtn" type="button">SKIP LEVEL</button>
     <button class="btn" id="unlockBtn" type="button">UNLOCK ALL</button>
@@ -842,14 +843,12 @@ const STORY = {
 };
 
 // ---------- Current maze ----------
-let M = MAZES.E.rows, W = 28, H = 31, meta = MAZES.E, ox = 0, oy = TOP;
+let M = MAZES.E.rows, W = 28, H = 31, meta = MAZES.E;
 const house = { doorC: 13, doorX: 13.5, exitY: 11, homeY: 14 };
 let tunnelRows = new Map(), openMask = new Uint8Array(0);
 
 function setMaze(key) {
   meta = MAZES[key]; M = meta.reform ? meta.rows.slice() : meta.rows; W = M[0].length; H = M.length; // rebuildable mazes get their own copy
-  ox = (SCREEN_COLS - W) / 2;
-  oy = TOP + Math.floor((SCREEN_MAZE_ROWS - H) / 2);
   for (let r = 0; r < H; r++) {
     const c = M[r].indexOf('-');
     if (c >= 0) Object.assign(house, { doorC: c, doorX: c + 0.5, exitY: r - 1, homeY: r + 2 });
@@ -907,61 +906,11 @@ U.o = D; D.o = U; L.o = R; R.o = L;
 const ORDER = [U, L, D, R]; // arcade tie-break order
 const DIR_BY_NAME = { U, D, L, R };
 
-// ---------- Canvas & maze art ----------
+// ---------- Canvas ----------
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-let px = 16; // device pixels per tile
-
-function buildMaze(rows, color) {
-  const w = rows[0].length, h = rows.length;
-  const wallAt = (c, r) => c >= 0 && c < w && r >= 0 && r < h && rows[r][c] === '#';
-  const N = 8, PW = w * N, PH = h * N, m = 0.375, rr = 0.25;
-  const solid = new Uint8Array(PW * PH);
-  const solidAt = (c, r, x, y) => {
-    const wl = (dc, dr) => wallAt(c + dc, r + dr);
-    const oL = !wl(-1, 0), oR = !wl(1, 0), oU = !wl(0, -1), oD = !wl(0, 1);
-    if ((oL && x < m) || (oR && x > 1 - m) || (oU && y < m) || (oD && y > 1 - m)) return false;
-    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      const qx = sx < 0 ? x : 1 - x, qy = sy < 0 ? y : 1 - y;
-      const oxs = sx < 0 ? oL : oR, oys = sy < 0 ? oU : oD;
-      if (oxs && oys) {
-        const k = m + rr;
-        if (qx < k && qy < k && Math.hypot(qx - k, qy - k) > rr) return false;
-      } else if (!oxs && !oys && !wl(sx, sy) && qx < m && qy < m) {
-        const k = m - rr;
-        if (!(qx > k && qy > k && Math.hypot(qx - k, qy - k) > rr)) return false;
-      }
-    }
-    return true;
-  };
-  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
-    if (!wallAt(c, r)) continue;
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-      if (solidAt(c, r, (i + 0.5) / N, (j + 0.5) / N)) solid[(r * N + j) * PW + c * N + i] = 1;
-    }
-  }
-  const off = document.createElement('canvas');
-  off.width = PW; off.height = PH;
-  const octx = off.getContext('2d');
-  const img = octx.createImageData(PW, PH);
-  const [cr, cg, cb] = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
-  const at = (x, y) => x >= 0 && y >= 0 && x < PW && y < PH && solid[y * PW + x];
-  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
-    if (!solid[y * PW + x]) continue;
-    let edge = false;
-    for (let dy = -1; dy <= 1 && !edge; dy++) for (let dx = -1; dx <= 1; dx++) if (!at(x + dx, y + dy)) { edge = true; break; }
-    if (!edge) continue;
-    const k = (y * PW + x) * 4;
-    img.data[k] = cr; img.data[k + 1] = cg; img.data[k + 2] = cb; img.data[k + 3] = 255;
-  }
-  octx.putImageData(img, 0, 0);
-  return off;
-}
-const artCache = {};
-function mazeArt(key, color) { // the current maze, keyed by layout for mazes that rebuild themselves
-  const k = key + '#' + (meta.reform ? G.layoutGen : 0) + color;
-  return artCache[k] || (artCache[k] = buildMaze(M, color));
-}
+let ctx = canvas.getContext('2d'); // the vector drawings draw into whichever context this points at
+const mainCtx = ctx;
+let px = 16; // device pixels per screen tile
 
 // ---------- Sound ----------
 const AC = window.AudioContext || window.webkitAudioContext;
@@ -1016,6 +965,7 @@ const SFX = {
   rattle() { for (let i = 0; i < 4; i++) beep(1300 + (i % 2) * 400, 900, 0.035, 'square', 0.05, i * 0.05); },
   tear() { beep(2200, 500, 0.1, 'sawtooth', 0.05); },
   chant() { [196, 233, 185, 262].forEach((f, i) => beep(f, f * 0.98, 0.28, 'triangle', 0.12, i * 0.28)); beep(98, 90, 1.2, 'sawtooth', 0.05); },
+  thunder() { beep(64, 30, 1.6, 'sawtooth', 0.05); beep(96, 40, 1.1, 'square', 0.02, 0.06); beep(140, 50, 0.5, 'sawtooth', 0.03, 0.02); },
   thud() { beep(160, 60, 0.15, 'square', 0.09); },
   rumble() { beep(70, 45, 0.6, 'sawtooth', 0.12); beep(110, 60, 0.5, 'square', 0.05, 0.1); },
   whoosh() { beep(260, 900, 0.5, 'triangle', 0.1); beep(420, 1300, 0.4, 'sine', 0.05, 0.1); },
@@ -1326,7 +1276,7 @@ function menuUpdate(dt) {
   }
 }
 
-function popup(text, x, y, color, t = 1.2, freeze = false) { G.popups.push({ text, x, y, t, color, freeze }); }
+function popup(text, x, y, color, t = 1.2, freeze = false) { G.popups.push({ text, x, y, t, color, freeze }); fxBurst(x + 0.5, y + 0.5, color, 12, 4, 0.5); }
 
 // ---------- Movement ----------
 function onCenter(e) { return Math.abs(e.x - Math.round(e.x)) < 1e-6 && Math.abs(e.y - Math.round(e.y)) < 1e-6; }
@@ -1923,8 +1873,7 @@ const region = (g, q) => { let s = ''; for (let r = q.r0; r <= q.r1; r++) s += g
 function setLayout(g) {
   M = g.map(a => a.join(''));
   mapMaze();
-  G.layoutGen++;
-  for (const k in artCache) if (k.startsWith(G.cfg.maze + '#')) delete artCache[k];
+  G.layoutGen++; // the renderer re-bakes the maze art when this changes
 }
 // A fresh Cloud Deck layout for the level start: the left half is rolled at random, the right mirrors it.
 function initLayout() {
@@ -2451,7 +2400,6 @@ function spellUpdate(dt) {
   S.t += dt;
   if (G.layoutDirty && G.t - (G.layoutAt || 0) > 0.1) { // redraw the walls a few times a second while they change
     G.layoutDirty = false; G.layoutAt = G.t; G.layoutGen++;
-    for (const k in artCache) if (k.startsWith(G.cfg.maze + '#')) delete artCache[k];
   }
   if (S.phase === 'idle') { if (S.t >= SPELL_EVERY && G.boss.state === 'chase') castSpell(); return; }
   if (S.phase === 'chant') {
@@ -2588,6 +2536,7 @@ function eatDot(c = Math.round(pac.x), r = Math.round(pac.y), pulled = false) {
   const i = r * W + c, v = G.dots[i];
   if (!v) return;
   G.dots[i] = 0; G.dotsLeft--; G.dotsEaten++; G.idle = 0;
+  fxDot(c, r, v);
   if (G.globalMode) G.globalDots++;
   else { const h = [pinky, inky, clyde].find(g => G.ghosts.includes(g) && g.mode === 'house'); if (h) h.dotCount++; }
   if (pulled) { G.flyDots.push({ x: c, y: r, t: 0 }); if (G.flyDots.length % 3 === 1) SFX.pull(); }
@@ -2917,7 +2866,6 @@ function text(s, col, row, color, align = 'left', size = 0.85) {
   ctx.restore();
 }
 let shakeX = 0, shakeY = 0;
-function mazeSpace() { ctx.setTransform(px, 0, 0, px, (ox + shakeX) * px, (oy + shakeY) * px); }
 function screenSpace() { ctx.setTransform(px, 0, 0, px, 0, 0); }
 
 function drawPac(x, y, face, open, r = 0.8) {
@@ -4261,9 +4209,9 @@ function drawBossSay() {
   const w = Math.max(...lines.map(l => ctx.measureText(l).width / px)) + 1.1;
   ctx.restore();
   const h = lines.length * 0.72 + 0.7;
-  const cx = ox + b.x + 0.5, top = oy + b.y - (b.kind === 'blob' ? blobR(b) * 0.86 + 0.6 : 2.6);
+  const k = T / UNIT, cx = scrX(b.x + 0.5), top = scrY(b.y) - (b.kind === 'blob' ? blobR(b) * 0.86 + 0.6 : 2.6) * k;
   const below = top - h < TOP + 1.2;
-  const by = below ? oy + b.y + (b.kind === 'blob' ? blobR(b) + 0.4 : 2.4) : top - h;
+  const by = below ? scrY(b.y) + (b.kind === 'blob' ? blobR(b) + 0.4 : 2.4) * k : top - h;
   const bx = Math.max(0.4, Math.min(SCREEN_COLS - 0.4 - w, cx - w / 2));
   const pop = G.bossSay.t > 2.45 && G.state !== 'phase' ? 0.6 : 1; // tiny pop-in
   screenSpace();
@@ -4280,105 +4228,1016 @@ function drawBossSay() {
   if (pop < 1) return;
   lines.forEach((l, j) => text(l, bx + w / 2, by + 0.35 + j * 0.72 - 0.14, '#1a0010', 'center', size));
 }
+// ---------- Pixel renderer ----------
+// The playfield is drawn at low resolution into a framebuffer (UNIT pixels per screen tile) and scaled
+// up with hard edges, so everything shares one pixel grid. Mazes bake into themed 3/4-view pixel art,
+// a camera follows Pac-Man around a maze bigger than the screen, and a dithered light map, particles
+// and a few screen effects add the atmosphere.
+const UNIT = 10, VIEW_W = SCREEN_COLS * UNIT, VIEW_H = SCREEN_MAZE_ROWS * UNIT, ZOOM_T = 24;
+function mkCanvas(w, h, read) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.g = c.getContext('2d', read ? { willReadFrequently: true } : undefined); c.g.imageSmoothingEnabled = false;
+  return c;
+}
+const fb = mkCanvas(VIEW_W, VIEW_H), fbx = fb.g, vlayer = mkCanvas(VIEW_W, VIEW_H, true);
+let T = ZOOM_T, camX = 0, camY = 0, fxOn = true; // T: framebuffer pixels per maze tile; camX/Y: the view's top-left in world pixels
+const cam = { x: 0, y: 0, lx: 0, ly: 0, key: '' };
+const worldTf = () => fbx.setTransform(T, 0, 0, T, -camX, -camY);
+const idTf = () => fbx.setTransform(1, 0, 0, 1, 0, 0);
+const scrX = x => (x * T - camX) / UNIT, scrY = y => TOP + (y * T - camY) / UNIT; // world tiles to screen tiles
+// Boss arenas have to be seen whole, and so does the cast screen's maze; everywhere else the camera zooms in.
+const viewTile = () => G.state === 'cast' || G.cfg.boss ? Math.floor(Math.min(VIEW_W / W, VIEW_H / H)) : ZOOM_T;
+
+// Colours are [r, g, b] arrays while baking; noise is hashed so every bake comes out the same.
+const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const mixc = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+const mulc = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const css = c => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+const LIGHT_HEX = {};
+const lightCol = h => LIGHT_HEX[h] || (LIGHT_HEX[h] = hex(h).map(v => v / 255));
+function hash2(x, y) {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), u = x - xi, v = y - yi, su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return a + (b - a) * su + (c - a) * sv + (a - b - c + d) * su * sv;
+}
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
+
+// ---------- Sprites ----------
+// A sprite is painted pixel by pixel from a colour function, then ringed with a 1px outline: a dark,
+// slightly purple copy of the colour beside it, or one fixed colour.
+function pixSprite(w, h, f, edge = 0.3) {
+  const cols = new Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cols[y * w + x] = f(x + 0.5, y + 0.5) || null;
+  const c = mkCanvas(w, h), img = c.g.createImageData(w, h), d = img.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let col = cols[y * w + x];
+    if (!col && edge) {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = x + dx, yy = y + dy, nb = xx >= 0 && yy >= 0 && xx < w && yy < h && cols[yy * w + xx];
+        if (nb && nb[3] === undefined) { col = typeof edge === 'number' ? mixc(mulc(nb, edge), [26, 10, 44], 0.4) : edge; break; }
+      }
+    }
+    if (!col) continue;
+    const k = (y * w + x) * 4;
+    d[k] = col[0]; d[k + 1] = col[1]; d[k + 2] = col[2]; d[k + 3] = col[3] === undefined ? 255 : col[3];
+  }
+  c.g.putImageData(img, 0, 0);
+  return c;
+}
+const SPR = new Map();
+const spr = (key, make) => { let s = SPR.get(key); if (!s) SPR.set(key, s = make()); return s; };
+// Draws a sprite centred on world point (wx, wy), dy pixels lower.
+const blit = (s, wx, wy, dy = 0) => fbx.drawImage(s, Math.round(wx * T - camX - s.width / 2), Math.round(wy * T - camY - s.height / 2) + dy);
+
+// Shading: a light up and to the left, quantised into a six-step ramp (outline, dark .. highlight).
+const LIGHT_DIR = (() => { const v = [-0.5, -0.62, 0.6], n = Math.hypot(...v); return v.map(x => x / n); })();
+const lightOf = (nx, ny, nz) => nx * LIGHT_DIR[0] + ny * LIGHT_DIR[1] + nz * LIGHT_DIR[2];
+const pickRamp = (ramp, l) => ramp[l > 0.9 ? 5 : l > 0.62 ? 4 : l > 0.1 ? 3 : l > -0.35 ? 2 : 1];
+const COOL = [34, 18, 74], WARM = [255, 248, 220];
+const RAMPS = {};
+function makeRamp(h) { // shadows lean purple, highlights lean warm
+  if (RAMPS[h]) return RAMPS[h];
+  const c = hex(h);
+  return (RAMPS[h] = [mixc(mulc(c, 0.22), COOL, 0.55), mixc(mulc(c, 0.5), COOL, 0.32), mixc(mulc(c, 0.76), COOL, 0.14), c, mixc(c, WARM, 0.42), mixc(c, WARM, 0.8)]);
+}
+
+// A tiny rasteriser for shaded sprites: primitives in tile units around the sprite's centre, painted in order.
+const ball = (x, y, r, ramp, tex = 0) => ({ t: 'ell', x, y, rx: r, ry: r, rot: 0, ramp, tex });
+const ell = (x, y, rx, ry, rot, ramp) => ({ t: 'ell', x, y, rx, ry, rot, ramp, tex: 0 });
+const line = (pts, col, w) => ({ t: 'line', pts, col: hex(col), w });
+const dot = (x, y, col, pr = 0.75) => ({ t: 'dot', x, y, col: hex(col), pr });
+function poly(pts, ramp) {
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return { t: 'poly', pts, ramp, cx, cy, R: Math.max(...pts.map(p => Math.hypot(p[0] - cx, p[1] - cy))) };
+}
+function inPoly(pts, x, y) {
+  let ins = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins;
+  }
+  return ins;
+}
+function primAt(p, u, v) {
+  if (p.t === 'ell') {
+    let dx = u - p.x, dy = v - p.y;
+    if (p.rot) { const c = Math.cos(-p.rot), s = Math.sin(-p.rot); [dx, dy] = [dx * c - dy * s, dx * s + dy * c]; }
+    dx /= p.rx; dy /= p.ry;
+    const d = dx * dx + dy * dy;
+    if (d > 1) return null;
+    let l = lightOf(dx, dy, Math.sqrt(1 - d));
+    if (p.tex) l += (hash2(Math.floor(u * T * 1.3), Math.floor(v * T * 1.3)) - 0.5) * p.tex;
+    return pickRamp(p.ramp, l);
+  }
+  if (p.t === 'line') {
+    for (let i = 1; i < p.pts.length; i++) {
+      const [ax, ay] = p.pts[i - 1], [bx, by] = p.pts[i], ex = bx - ax, ey = by - ay;
+      const k = Math.max(0, Math.min(1, ((u - ax) * ex + (v - ay) * ey) / (ex * ex + ey * ey)));
+      if (Math.hypot(u - ax - ex * k, v - ay - ey * k) <= p.w / 2) return p.col;
+    }
+    return null;
+  }
+  if (p.t === 'dot') return Math.hypot((u - p.x) * T, (v - p.y) * T) <= p.pr ? p.col : null;
+  if (!inPoly(p.pts, u, v)) return null;
+  const dx = (u - p.cx) / p.R, dy = (v - p.cy) / p.R;
+  return pickRamp(p.ramp, lightOf(dx, dy, Math.sqrt(Math.max(0, 1 - dx * dx - dy * dy))));
+}
+function primSprite(prims, size) {
+  const S = Math.round(size * T) + 2, c0 = S / 2;
+  return pixSprite(S, S, (x, y) => {
+    const u = (x - c0) / T, v = (y - c0) / T;
+    let out = null;
+    for (const p of prims) { const col = primAt(p, u, v); if (col) out = col; }
+    return out;
+  });
+}
+
+// A soft pixel ellipse of shadow under whoever stands there.
+function shadowAt(x, y, wt, dy) {
+  const s = spr(`sh|${T}|${wt.toFixed(2)}`, () => {
+    const w = Math.max(3, Math.round(wt * T)), h = Math.max(2, Math.round(w * 0.32));
+    return pixSprite(w, h, (px_, py_) => {
+      const dx = (px_ - w / 2) / (w / 2), dy_ = (py_ - h / 2) / (h / 2), d = dx * dx + dy_ * dy_;
+      return d <= 1 ? [10, 4, 20, d < 0.4 ? 120 : 75] : null;
+    }, 0);
+  });
+  blit(s, x + 0.5, y + 0.5 + dy);
+}
+
+const PAC_RAMP = ['#4a2400', '#a85400', '#e09000', '#ffd400', '#fff07a', '#ffffff'].map(hex);
+function pacSprite(ang, mouth) {
+  return spr(`pac|${T}|${ang.toFixed(2)}|${mouth.toFixed(3)}`, () => {
+    const D = Math.round(T * 1.5), S = D + 2, c = S / 2, R = D / 2;
+    return pixSprite(S, S, (x, y) => {
+      const dx = x - c, dy = y - c, d = Math.hypot(dx, dy);
+      if (d > R) return null;
+      let a = Math.atan2(dy, dx) - ang; a = Math.atan2(Math.sin(a), Math.cos(a));
+      if (Math.abs(a) < mouth && d > 0.8) return null;
+      const nx = dx / R, ny = dy / R;
+      let l = lightOf(nx, ny, Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny)));
+      if (nx * 0.6 + ny * 0.8 > 0.8) l += 0.3; // bounce light along the lower right rim
+      return l > 0.96 ? PAC_RAMP[5] : pickRamp(PAC_RAMP, Math.min(0.85, l - 0.12));
+    }, PAC_RAMP[0]);
+  });
+}
+const pacMouth = open => 0.02 + Math.round(Math.max(0, Math.min(1, open)) * 4) / 4 * 0.3 * Math.PI;
+function pxPac(x, y, face, open) { blit(pacSprite(face.a, pacMouth(open)), x + 0.5, y + 0.5); }
+function pxPacDeath(x, y, p) {
+  if (p < 1) { blit(pacSprite(-Math.PI / 2, 0.05 + Math.round(p * 16) / 16 * Math.PI * 0.95), x + 0.5, y + 0.5); return; }
+  if (p >= 1.3) return;
+  const k = (p - 1) / 0.3, cx = (x + 0.5) * T - camX, cy = (y + 0.5) * T - camY, w = Math.max(1, Math.round(T / 12));
+  fbx.fillStyle = '#ffe600';
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    for (let s = (0.3 + k * 0.3) * T; s <= (0.6 + k * 0.3) * T; s += 1) fbx.fillRect(Math.round(cx + Math.cos(a) * s), Math.round(cy + Math.sin(a) * s), w, w);
+  }
+}
+
+// Ghosts: a lit dome over a skirt with a two-frame wave; eyes are a separate overlay so they can look around.
+const ghostDims = () => { const Wd = Math.round(T * 1.5), Hd = Math.round(T * 1.56); return { Wd, Hd, S: Wd + 2, SH: Hd + 2, c: (Wd + 2) / 2 }; };
+function ghostBody(color, frame, face) { // face: '' | 'fright' | 'flash'
+  return spr(`gh|${T}|${color}|${frame}|${face}`, () => {
+    const ramp = makeRamp(color), { Wd, Hd, S, SH, c } = ghostDims(), R = Wd / 2, dcy = 1 + R, bot = 1 + Hd;
+    const P = Wd / 4, foot = Math.max(2, Math.round(T * 0.2));
+    const fcol = hex(face === 'flash' ? '#ff2a2a' : '#ffb8ae');
+    const eyeS = Math.max(2, Math.round(Wd * 0.12)), eyeY = Math.round(1 + Hd * 0.34);
+    const mw = Wd * 0.62, mx0 = c - mw / 2, amp = T >= 16 ? 2 : 1, mt = T >= 16 ? 2 : 1, my0 = Math.round(1 + Hd * 0.6);
+    return pixSprite(S, SH, (x, y) => {
+      const dx = x - c;
+      if (y < dcy) { if (Math.hypot(dx, y - dcy) > R) return null; }
+      else {
+        if (Math.abs(dx) > R) return null;
+        const t = ((x - 1 + (frame ? P / 2 : 0)) / P) % 1;
+        if (y > bot - foot * Math.abs(t * 2 - 1)) return null;
+      }
+      if (face) {
+        for (const s of [-1, 1]) {
+          const ex = Math.round(c + s * Wd * 0.18 - eyeS / 2);
+          if (x >= ex && x < ex + eyeS && y >= eyeY && y < eyeY + eyeS) return fcol;
+        }
+        if (x >= mx0 && x <= mx0 + mw) {
+          const zig = Math.abs(((x - mx0) / mw * 6) % 2 - 1), yc = my0 + Math.round((1 - zig) * amp);
+          if (y >= yc && y < yc + mt) return fcol;
+        }
+      }
+      const nx = dx / R, ny = y < dcy ? (y - dcy) / R : 0;
+      let l = lightOf(nx, ny, Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny))) - Math.max(0, (y - dcy) / Hd) * 0.55;
+      if (nx > 0.72 && y > dcy) l += 0.25; // rim light
+      return pickRamp(ramp, l);
+    });
+  });
+}
+function ghostEyes(d, alone) { // outlined, so the whites read on pale bodies too
+  return spr(`ge|${T}|${d.x}|${d.y}|${alone}`, () => {
+    const { Wd, Hd, S, SH, c } = ghostDims();
+    const ew = Math.max(3, Math.round(Wd * 0.27)), eh = Math.max(4, Math.round(Wd * 0.34)), pw = Math.max(2, Math.round(ew * 0.5));
+    const white = hex('#ffffff'), shade = hex('#c4ccf4'), pupil = hex('#2030e0');
+    return pixSprite(S, SH, (x, y) => {
+      for (const s of [-1, 1]) {
+        const ex = c + s * Wd * 0.2 + d.x * Wd * 0.06, ey = 1 + Hd * 0.36 + d.y * Wd * 0.06;
+        const qx = (x - ex) / (ew / 2), qy = (y - ey) / (eh / 2);
+        if (qx * qx + qy * qy > 1) continue;
+        const pcx = ex + d.x * ew * 0.28, pcy = ey + d.y * eh * 0.24;
+        if (Math.abs(x - pcx) < pw / 2 && Math.abs(y - pcy) < pw / 2) return pupil;
+        return qx + qy > 0.75 ? shade : white;
+      }
+      return null;
+    }, hex(alone ? '#101040' : '#1c1648'));
+  });
+}
+function pxGhost(g) {
+  const fr = (g.frightened && G.fright > 0) || g.panic;
+  const flash = fr && !g.panic && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const ice = !g.eaten && iceOn();
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 8) % 2;
+  const bob = g.eaten || G.chill > 0 ? 0 : Math.round(Math.sin(G.t * 4.2 + g.color.charCodeAt(2)) * T * 0.07);
+  if (!g.eaten) blit(ghostBody(ice ? '#bdf4ff' : fr ? (flash ? '#ffffff' : '#2121ff') : g.color, frame, fr && !ice ? (flash ? 'flash' : 'fright') : ''), g.x + 0.5, g.y + 0.5, bob);
+  if (!fr || g.eaten || ice) blit(ghostEyes(g.dir || L, !!g.eaten), g.x + 0.5, g.y + 0.5, bob);
+}
+
+const DOT_RAMP = makeRamp('#ffb8ae');
+function dotSprite() {
+  return spr(`dot|${T}`, () => {
+    const s = Math.max(2, Math.round(T / 6)), r = s / 2;
+    return pixSprite(s + 1, s + 1, (x, y) => {
+      const inside = (a, b) => (a - r) ** 2 + (b - r) ** 2 <= r * r + 0.6;
+      if (x < s && y < s && inside(x, y)) return pickRamp(DOT_RAMP, lightOf((x - r) / r, (y - r) / r, 0.5) + 0.2);
+      return inside(x - 1, y - 1) ? [20, 8, 18, 130] : null;
+    }, 0);
+  });
+}
+const pelletSprite = () => spr(`pel|${T}`, () => primSprite([ball(0, 0, 0.3, DOT_RAMP)], 0.62));
+
+// Fruit drawn so far in pixel art; the rest still go through the vector drawings.
+const RED = makeRamp('#e8102a'), LEAF = makeRamp('#3cbf4a');
+const FRUIT_ART = {
+  cherry: () => [line([[-0.3, 0.2], [0.1, -0.6], [0.55, -0.65]], '#8a4a16', 0.1), line([[0.25, 0.3], [0.15, -0.55]], '#8a4a16', 0.1),
+    ell(0.3, -0.72, 0.2, 0.09, -0.4, LEAF), ball(-0.3, 0.25, 0.32, RED), ball(0.25, 0.35, 0.32, RED)],
+  strawberry: () => [
+    poly([[-0.6, -0.3], [-0.32, -0.46], [0, -0.5], [0.32, -0.46], [0.6, -0.3], [0.56, 0.04], [0.38, 0.4], [0, 0.75], [-0.38, 0.4], [-0.56, 0.04]], makeRamp('#ff1f2e')),
+    ...[[-0.25, -0.12], [0.2, -0.06], [0, 0.18], [-0.15, 0.4], [0.25, 0.3], [-0.38, 0.1], [0.4, 0.08], [0.06, -0.28], [-0.04, 0.55]].map(([x, y]) => dot(x, y, '#ffe9a0')),
+    poly([[-0.48, -0.4], [-0.2, -0.36], [-0.12, -0.62], [0.02, -0.38], [0.18, -0.64], [0.22, -0.36], [0.5, -0.4], [0.22, -0.24], [-0.22, -0.24]], makeRamp('#2fae3e')),
+    line([[0.02, -0.5], [0.06, -0.76]], '#3f8a2a', 0.08)],
+  orange: () => [line([[0, -0.45], [0.08, -0.7]], '#8a4a16', 0.09), ball(0, 0.1, 0.58, makeRamp('#ff9a1a'), 0.22), ell(0.3, -0.6, 0.25, 0.1, -0.4, LEAF)],
+};
+function pxFruit(kind, x, y) {
+  if (!FRUIT_ART[kind]) return false;
+  const s = spr(`fr|${T}|${kind}`, () => primSprite(FRUIT_ART[kind](), 1.5));
+  const bob = Math.round(Math.sin(G.t * 3) * T * 0.05);
+  shadowAt(x, y, 0.9, 0.62);
+  blit(s, x + 0.5, y + 0.5, bob);
+  const tw = (G.t * 0.8) % 1;
+  if (tw < 0.18) { // a twinkle sweeps past now and then
+    const k = Math.max(1, Math.round(T / 12)), sx = Math.round((x + 0.8) * T - camX), sy = Math.round((y + 0.1) * T - camY) + bob, n = tw < 0.09 ? 2 : 1;
+    fbx.fillStyle = '#ffffff';
+    fbx.fillRect(sx - n * k, sy, (2 * n + 1) * k, k); fbx.fillRect(sx, sy - n * k, k, (2 * n + 1) * k);
+  }
+  return true;
+}
+
+// Anything not yet redrawn as pixel art is drawn with the vector code into a side layer, then hardened:
+// alpha snapped to on/off, a bevel of light and shade on its edges and a dark outline around it.
+let hardMask = null, vecUsed = false;
+function vecBegin() {
+  const g = vlayer.g;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, VIEW_W, VIEW_H);
+  g.setTransform(T, 0, 0, T, -camX, -camY);
+  ctx = g; vecUsed = false;
+}
+const vec = (fn, ...a) => { vecUsed = true; fn(...a); };
+function vecEnd() {
+  ctx = fbx;
+  if (!vecUsed) return;
+  const g = vlayer.g, img = g.getImageData(0, 0, VIEW_W, VIEW_H), d = img.data, n = VIEW_W * VIEW_H;
+  const on = hardMask || (hardMask = new Uint8Array(n));
+  for (let i = 0; i < n; i++) on[i] = d[i * 4 + 3] >= 100 ? 1 : 0;
+  for (let y = 0; y < VIEW_H; y++) for (let x = 0; x < VIEW_W; x++) {
+    const i = y * VIEW_W + x, k = i * 4;
+    if (on[i]) {
+      d[k + 3] = 255;
+      const up = y > 0 && on[i - VIEW_W], lf = x > 0 && on[i - 1], dn = y < VIEW_H - 1 && on[i + VIEW_W], rt = x < VIEW_W - 1 && on[i + 1];
+      const f = !up || !lf ? 1.22 : !dn || !rt ? 0.72 : 1;
+      if (f !== 1) { d[k] = Math.min(255, d[k] * f); d[k + 1] = Math.min(255, d[k + 1] * f); d[k + 2] = Math.min(255, d[k + 2] * f); }
+      continue;
+    }
+    let j = -1;
+    if (x > 0 && on[i - 1]) j = i - 1; else if (x < VIEW_W - 1 && on[i + 1]) j = i + 1;
+    else if (y > 0 && on[i - VIEW_W]) j = i - VIEW_W; else if (y < VIEW_H - 1 && on[i + VIEW_W]) j = i + VIEW_W;
+    if (j < 0) { d[k + 3] = 0; continue; }
+    const q = j * 4;
+    d[k] = d[q] * 0.24 + 12; d[k + 1] = d[q + 1] * 0.2 + 6; d[k + 2] = d[q + 2] * 0.28 + 26; d[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  idTf(); fbx.drawImage(vlayer, 0, 0);
+}
+
+// ---------- Maze art ----------
+// Solid tiles are the walls plus pockets Pac-Man can never reach (the outside of the building). Each
+// solid mass gets a front face where it drops to the floor below, a bevelled rim and a top; floors get
+// their theme's texture and soft contact shadows under and beside the walls.
+function bakeLevel(rows, theme) {
+  const w = rows[0].length, h = rows.length, PW = w * T, PH = h * T, n = PW * PH;
+  const at = (c, r) => rows[r][c], pathOK = (c, r) => at(c, r) !== '#' && at(c, r) !== '-';
+  const reach = new Uint8Array(w * h), house = new Uint8Array(w * h);
+  const flood = (mask, c0, r0, ok) => {
+    const q = [[c0, r0]]; mask[r0 * w + c0] = 1;
+    while (q.length) {
+      const [c, r] = q.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dx, nr = r + dy;
+        if (nc < 0 || nr < 0 || nc >= w || nr >= h || mask[nr * w + nc] || !ok(nc, nr)) continue;
+        mask[nr * w + nc] = 1; q.push([nc, nr]);
+      }
+    }
+  };
+  flood(reach, Math.floor(meta.pac.x), meta.pac.y, pathOK);
+  let hb = null;
+  for (let r = 0; r + 1 < h; r++) for (let c = 0; c < w; c++) {
+    if (at(c, r) === '-' && pathOK(c, r + 1) && !reach[(r + 1) * w + c] && !house[(r + 1) * w + c]) flood(house, c, r + 1, (nc, nr) => pathOK(nc, nr) && !reach[nr * w + nc]);
+  }
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) if (house[r * w + c]) {
+    hb = hb || { c0: c, c1: c, r0: r, r1: r };
+    hb.c0 = Math.min(hb.c0, c); hb.c1 = Math.max(hb.c1, c); hb.r0 = Math.min(hb.r0, r); hb.r1 = Math.max(hb.r1, r);
+  }
+  const clampC = c => Math.max(0, Math.min(w - 1, c));
+  const solidT = (c, r) => {
+    if (r < 0 || r >= h) return true;
+    const i = r * w + clampC(c);
+    return !reach[i] && !house[i] && rows[r][clampC(c)] !== '-';
+  };
+  // Pixel mask: walls stop short of the corridors and round off their corners, as the arcade's do.
+  const m = 0.3, rr = 0.22, S = new Uint8Array(n);
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+    if (!solidT(c, r)) continue;
+    const wl = (dc, dr) => solidT(c + dc, r + dr);
+    const oL = !wl(-1, 0), oR = !wl(1, 0), oU = !wl(0, -1), oD = !wl(0, 1);
+    const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => ({ sx, sy, ox: sx < 0 ? oL : oR, oy: sy < 0 ? oU : oD, diag: wl(sx, sy) }));
+    for (let j = 0; j < T; j++) for (let i = 0; i < T; i++) {
+      const x = (i + 0.5) / T, y = (j + 0.5) / T;
+      if ((oL && x < m) || (oR && x > 1 - m) || (oU && y < m) || (oD && y > 1 - m)) continue;
+      let ok = true;
+      for (const q of corners) {
+        const qx = q.sx < 0 ? x : 1 - x, qy = q.sy < 0 ? y : 1 - y;
+        if (q.ox && q.oy) { const k = m + rr; if (qx < k && qy < k && Math.hypot(qx - k, qy - k) > rr) { ok = false; break; } }
+        else if (!q.ox && !q.oy && !q.diag && qx < m && qy < m) { const k = m - rr; if (!(qx > k && qy > k && Math.hypot(qx - k, qy - k) > rr)) { ok = false; break; } }
+      }
+      if (ok) S[(r * T + j) * PW + c * T + i] = 1;
+    }
+  }
+  // Classes: 0 floor, 1 wall top, 2 front face (fv: row within the face, fh: its height).
+  const FACE = Math.max(2, Math.round(T * 0.56)), cls = new Uint8Array(n), fv = new Uint8Array(n), fh = new Uint8Array(n);
+  for (let x = 0; x < PW; x++) for (let y = 0; y < PH;) {
+    if (!S[y * PW + x]) { y++; continue; }
+    let y1 = y; while (y1 < PH && S[y1 * PW + x]) y1++;
+    const F = y1 < PH ? Math.min(FACE, Math.max(0, y1 - y - 3)) : 0;
+    for (let k = y; k < y1; k++) { const i = k * PW + x; if (k >= y1 - F) { cls[i] = 2; fv[i] = k - (y1 - F); fh[i] = F; } else cls[i] = 1; }
+    y = y1;
+  }
+  // Distance from the edge of each wall top, for its bevelled rim and inset panel (Chebyshev, capped at 9).
+  const dist = new Uint8Array(n);
+  for (let i = 0; i < n; i++) dist[i] = cls[i] === 1 ? 9 : 0;
+  const DT = (x, y) => x < 0 || y < 0 || x >= PW || y >= PH ? 9 : dist[y * PW + x];
+  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+    const i = y * PW + x;
+    if (dist[i]) dist[i] = Math.min(dist[i], DT(x - 1, y) + 1, DT(x - 1, y - 1) + 1, DT(x, y - 1) + 1, DT(x + 1, y - 1) + 1);
+  }
+  for (let y = PH - 1; y >= 0; y--) for (let x = PW - 1; x >= 0; x--) {
+    const i = y * PW + x;
+    if (dist[i]) dist[i] = Math.min(dist[i], DT(x + 1, y) + 1, DT(x + 1, y + 1) + 1, DT(x, y + 1) + 1, DT(x - 1, y + 1) + 1);
+  }
+  const isS = (x, y) => x < 0 || y < 0 || x >= PW || y >= PH || S[y * PW + x];
+  const clsAt = (x, y) => x < 0 || y < 0 || x >= PW || y >= PH ? 1 : cls[y * PW + x];
+  // The runner carpet follows the corridors: a band down the middle of each open tile, joined to its neighbours.
+  const runT = (c, r) => r >= 0 && r < h && !!reach[r * w + clampC(c)] && !house[r * w + clampC(c)];
+  const lo = Math.round(T * 0.2), hi = T - 1 - lo;
+  function runEdge(c, r, u, v) {
+    if (!runT(c, r)) return -1;
+    const inH = v >= lo && v <= hi, inV = u >= lo && u <= hi;
+    const aL = runT(c - 1, r), aR = runT(c + 1, r), aU = runT(c, r - 1), aD = runT(c, r + 1);
+    if (inH && inV) {
+      let e = 99;
+      if (!aL) e = Math.min(e, u - lo); if (!aR) e = Math.min(e, hi - u);
+      if (!aU) e = Math.min(e, v - lo); if (!aD) e = Math.min(e, hi - v);
+      if (aL && aU) e = Math.min(e, Math.max(u - lo, v - lo) + 1); if (aR && aU) e = Math.min(e, Math.max(hi - u, v - lo) + 1);
+      if (aL && aD) e = Math.min(e, Math.max(u - lo, hi - v) + 1); if (aR && aD) e = Math.min(e, Math.max(hi - u, hi - v) + 1);
+      return e;
+    }
+    if (inH && ((u < lo && aL) || (u > hi && aR))) return Math.min(v - lo, hi - v);
+    if (inV && ((v < lo && aU) || (v > hi && aD))) return Math.min(u - lo, hi - u);
+    return -1;
+  }
+  const out = mkCanvas(PW, PH), img = out.g.createImageData(PW, PH), d = img.data;
+  const shLen = Math.max(1, Math.round(T / 6)), info = { c: 0, r: 0, u: 0, v: 0, house: 0, e: -1 };
+  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+    const i = y * PW + x; let col;
+    if (cls[i] === 2) col = theme.face(x, y, fv[i], fh[i], !isS(x - 1, y) ? -1 : !isS(x + 1, y) ? 1 : 0);
+    else if (cls[i] === 1) {
+      const ring = dist[i];
+      let side = '';
+      if (ring === 1) {
+        const b = clsAt(x, y + 1);
+        side = b !== 1 || clsAt(x - 1, y + 1) !== 1 || clsAt(x + 1, y + 1) !== 1 ? 'front' : !isS(x, y - 1) ? 'top' : !isS(x - 1, y) ? 'left' : !isS(x + 1, y) ? 'right' : 'top';
+      }
+      col = theme.cap(x, y, ring, side);
+    } else {
+      const c = (x / T) | 0, r = (y / T) | 0;
+      info.c = c; info.r = r; info.u = x - c * T; info.v = y - r * T; info.house = house[r * w + c];
+      info.e = theme.runner ? runEdge(c, r, info.u, info.v) : -1;
+      col = theme.floor(x, y, info);
+      let sh = 1;
+      for (let s = 1; s <= shLen + 1; s++) if (isS(x, y - s)) { sh = 0.5 + 0.45 * (s - 1) / (shLen + 1); break; }
+      for (let s = 1; s <= shLen; s++) if (isS(x - s, y)) { sh = Math.min(sh, 0.68 + 0.25 * (s - 1) / shLen); break; }
+      if (isS(x + 1, y) || isS(x, y + 1)) sh = Math.min(sh, 0.84);
+      if (sh < 1) col = mulc(col, sh);
+    }
+    const k = i * 4;
+    d[k] = col[0]; d[k + 1] = col[1]; d[k + 2] = col[2]; d[k + 3] = 255;
+  }
+  out.g.putImageData(img, 0, 0);
+  // The walls alone, in white, for the level-clear flash.
+  const mask = mkCanvas(PW, PH), mi = mask.g.createImageData(PW, PH);
+  for (let i = 0; i < n; i++) if (S[i]) { mi.data[i * 4] = mi.data[i * 4 + 1] = mi.data[i * 4 + 2] = 255; mi.data[i * 4 + 3] = 255; }
+  mask.g.putImageData(mi, 0, 0);
+  const mini = mkCanvas(w * 2, h * 2);
+  mini.g.fillStyle = theme.map;
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) if (solidT(c, r)) mini.g.fillRect(c * 2, r * 2, 2, 2);
+  const L = { canvas: out, mask, mini, cls, PW, PH, w, h, T, reach, house, solidT, houseBox: hb, decor: [] };
+  if (theme.decor) L.decor = planDecor(L);
+  return L;
+}
+
+// Wall decorations hang on front faces at least three tiles wide; the left half is rolled and mirrored.
+function planDecor(L) {
+  const { w, h, PW } = L, out = [];
+  let s = 1234567 + w * 31 + h * 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const faceTile = (c, r) => r + 1 < h && c >= 0 && c < w && L.solidT(c, r) && L.reach[(r + 1) * w + c] && !L.house[(r + 1) * w + c];
+  const flat = (c, r) => faceTile(c - 1, r) && faceTile(c, r) && faceTile(c + 1, r);
+  const faceAt = (c, r) => {
+    const x = c * T + (T >> 1); let y0 = -1, y1 = -1;
+    for (let y = r * T; y < (r + 1) * T; y++) if (L.cls[y * PW + x] === 2) { if (y0 < 0) y0 = y; y1 = y + 1; }
+    return y0 < 0 ? null : { x, y0, y1 };
+  };
+  for (let r = 0; r < h - 1; r++) {
+    let last = -9;
+    for (let c = 1; c < w / 2; c++) {
+      if (!flat(c, r) || c - last < 3 || rnd() > 0.8) continue;
+      const f = faceAt(c, r);
+      if (!f || f.y1 - f.y0 < 4) continue;
+      const big = f.y1 - f.y0 >= 9, roll = rnd();
+      const kind = !big ? 'candle' : r === 0 && roll < 0.55 ? 'window' : roll < 0.36 ? 'candle' : roll < 0.58 ? 'candelabra' : roll < 0.84 ? 'portrait' : 'window';
+      const seed = rnd();
+      out.push({ kind, ...f, c, r, seed });
+      const mc = w - 1 - c, g = mc !== c && flat(mc, r) && faceAt(mc, r);
+      if (g) out.push({ kind, ...g, c: mc, r, seed: (seed + 0.37) % 1 });
+      last = c;
+    }
+  }
+  return out;
+}
+
+// ---------- Themes ----------
+// A theme paints the three kinds of maze pixel and sets the light. Haunted Halls is the first to get
+// the full treatment; the other stages share a plainer one built from their wall colour.
+const PH_ = Object.fromEntries(Object.entries({
+  plankA: '#2c2022', plankB: '#382828', seam: '#170f11', nail: '#5a4a44',
+  stoneA: '#2a2634', stoneB: '#353043', grout: '#15121c',
+  rBorder: '#24080f', rGold: '#b8862e', rGold2: '#c8963a', rDeep: '#4c0e1c', rField: '#661628', rLine: '#7e2032', rWorn: '#7a4650',
+  lip: '#120e22', paper: '#3a2f66', paperMotif: '#56478a', paperLine: '#2c2452', paperFade: '#5a5090', rail: '#b08a52',
+  wain: '#55342a', wainHi: '#74493a', wainDark: '#2e1a14', baseHi: '#7a5040', base: '#1a0e0c',
+  rim: '#6e7af4', rimFront: '#9aa4ff', rimR: '#4650b8', ring2: '#4648b0', ring3: '#363486', cap: '#2c2966', capLine: '#34307a', capHi: '#3c3888',
+}).map(([k, v]) => [k, hex(v)]));
+const THEMES = {
+  1: {
+    id: 'halls', void: '#07050f', map: '#252c86', runner: true, decor: true, storm: true, wisps: true, dust: true,
+    ambient: [0.5, 0.47, 0.72], vignette: 0.5, grade: ['#5a2ca0', 0.14],
+    floor(x, y, t) {
+      const P = PH_;
+      if (t.house) {
+        if (x % 8 === 0 || y % 8 === 0) return P.grout;
+        return mulc(mixc(P.stoneA, P.stoneB, hash2(x >> 3, y >> 3)), 0.88 + vnoise(x / 3, y / 3) * 0.24);
+      }
+      if (t.e >= 0) { // the runner: dark border, gold trim, a lattice on crimson, worn in places
+        if (t.e === 0) return P.rBorder;
+        if (t.e === 1) return P.rGold;
+        if (t.e === 2) return P.rDeep;
+        const p = (x + y) % 8, q = ((x - y) % 8 + 8) % 8;
+        let col = p === 0 && q === 0 ? P.rGold2 : p === 0 || q === 0 ? P.rLine : P.rField;
+        const nz = vnoise(x / 13, y / 13);
+        if (nz > 0.66) col = mixc(col, P.rWorn, Math.min(1, (nz - 0.66) * 3));
+        return col;
+      }
+      const yy = y % 5, row = (y / 5) | 0, xs = x + ((hash2(row, 3) * 70) | 0), seg = (xs / 70) | 0, xx = xs % 70;
+      if (yy === 4 || xx === 0) return P.seam;
+      let col = mulc(mixc(P.plankA, P.plankB, hash2(seg, row)), 0.86 + vnoise(xs / 11, row * 7.3 + yy * 0.5) * 0.28);
+      if (yy === 0) col = mulc(col, 1.12);
+      if ((xx === 2 || xx === 67) && yy === 2) col = P.nail;
+      return col;
+    },
+    face(x, y, v, F, edge) { // wallpaper over wainscoting, a chair rail between, a skirting board at the foot
+      const P = PH_;
+      let col;
+      if (v === 0) col = P.lip;
+      else if (F < 7) col = v === F - 1 ? P.base : v === F - 2 ? P.wainHi : P.paper;
+      else {
+        const rail = Math.round(F * 0.5);
+        if (v < rail) {
+          const lx = x % 8, ly = (y + ((x >> 3) & 1) * 3) % 6;
+          col = lx === 7 ? P.paperLine : Math.abs(lx - 3) + Math.abs(ly - 2) <= 1 ? P.paperMotif : P.paper;
+          if (vnoise(x / 7, y / 5) > 0.74) col = mixc(col, P.paperFade, 0.6);
+        } else if (v === rail) col = P.rail;
+        else if (v === F - 1) col = P.base;
+        else if (v === F - 2) col = P.baseHi;
+        else { const lx = x % 12; col = lx === 0 ? P.wainDark : lx === 1 || v === rail + 1 ? P.wainHi : P.wain; }
+      }
+      return edge < 0 ? mulc(col, 0.78) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // a slab of dark slate with a bevelled edge in the old arcade blue
+      const P = PH_;
+      if (ring === 1) return side === 'front' ? P.rimFront : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2) return P.ring2;
+      if (ring === 3) return P.ring3;
+      if (ring === 6) return P.ring3;
+      if (ring === 7) return P.capHi;
+      return (x + y) % 10 === 0 || ((x - y) % 10 + 10) % 10 === 0 ? P.capLine : P.cap;
+    },
+  },
+};
+function genericTheme(stage) {
+  const wc = hex(WALL_COLORS[stage]), white = [255, 255, 255], stone = [22, 22, 28];
+  const rim = mixc(wc, white, 0.2), rimF = mixc(wc, white, 0.45), rimR = mulc(wc, 0.66), ring2 = mulc(wc, 0.56), ring3 = mulc(wc, 0.42);
+  const cap = mixc(mulc(wc, 0.3), [30, 30, 40], 0.3), capIn = mulc(cap, 0.75), capHi = mulc(cap, 1.25);
+  const brick = mixc(mulc(wc, 0.32), [40, 40, 48], 0.35), mortar = mixc(mulc(wc, 0.1), [16, 16, 20], 0.5), lip = mulc(wc, 0.05);
+  const tile = mixc(stone, mulc(wc, 0.3), 0.22), grout = [10, 10, 14];
+  return {
+    id: 'g' + stage, void: '#040406', map: css(mulc(wc, 0.45)), lightK: 0.5,
+    ambient: [0.94, 0.94, 0.98], vignette: 0.35, grade: null,
+    floor(x, y, t) {
+      if (x % 12 === 0 || y % 12 === 0) return grout;
+      return mulc(tile, (t.house ? 0.7 : 1) * (0.84 + hash2(x / 12 | 0, y / 12 | 0) * 0.22 + vnoise(x / 4, y / 4) * 0.12));
+    },
+    face(x, y, v, F, edge) {
+      let col;
+      if (v === 0) col = lip;
+      else if (v === F - 1) col = mulc(lip, 1.5);
+      else {
+        const br = ((v - 1) / 4) | 0;
+        col = (v - 1) % 4 === 3 || (x + (br % 2) * 4) % 8 === 0 ? mortar : mulc(brick, 0.85 + hash2((x + (br % 2) * 4) >> 3, br + y * 0) * 0.3);
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) {
+      if (ring === 1) return side === 'front' ? rimF : side === 'right' ? rimR : rim;
+      return ring === 2 ? ring2 : ring === 3 ? ring3 : ring === 6 ? capIn : ring === 7 ? capHi : cap;
+    },
+  };
+}
+const themeFor = stage => THEMES[stage] || (THEMES[stage] = genericTheme(stage));
+
+// ---------- Light ----------
+// Light is summed per 2x2-pixel cell from the theme's ambient plus every source near the view, then
+// quantised with an ordered dither (so it falls off in pixel-art bands) and multiplied over the frame;
+// anything brighter than full spills over as an additive glow.
+const LC = 2, LW = VIEW_W / LC, LH = Math.ceil(VIEW_H / LC);
+const lightBuf = new Float32Array(LW * LH * 3);
+const lmul = mkCanvas(LW, LH), ladd = mkCanvas(LW, LH), lmulImg = lmul.g.createImageData(LW, LH), laddImg = ladd.g.createImageData(LW, LH);
+let lights = [], lightK = 1; // lightK: the theme's scale on every source
+const addLightPx = (x, y, r, col, k) => { k *= lightK; if (x + r > 0 && y + r > 0 && x - r < VIEW_W && y - r < VIEW_H) lights.push({ x, y, r, cr: col[0] * k, cg: col[1] * k, cb: col[2] * k }); };
+const addLight = (wx, wy, r, col, k) => addLightPx(wx * T - camX, wy * T - camY, r * T, typeof col === 'string' ? lightCol(col) : col, k);
+function applyLight(amb, vig) {
+  const B = lightBuf;
+  for (let i = 0; i < LW * LH; i++) { B[i * 3] = amb[0]; B[i * 3 + 1] = amb[1]; B[i * 3 + 2] = amb[2]; }
+  for (const l of lights) {
+    const x0 = Math.max(0, Math.floor((l.x - l.r) / LC)), x1 = Math.min(LW - 1, Math.ceil((l.x + l.r) / LC));
+    const y0 = Math.max(0, Math.floor((l.y - l.r) / LC)), y1 = Math.min(LH - 1, Math.ceil((l.y + l.r) / LC)), ir2 = 1 / (l.r * l.r);
+    for (let cy = y0; cy <= y1; cy++) {
+      const dy = (cy + 0.5) * LC - l.y;
+      for (let cx = x0; cx <= x1; cx++) {
+        const dx = (cx + 0.5) * LC - l.x;
+        let f = 1 - (dx * dx + dy * dy) * ir2;
+        if (f <= 0) continue;
+        f *= f;
+        const i = (cy * LW + cx) * 3;
+        B[i] += l.cr * f; B[i + 1] += l.cg * f; B[i + 2] += l.cb * f;
+      }
+    }
+  }
+  const md = lmulImg.data, ad = laddImg.data, Q = 12;
+  for (let cy = 0; cy < LH; cy++) for (let cx = 0; cx < LW; cx++) {
+    const i = cy * LW + cx, b = BAYER[(cy & 3) * 4 + (cx & 3)], nx = cx / LW * 2 - 1, ny = cy / LH * 2 - 1;
+    const v = fxOn ? 1 - vig * Math.max(0, (nx * nx + ny * ny) * 0.5 - 0.1) : 1;
+    for (let ch = 0; ch < 3; ch++) {
+      const val = B[i * 3 + ch] * v;
+      md[i * 4 + ch] = Math.min(255, Math.floor(Math.min(1, val) * Q + b) / Q * 255);
+      ad[i * 4 + ch] = val > 1 ? Math.min(255, Math.floor(Math.min(1, (val - 1) * 0.55) * Q + b) / Q * 255) : 0;
+    }
+    md[i * 4 + 3] = 255; ad[i * 4 + 3] = 255;
+  }
+  lmul.g.putImageData(lmulImg, 0, 0); ladd.g.putImageData(laddImg, 0, 0);
+  idTf();
+  fbx.globalCompositeOperation = 'multiply'; fbx.drawImage(lmul, 0, 0, LW * LC, LH * LC);
+  fbx.globalCompositeOperation = 'lighter'; fbx.drawImage(ladd, 0, 0, LW * LC, LH * LC);
+  fbx.globalCompositeOperation = 'source-over';
+}
+const lightAt = (sx, sy) => {
+  const cx = Math.max(0, Math.min(LW - 1, sx / LC | 0)), cy = Math.max(0, Math.min(LH - 1, sy / LC | 0)), i = (cy * LW + cx) * 3;
+  return (lightBuf[i] + lightBuf[i + 1] + lightBuf[i + 2]) / 3;
+};
+function entityLights(showEnemies, pacShown) {
+  if (pacShown) addLight(pac.x + 0.5, pac.y + 0.5, 3.4, [1, 0.85, 0.45], 0.6);
+  if (G.fruit) addLight(meta.fruit.x + 0.5, meta.fruit.y + 0.5, 1.8, [1, 0.8, 0.6], 0.35);
+  if (!showEnemies) return;
+  for (const g of G.ghosts) {
+    if (g === G.eatenGhost) continue;
+    const fr = g.frightened && G.fright > 0;
+    addLight(g.x + 0.5, g.y + 0.5, g.eaten ? 0.9 : 1.9, g.eaten ? [0.6, 0.6, 1] : fr ? [0.3, 0.35, 1] : g.color, g.eaten ? 0.3 : 0.34);
+  }
+  for (const w of G.wraiths) addLight(w.x + 0.5, w.y + 0.5, 1.8, '#c9b8ff', 0.3);
+  for (const s of G.slimes) addLight(s.x + 0.5, s.y + 0.5, 1.6, '#5cff6b', 0.25);
+  for (const h of G.hounds) if (h.state !== 'house') addLight(h.x + 0.5, h.y + 0.5, 1.4, '#ffb04a', 0.2);
+  for (const s of G.spiders) addLight(s.x + 0.5, s.y + 0.5, 1.2, '#c9a0ff', 0.2);
+  for (const g of G.gargoyles) if (g.moving) addLight(g.x + 0.5, g.y + 0.3, 1.1, '#ff3b3b', 0.3);
+  for (const o of G.orbs) addLight(o.x + 0.5, o.y + 0.5, 1.3, o.web ? '#e6e9ff' : o.goo ? '#8dff5c' : '#ff5ce1', 0.4);
+  for (const v of G.vents) if (ventState(v) === 'blast') addLight(v.c + 0.5, v.r + 0.5, 2.6, '#ff8a3a', 0.6);
+  if (G.boss && G.boss.state !== 'dead') addLight(G.boss.x + 0.5, G.boss.y + 0.5, 3.2, G.boss.kind === 'blob' ? '#7dff5c' : '#ffd86b', 0.35);
+}
+
+// ---------- Scenery ----------
+// Storms: lightning lights the windows (and the whole hall) every so often, with thunder a moment later.
+const atmo = { next: 5, flash: 0, thunder: -1 };
+function atmoUpdate(dt, theme) {
+  if (!theme.storm) { atmo.flash = 0; return; }
+  if ((atmo.next -= dt) <= 0) { atmo.next = 9 + Math.random() * 11; atmo.flash = 0.5; atmo.thunder = 0.5 + Math.random() * 0.9; }
+  if (atmo.flash > 0) atmo.flash = Math.max(0, atmo.flash - dt);
+  if (atmo.thunder > 0 && (atmo.thunder -= dt) <= 0 && G.state === 'play') SFX.thunder();
+}
+const flashLevel = () => { const t = 0.5 - atmo.flash; return atmo.flash <= 0 ? 0 : t < 0.06 ? 1 : t < 0.13 ? 0.15 : t < 0.22 ? 0.8 : Math.max(0, 1 - (t - 0.22) / 0.28) * 0.5; };
+const pr = (x, y, w, h, col) => { fbx.fillStyle = col; fbx.fillRect(x, y, w, h); };
+function drawFlame(x, y, seed, big) { // x: left column of a 2px wick; y: wick top. Returns the flame's centre.
+  const f = Math.floor(G.t * 11 + seed * 50), nz = hash2(f, seed * 1000 | 0), sway = nz < 0.25 ? -1 : nz > 0.8 ? 1 : 0, fh = (big ? 4 : 3) + (nz > 0.5 ? 1 : 0);
+  pr(x, y - fh + 1, 2, fh - 1, '#ff9a30');
+  pr(x + (sway > 0 ? 1 : 0), y - fh + 2, 1, fh - 2, '#fff2b0');
+  pr(x + (sway < 0 ? 0 : 1), y - fh, 1, 1, '#ffcc60');
+  return { x: x + 1, y: y - fh / 2, k: 0.85 + nz * 0.3 };
+}
+// Drawn twice: once before the light map, and again after it (glow) for the parts that give off light.
+function drawDecor(theme, dt, glow) {
+  const L = art, fl = flashLevel();
+  for (const d of L.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -100 || x > VIEW_W + 100 || y1 < -100 || y0 > VIEW_H + 100) continue;
+    const seen = x > -16 && x < VIEW_W + 16 && y1 > -24 && y0 < VIEW_H + 24;
+    if (d.kind === 'candle' || d.kind === 'candelabra') {
+      const yb = y0 + Math.round(F * 0.5), tall = Math.max(2, Math.round(F * 0.3));
+      const spots = d.kind === 'candle' ? [[0, tall]] : [[-4, tall - 1], [-1, tall + 1], [2, tall - 1]];
+      let fx = x, fy = yb - tall, k = 1;
+      if (seen && glow) { for (const [ox, hgt] of spots) drawFlame(x + ox, yb - hgt, d.seed + ox * 0.13, ox === -1); continue; }
+      if (glow) continue;
+      if (seen) {
+        if (d.kind === 'candle') { pr(x - 2, yb, 4, 2, '#9a7a34'); pr(x - 2, yb, 4, 1, '#d8b050'); pr(x - 1, yb + 2, 2, 1, '#6a5020'); }
+        else { pr(x - 4, yb, 8, 1, '#c89a40'); pr(x - 1, yb + 1, 2, 2, '#9a7a34'); pr(x - 2, yb + 3, 4, 1, '#6a5020'); }
+        for (const [ox, hgt] of spots) {
+          pr(x + ox, yb - hgt, 2, hgt, '#e8dcc0'); pr(x + ox + 1, yb - hgt, 1, hgt, '#b4a482');
+          const f = drawFlame(x + ox, yb - hgt, d.seed + ox * 0.13, ox === -1);
+          if (ox === -1 || d.kind === 'candle') { fx = f.x; fy = f.y; k = f.k; }
+        }
+        if (G.state === 'play' && Math.random() < dt * 0.7) parts.push({ x: (fx + camX) / T, y: (fy + camY) / T, vx: (Math.random() - 0.5) * 0.3, vy: -0.7, t: 1.1, t0: 1.1, col: '#ffa040', g: 0 });
+      } else k = 0.85 + hash2(Math.floor(G.t * 11 + d.seed * 50), d.seed * 1000 | 0) * 0.3;
+      addLightPx(fx, fy, 3.4 * T, [1, 0.62, 0.3], (d.kind === 'candle' ? 0.72 : 0.9) * k);
+    } else if (d.kind === 'portrait') {
+      const fw = 11, fh = F + 3, fx = x - 5, fy = y1 - 2 - fh;
+      if (seen && glow) {
+        const dx = (pac.x + 0.5) * T - d.x, lk = Math.abs(dx) < T * 0.8 ? 0 : Math.sign(dx);
+        if (G.state === 'play' && Math.hypot(dx, (pac.y + 0.5) * T - d.y1) < T * 2.6) { pr(fx + 4 + lk, fy + 4, 1, 1, '#ff5050'); pr(fx + 6 + lk, fy + 4, 1, 1, '#ff5050'); }
+      } else if (seen) {
+        pr(fx, fy, fw, fh, '#2a1808'); pr(fx + 1, fy + 1, fw - 2, fh - 2, '#b8862e');
+        pr(fx + 1, fy + 1, fw - 2, 1, '#e8c060'); pr(fx + 1, fy + 1, 1, fh - 2, '#d8a848');
+        const ix = fx + 2, iy = fy + 2, iw = fw - 4, ih = fh - 4;
+        pr(ix, iy, iw, ih, d.seed < 0.5 ? '#1c1626' : '#162024');
+        pr(ix + 1, iy + ih - 3, iw - 2, 3, '#3a2a4a'); pr(ix + 2, iy + ih - 4, iw - 4, 1, '#3a2a4a');
+        pr(ix + 1, iy + 1, 5, 4, '#c8b49a'); pr(ix + 1, iy + 1, 5, 1, d.seed < 0.5 ? '#5a4030' : '#9a9aa0');
+        const dx = (pac.x + 0.5) * T - d.x, lk = Math.abs(dx) < T * 0.8 ? 0 : Math.sign(dx);
+        const near = G.state === 'play' && Math.hypot(dx, (pac.y + 0.5) * T - d.y1) < T * 2.6, ec = near ? '#ff3030' : '#1a0a0a';
+        pr(ix + 2 + lk, iy + 2, 1, 1, ec); pr(ix + 4 + lk, iy + 2, 1, 1, ec);
+        if (near) addLightPx(ix + 3, iy + 2, T * 0.9, [1, 0.2, 0.2], 0.45);
+      }
+    } else if (d.kind === 'window') {
+      const ww = 10, wh = F + 3, wx = x - 5, wy = y1 - 2 - wh;
+      if (seen) {
+        if (!glow) { pr(wx, wy + 2, ww, wh - 2, '#1e120c'); pr(wx + 1, wy + 1, ww - 2, 1, '#1e120c'); pr(wx + 2, wy, ww - 4, 1, '#1e120c'); }
+        const gx = wx + 1, gy = wy + 2, gw = ww - 2, gh = wh - 4, rain = Math.floor(G.t * 22);
+        for (let j = -1; j < gh; j++) for (let i = j < 0 ? 1 : 0; i < (j < 0 ? gw - 1 : gw); i++) {
+          let col = fl > 0.3 ? '#dfe8ff' : css(mixc([60, 92, 176], [24, 36, 86], (j + 1) / (gh + 1)));
+          if (fl <= 0.3 && (i + j * 2 + rain) % 7 === 0 && hash2(i + d.c * 9, (j + rain) >> 2) > 0.45) col = '#7090e0';
+          pr(gx + i, gy + j, 1, 1, col);
+        }
+        if (d.seed < 0.45 && fl <= 0.3) pr(gx + 1, gy, 2, 2, '#e8ecff');
+        pr(wx + (ww >> 1), wy + 1, 1, wh - 2, '#1e120c'); pr(gx, gy + (gh >> 1), gw, 1, '#1e120c');
+        if (!glow) pr(wx - 1, wy + wh - 1, ww + 2, 1, '#6a4a3a');
+      }
+      if (!glow) addLightPx(x, y1 + T * 0.8, 2.7 * T, [0.4, 0.5, 1], 0.4 + fl * 1.4);
+    }
+  }
+  if (L.houseBox && theme.decor) { // a summoning circle on the ghost house floor
+    const b = L.houseBox, cx = (b.c0 + b.c1 + 1) / 2 * T - camX, cy = (b.r0 + b.r1 + 1) / 2 * T - camY;
+    const rx = (b.c1 - b.c0 + 1) * T / 2 - 6, ry = (b.r1 - b.r0 + 1) * T / 2 - 5, pulse = 0.5 + 0.5 * Math.sin(G.t * 2.4);
+    if (rx > 4 && ry > 3 && cx > -rx - 10 && cx < VIEW_W + rx + 10 && cy > -ry - 10 && cy < VIEW_H + ry + 10) {
+      const steps = Math.ceil((rx + ry) * 3);
+      fbx.globalAlpha = glow ? 0.35 + 0.25 * pulse : 1;
+      for (let i = 0; i < steps; i++) {
+        const a = i / steps * Math.PI * 2;
+        pr(Math.round(cx + Math.cos(a) * rx), Math.round(cy + Math.sin(a) * ry), 1, 1, glow ? '#9a6aff' : '#5a38a8');
+        if (i % 2 === 0) pr(Math.round(cx + Math.cos(a) * (rx - 3)), Math.round(cy + Math.sin(a) * (ry - 2)), 1, 1, glow ? '#6a44c8' : '#3e2878');
+      }
+      fbx.globalAlpha = 0.55 + 0.45 * pulse;
+      for (let i = 0; i < 6; i++) {
+        const a = G.t * 0.4 + i * Math.PI / 3;
+        pr(Math.round(cx + Math.cos(a) * (rx - 1.5)) - 1, Math.round(cy + Math.sin(a) * (ry - 1)) - 1, 2, 2, '#b890ff');
+      }
+      fbx.globalAlpha = 1;
+      if (!glow) addLightPx(cx, cy, 2.6 * T, [0.55, 0.3, 1], 0.32 + pulse * 0.2);
+    }
+  }
+}
+function drawDoor() {
+  const y = Math.round((house.exitY + 1.38) * T) - camY, hh = Math.max(2, Math.round(0.24 * T)), x0 = house.doorC * T - camX, shimmer = Math.floor(G.t * 12);
+  pr(x0, y, 2 * T, hh, '#ff8ae0'); pr(x0, y, 2 * T, 1, '#ffc8f4');
+  for (let i = 0; i < 2 * T; i++) if (hash2(i + house.doorC * T, shimmer) > 0.82) pr(x0 + i, y, 1, hh, '#fff0ff');
+  addLightPx(x0 + T, y, 1.6 * T, [1, 0.5, 0.9], 0.3);
+}
+function drawDots() {
+  const ds = dotSprite(), ps = pelletSprite(), on = G.state !== 'play' || Math.floor(G.t * 5) % 2 === 0;
+  const c0 = Math.max(0, Math.floor(camX / T) - 1), c1 = Math.min(W - 1, Math.ceil((camX + VIEW_W) / T) + 1);
+  const r0 = Math.max(0, Math.floor(camY / T) - 1), r1 = Math.min(H - 1, Math.ceil((camY + VIEW_H) / T) + 1);
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const v = G.dots[r * W + c];
+    if (v === 1) blit(ds, c + 0.5, r + 0.5);
+    else if (v === 2) { if (on) blit(ps, c + 0.5, r + 0.5); addLight(c + 0.5, r + 0.5, 1.7, [1, 0.62, 0.6], on ? 0.55 : 0.3); }
+    else if (v === 3) { worldTf(); drawFrostBerry(c + 0.5, r + 0.5, 1.1); idTf(); addLight(c + 0.5, r + 0.5, 1.5, [0.45, 0.85, 1], 0.4); }
+    else if (v === 5) { worldTf(); drawMagnet(c + 0.5, r + 0.55); idTf(); addLight(c + 0.5, r + 0.5, 1.4, [1, 0.3, 0.3], 0.35); }
+  }
+}
+
+// ---------- Particles ----------
+// Short-lived sparks in world tiles (crumbs, bursts, ghost wisps, candle embers), and dust motes that
+// hang in the air and only show up where the light catches them.
+let parts = [];
+function fxBurst(x, y, col, n, spd, life = 0.5) {
+  for (let i = 0; i < n && parts.length < 500; i++) {
+    const a = Math.random() * Math.PI * 2, s = spd * (0.35 + Math.random() * 0.65), t = life * (0.6 + Math.random() * 0.4);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t, t0: t, col, g: 0, drag: 3 });
+  }
+}
+function fxDot(c, r, v) {
+  if (v === 1) fxBurst(c + 0.5, r + 0.5, '#ffd8d0', 3, 2.2, 0.22);
+  else if (v === 2) { fxBurst(c + 0.5, r + 0.5, '#ffe0d8', 18, 5, 0.5); fxBurst(c + 0.5, r + 0.5, '#ff8a80', 10, 3, 0.6); }
+  else if (v === 3) fxBurst(c + 0.5, r + 0.5, '#bdf4ff', 16, 4, 0.55);
+  else if (v === 5) fxBurst(c + 0.5, r + 0.5, '#ff6a6a', 14, 4, 0.5);
+}
+function partsStep(dt, theme) {
+  if (dt > 0 && theme.wisps) for (const g of G.ghosts) { // ghosts trail a little ectoplasm
+    if (g.eaten || g.mode === 'house' || Math.random() > dt * 9) continue;
+    const t = 0.5 + Math.random() * 0.4, fr = g.frightened && G.fright > 0;
+    parts.push({ x: g.x + 0.5 + (Math.random() - 0.5) * 1.1, y: g.y + 1.2, vx: (Math.random() - 0.5) * 0.4, vy: -0.5 - Math.random() * 0.5, t, t0: t, col: fr ? '#6a7aff' : css(makeRamp(g.color)[4]), g: 0, drag: 0 });
+  }
+  const k = Math.max(1, Math.round(T / 16));
+  for (const p of parts) {
+    if (dt > 0) {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += p.g * dt;
+      if (p.drag) { const f = Math.exp(-p.drag * dt); p.vx *= f; p.vy *= f; }
+      p.t -= dt;
+    }
+    if (p.t <= 0) continue;
+    fbx.globalAlpha = Math.min(1, p.t / p.t0 * 1.6);
+    pr(Math.round(p.x * T - camX), Math.round(p.y * T - camY), k, k, p.col);
+  }
+  fbx.globalAlpha = 1;
+  if (dt > 0) parts = parts.filter(p => p.t > 0);
+}
+const motes = Array.from({ length: 56 }, (_, i) => ({ x: hash2(i, 1) * 400, y: hash2(i, 2) * 400, ph: hash2(i, 3) * 6.3, sp: 0.5 + hash2(i, 4) }));
+function drawMotes(dt) {
+  const MW = VIEW_W + 16, MH = VIEW_H + 16;
+  for (const m of motes) {
+    m.x += (Math.sin(G.t * 0.5 * m.sp + m.ph) * 4 + 2) * dt; m.y += (Math.cos(G.t * 0.4 * m.sp + m.ph) * 3 - 1.5) * dt;
+    const sx = ((Math.round(m.x - camX) % MW) + MW) % MW - 8, sy = ((Math.round(m.y - camY) % MH) + MH) % MH - 8;
+    const a = Math.min(0.8, (lightAt(sx, sy) - 0.68) * 1.6);
+    if (a <= 0.04) continue;
+    fbx.globalAlpha = a; pr(sx, sy, 1, 1, '#ffeccc');
+  }
+  fbx.globalAlpha = 1;
+}
+
+// ---------- Post effects ----------
+const bl1 = mkCanvas(VIEW_W / 2, Math.ceil(VIEW_H / 2)), bl2 = mkCanvas(VIEW_W / 4, Math.ceil(VIEW_H / 4)), bl3 = mkCanvas(VIEW_W / 4, Math.ceil(VIEW_H / 4));
+function bloom() { // a cheap glow: shrink the frame, raise it to a power so only the bright parts survive, blur it back up
+  for (const c of [bl1, bl2, bl3]) { c.g.imageSmoothingEnabled = true; c.g.globalCompositeOperation = 'copy'; }
+  bl1.g.drawImage(fb, 0, 0, bl1.width, bl1.height);
+  bl2.g.drawImage(bl1, 0, 0, bl2.width, bl2.height);
+  bl3.g.drawImage(bl2, 0, 0);
+  bl3.g.globalCompositeOperation = 'multiply'; bl3.g.drawImage(bl2, 0, 0); bl3.g.drawImage(bl2, 0, 0);
+  idTf(); fbx.imageSmoothingEnabled = true; fbx.globalCompositeOperation = 'lighter'; fbx.globalAlpha = 0.4;
+  fbx.drawImage(bl3, 0, 0, VIEW_W, VIEW_H);
+  fbx.imageSmoothingEnabled = false; fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1;
+}
+let scanPat = null, scanS = 0;
+function drawScanlines() {
+  const s = Math.round(px / UNIT);
+  if (s < 3 || Math.abs(px / UNIT - s) > 0.01) return;
+  if (scanS !== s) {
+    const c = mkCanvas(1, s), t = Math.max(1, Math.round(s / 3));
+    c.g.fillStyle = 'rgba(0,0,0,0.2)'; c.g.fillRect(0, s - t, 1, t);
+    scanPat = ctx.createPattern(c, 'repeat'); scanS = s;
+  }
+  ctx.fillStyle = scanPat; ctx.fillRect(0, TOP * px, SCREEN_COLS * px, SCREEN_MAZE_ROWS * px);
+}
+
+// A corner map of the whole maze while the camera's zoomed in: walls, dots, and everyone on the floor.
+function drawMinimap() {
+  if (art.PW <= VIEW_W && art.PH <= VIEW_H) return;
+  const mw = W * 2, mh = H * 2, mx = VIEW_W - mw - 4, my = 4;
+  const psx = (pac.x + 0.5) * T - camX, psy = (pac.y + 0.5) * T - camY;
+  const near = psx > mx - 20 && psx < mx + mw + 20 && psy > my - 20 && psy < my + mh + 24;
+  fbx.globalAlpha = near ? 0.25 : 0.72;
+  pr(mx - 2, my - 2, mw + 4, mh + 4, 'rgba(6,4,14,0.7)'); pr(mx - 2, my - 2, mw + 4, 1, '#2a2e84'); pr(mx - 2, my + mh + 1, mw + 4, 1, '#2a2e84');
+  pr(mx - 2, my - 2, 1, mh + 4, '#2a2e84'); pr(mx + mw + 1, my - 2, 1, mh + 4, '#2a2e84');
+  fbx.drawImage(art.mini, mx, my);
+  const blink = Math.floor(G.t * 4) % 2;
+  fbx.fillStyle = '#b07a74';
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (G.dots[r * W + c] === 1) fbx.fillRect(mx + c * 2, my + r * 2, 1, 1);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const v = G.dots[r * W + c];
+    if (v > 1 && blink) pr(mx + c * 2, my + r * 2, 2, 2, v === 2 ? '#ffd8d0' : v === 3 ? '#6fd8ff' : '#ff4f4f');
+  }
+  const mark = (e, col) => pr(mx + Math.round(Math.max(0, Math.min(W - 1, e.x)) * 2), my + Math.round(e.y * 2), 2, 2, col);
+  if (G.fruit && blink) mark(meta.fruit, '#ff3b3b');
+  for (const g of G.ghosts) if (!g.eaten) mark(g, g.frightened && G.fright > 0 ? '#3a4aff' : g.color);
+  for (const w of G.wraiths) if (w.state !== 'eaten') mark(w, '#c9b8ff');
+  for (const s of G.slimes) mark(s, '#5cff6b');
+  for (const h of G.hounds) if (h.state !== 'eaten') mark(h, '#e8a25c');
+  for (const s of G.spiders) if (s.state !== 'eaten') mark(s, '#c070ff');
+  for (const g of G.gargoyles) if (g.state !== 'rubble') mark(g, g.moving ? '#ff3b3b' : '#9a9fb8');
+  mark(pac, '#ffe600');
+  fbx.globalAlpha *= 0.45; fbx.fillStyle = '#ffffff';
+  const vx = mx + Math.round(camX / T * 2), vy = my + Math.round(camY / T * 2), vw = Math.round(VIEW_W / T * 2), vh = Math.round(VIEW_H / T * 2);
+  fbx.fillRect(vx, vy, vw, 1); fbx.fillRect(vx, vy + vh - 1, vw, 1); fbx.fillRect(vx, vy, 1, vh); fbx.fillRect(vx + vw - 1, vy, 1, vh);
+  fbx.globalAlpha = 1;
+}
+
+// ---------- The world, frame by frame ----------
+const enemiesShown = () => G.state === 'ready' || G.state === 'phase' || (G.state === 'dialog' && G.dlg.then === 'ready') || G.state === 'play' || G.state === 'eatpause' || (G.state === 'dying' && G.timer < 1) || (G.state === 'clear' && G.timer < 1);
+let art = null, artKey = '', lastDraw = 0;
+function moveCamera(dt) {
+  const PW = W * T, PH = H * T, key = `${G.lvIndex}|${G.cfg.maze}|${T}`;
+  const d = pac.dir, f = 1 - Math.exp(-dt * 2.5);
+  cam.lx += ((d ? d.x * 1.6 : 0) - cam.lx) * f; cam.ly += ((d ? d.y * 1.6 : 0) - cam.ly) * f; // look a little ahead
+  let tx = (pac.x + 0.5 + cam.lx) * T - VIEW_W / 2, ty = (pac.y + 0.5 + cam.ly) * T - VIEW_H / 2;
+  tx = PW <= VIEW_W ? (PW - VIEW_W) / 2 : Math.max(0, Math.min(PW - VIEW_W, tx));
+  ty = PH <= VIEW_H ? (PH - VIEW_H) / 2 : Math.max(0, Math.min(PH - VIEW_H, ty));
+  if (cam.key !== key || Math.abs(tx - cam.x) > VIEW_W * 0.75 || Math.abs(ty - cam.y) > VIEW_H * 0.75) { cam.x = tx; cam.y = ty; cam.key = key; }
+  else { const k = 1 - Math.exp(-dt * 7); cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k; }
+  camX = Math.round(cam.x + shakeX * T); camY = Math.round(cam.y + shakeY * T);
+}
+function renderWorld() {
+  const now = performance.now(), rdt = Math.min(0.05, (now - lastDraw) / 1000 || 0); lastDraw = now;
+  const dt = G.paused ? 0 : rdt, theme = themeFor(G.cfg.stage);
+  T = viewTile();
+  const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; }
+  moveCamera(dt);
+  ctx = fbx; lights = []; lightK = theme.lightK || 1;
+  idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
+  fbx.fillStyle = theme.void; fbx.fillRect(0, 0, VIEW_W, VIEW_H);
+  fbx.drawImage(art.canvas, -camX, -camY);
+  if (G.state === 'clear' && G.timer > 1 && Math.floor((G.timer - 1) / 0.22) % 2 === 0) { fbx.globalAlpha = 0.85; fbx.drawImage(art.mask, -camX, -camY); fbx.globalAlpha = 1; }
+  atmoUpdate(dt, theme);
+  drawDecor(theme, dt);
+  fbx.save();
+  fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) drawDoor();
+  worldTf();
+  if (hasFlow && G.state !== 'cast') drawWater();
+  if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
+  idTf();
+  drawDots();
+  const cast = G.state === 'cast';
+  const showEnemies = enemiesShown();
+  const pacShown = !cast && G.state !== 'over' && G.state !== 'eatpause' && !(G.state === 'dying' && G.timer >= 1);
+  if (!cast) {
+    worldTf();
+    if (G.webs.size) drawWebs();
+    idTf();
+    if (G.fruit && !pxFruit(G.fruit.kind, meta.fruit.x, meta.fruit.y)) { vecBegin(); vec(drawFruit, G.fruit.kind, meta.fruit.x, meta.fruit.y); vecEnd(); }
+    worldTf();
+    drawReform();
+    if (G.magnet > 0 && (G.magnet > 1.5 || Math.floor(G.t * 8) % 2)) { // the pull radius, spinning
+      fbx.save(); fbx.strokeStyle = '#ff5a5a'; fbx.lineWidth = 0.08; fbx.setLineDash([0.4, 0.35]); fbx.lineDashOffset = -G.t * 3;
+      fbx.beginPath(); fbx.arc(pac.x + 0.5, pac.y + 0.5, MAGNET_R, 0, Math.PI * 2); fbx.stroke(); fbx.restore();
+    }
+    if (G.chill > 0) {
+      fbx.strokeStyle = '#bdf4ff'; fbx.lineWidth = 0.08;
+      const k = 0.3 + (Math.floor(G.t * 6) % 2) * 0.12;
+      for (const w of G.wraiths) if (w.reach && (w.state === 'active' || w.state === 'leave')) for (const t of w.reach) {
+        fbx.beginPath();
+        fbx.moveTo(t.x + 0.5 - k, t.y + 0.5); fbx.lineTo(t.x + 0.5 + k, t.y + 0.5);
+        fbx.moveTo(t.x + 0.5, t.y + 0.5 - k); fbx.lineTo(t.x + 0.5, t.y + 0.5 + k);
+        fbx.stroke();
+      }
+    }
+    if (showEnemies) for (const h of G.hounds) drawScent(h);
+    idTf();
+    for (const f of G.flyDots) { const k = f.t / MAGNET_FLY; blit(dotSprite(), f.x + (pac.x - f.x) * k + 0.5, f.y + (pac.y - f.y) * k + 0.5); }
+    // Shadows go down first, so nobody stands on anybody else's.
+    if (pacShown) shadowAt(pac.x, pac.y, 1.2, 0.66);
+    if (showEnemies) {
+      for (const g of G.ghosts) if (!g.eaten && g !== G.eatenGhost) shadowAt(g.x, g.y, 1.0, 0.82);
+      for (const e of [...G.wraiths, ...G.slimes, ...G.hounds, ...G.spiders, ...G.minions, ...G.buddies]) if (e.state !== 'eaten' && e.state !== 'saved') shadowAt(e.x, e.y, 0.95, 0.74);
+      for (const g of G.gargoyles) if (g.state !== 'rubble') shadowAt(g.x, g.y, 1.1, 0.78);
+      const b = G.boss;
+      if (b && b.state !== 'dead') b.kind === 'blob' ? shadowAt(b.x, b.y, blobR(b) * 1.6, blobR(b) * 0.72) : shadowAt(b.x, b.y, 2.6, 1.55);
+    }
+    if (G.state === 'dying') {
+      if (G.timer < 1) pxPac(pac.x, pac.y, pac.face, 0.4);
+      else pxPacDeath(pac.x, pac.y, (G.timer - 1) / 1.4);
+    } else if (pacShown) {
+      const open = G.state === 'ready' || G.state === 'dialog' ? 0 : (1 - Math.cos(pac.anim * Math.PI * 2 * 0.8)) / 2;
+      pac.trail.forEach((t, i) => {
+        if (i % 2 || Math.abs(t.x - pac.x) > 5) return;
+        fbx.globalAlpha = 0.45 * (1 - i / pac.trail.length);
+        pxPac(t.x, t.y, pac.face, open);
+      });
+      fbx.globalAlpha = 1;
+      pxPac(pac.x, pac.y, pac.face, G.state === 'clear' ? 0 : open);
+    }
+    if (showEnemies) for (const g of G.ghosts) if (g !== G.eatenGhost) pxGhost(g);
+    if (showEnemies || (G.boss && G.state === 'clear')) {
+      vecBegin();
+      if (showEnemies) {
+        for (const s of G.slimes) vec(drawSlime, s);
+        for (const w of G.wraiths) vec(drawWraith, w);
+        for (const h of G.hounds) vec(drawHound, h);
+        for (const s of G.spiders) vec(drawSpider, s);
+        for (const d of G.drops) vec(drawDrop, d);
+        for (const cp of G.centipedes) vec(drawCentipede, cp);
+        for (const g of G.gargoyles) vec(drawGargoyle, g);
+        for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
+        for (const s of G.blobules) vec(drawSlime, { ...s, state: 'bit', blue: true });
+      }
+      if (G.boss) vec(drawBoss, G.boss);
+      if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
+      vecEnd();
+    }
+    if (showEnemies) {
+      for (const m of G.minions) pxGhost({ ...m, frightened: true, eaten: false });
+      for (const s of G.buddies) pxGhost({ ...s, dir: s.state === 'saved' ? U : s.dir, panic: true, frightened: false, eaten: s.state === 'saved' });
+      worldTf(); for (const v of G.vents) drawSteam(v); idTf();
+    }
+  }
+  partsStep(dt, theme);
+  fbx.restore(); idTf();
+  entityLights(showEnemies, pacShown);
+  const fl = flashLevel(), amb = fl > 0 ? mixc(theme.ambient, [1.25, 1.3, 1.55], fl) : theme.ambient;
+  applyLight(amb, theme.vignette);
+  if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
+  if (theme.dust) drawMotes(dt);
+  if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); }
+  if (fxOn) {
+    bloom();
+    if (theme.grade) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = theme.grade[1]; pr(0, 0, VIEW_W, VIEW_H, theme.grade[0]); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
+  }
+  if (!cast) drawMinimap();
+  fbx.font = '8px "Press Start 2P", "Courier New", monospace'; fbx.textAlign = 'center'; fbx.textBaseline = 'middle';
+  for (const p of G.popups) {
+    const x = Math.round((p.x + 0.5) * T - camX), y = Math.round((p.y + 0.5) * T - camY);
+    fbx.fillStyle = '#000000'; fbx.fillText(p.text, x + 1, y + 1);
+    fbx.fillStyle = p.color; fbx.fillText(p.text, x, y);
+  }
+  ctx = mainCtx;
+}
+
 function render() {
+  ctx = mainCtx;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (G.state === 'menu') { drawMenu(); return; }
   if (G.state === 'tower') { drawTower(); return; }
   if (G.state === 'ending') { drawEnding(); return; }
-  drawHUD();
 
-  const stageColor = WALL_COLORS[G.cfg.stage];
   shakeX = G.shake > 0 ? (Math.random() - 0.5) * 0.5 * Math.min(1, G.shake * 2) : 0;
   shakeY = G.shake > 0 ? (Math.random() - 0.5) * 0.5 * Math.min(1, G.shake * 2) : 0;
-  const flash = G.state === 'clear' && G.timer > 1 && Math.floor((G.timer - 1) / 0.22) % 2 === 0;
+  renderWorld();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(mazeArt(G.cfg.maze, flash ? '#ffffff' : stageColor), (ox + shakeX) * px, (oy + shakeY) * px, W * px, H * px);
+  ctx.drawImage(fb, 0, TOP * px, SCREEN_COLS * px, SCREEN_MAZE_ROWS * px);
+  if (fxOn) drawScanlines();
+  drawHUD();
+  if (G.state === 'cast') { drawTitle(); return; }
+  const showEnemies = enemiesShown();
 
-  mazeSpace();
-  ctx.save();
-  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) { ctx.fillStyle = '#ffb8ff'; ctx.fillRect(house.doorC, house.exitY + 1.38, 2, 0.24); }
-  if (hasFlow && G.state !== 'cast') drawWater();
-  if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
-
-  const pelletOn = G.state !== 'play' || Math.floor(G.t * 5) % 2 === 0;
-  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-    const v = G.dots[r * W + c];
-    if (v === 1) { ctx.fillStyle = '#ffb8ae'; ctx.fillRect(c + 0.375, r + 0.375, 0.25, 0.25); }
-    else if (v === 2 && pelletOn) { ctx.fillStyle = '#ffb8ae'; ctx.beginPath(); ctx.arc(c + 0.5, r + 0.5, 0.42, 0, Math.PI * 2); ctx.fill(); }
-    else if (v === 3) drawFrostBerry(c + 0.5, r + 0.5, 1.1);
-    else if (v === 5) drawMagnet(c + 0.5, r + 0.55);
-  }
-
-  if (G.state === 'cast') { ctx.restore(); drawTitle(); return; }
-
-  if (G.webs.size) drawWebs();
-  if (G.fruit) drawFruit(G.fruit.kind, meta.fruit.x, meta.fruit.y);
-  drawReform();
-  if (G.magnet > 0 && (G.magnet > 1.5 || Math.floor(G.t * 8) % 2)) { // the pull radius, spinning
-    ctx.save(); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 0.08; ctx.setLineDash([0.4, 0.35]); ctx.lineDashOffset = -G.t * 3;
-    ctx.beginPath(); ctx.arc(pac.x + 0.5, pac.y + 0.5, MAGNET_R, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
-  }
-  for (const f of G.flyDots) { // pulled dots zipping into Pac-Man
-    const k = f.t / MAGNET_FLY;
-    ctx.fillStyle = '#ffb8ae';
-    ctx.fillRect(f.x + (pac.x - f.x) * k + 0.375, f.y + (pac.y - f.y) * k + 0.375, 0.25, 0.25);
-  }
-  if (G.chill > 0) {
-    ctx.strokeStyle = '#bdf4ff'; ctx.lineWidth = 0.08;
-    const k = 0.3 + (Math.floor(G.t * 6) % 2) * 0.12;
-    for (const w of G.wraiths) if (w.reach && (w.state === 'active' || w.state === 'leave')) for (const t of w.reach) {
-      ctx.beginPath();
-      ctx.moveTo(t.x + 0.5 - k, t.y + 0.5); ctx.lineTo(t.x + 0.5 + k, t.y + 0.5);
-      ctx.moveTo(t.x + 0.5, t.y + 0.5 - k); ctx.lineTo(t.x + 0.5, t.y + 0.5 + k);
-      ctx.stroke();
-    }
-  }
-
-  const showEnemies = G.state === 'ready' || G.state === 'phase' || (G.state === 'dialog' && G.dlg.then === 'ready') || G.state === 'play' || G.state === 'eatpause' || (G.state === 'dying' && G.timer < 1) || (G.state === 'clear' && G.timer < 1);
-  if (showEnemies) for (const h of G.hounds) drawScent(h);
-  if (G.state === 'dying') {
-    if (G.timer < 1) drawPac(pac.x, pac.y, pac.face, 0.4);
-    else drawPacDeath(pac.x, pac.y, (G.timer - 1) / 1.4);
-  } else if (G.state !== 'over' && G.state !== 'eatpause') {
-    const open = G.state === 'ready' || G.state === 'dialog' ? 0 : (1 - Math.cos(pac.anim * Math.PI * 2 * 0.8)) / 2;
-    ctx.save();
-    pac.trail.forEach((t, i) => {
-      if (i % 2 || Math.abs(t.x - pac.x) > 5) return;
-      ctx.globalAlpha = 0.45 * (1 - i / pac.trail.length);
-      drawPac(t.x, t.y, pac.face, open);
-    });
-    ctx.restore();
-    drawPac(pac.x, pac.y, pac.face, G.state === 'clear' ? 0 : open);
-  }
-  if (showEnemies) {
-    for (const s of G.slimes) if (s.state === 'house') drawSlime(s); // house-bound ones sit behind the ghosts
-    for (const w of G.wraiths) if (w.state === 'house') drawWraith(w);
-    for (const g of G.ghosts) if (g !== G.eatenGhost) drawGhost(g);
-    for (const s of G.slimes) if (s.state !== 'house') drawSlime(s);
-    for (const w of G.wraiths) if (w.state !== 'house') drawWraith(w);
-    for (const m of G.minions) drawGhost({ ...m, frightened: true, eaten: false });
-    for (const h of G.hounds) drawHound(h);
-    for (const s of G.spiders) drawSpider(s);
-    for (const d of G.drops) drawDrop(d);
-    for (const cp of G.centipedes) drawCentipede(cp);
-    for (const g of G.gargoyles) drawGargoyle(g);
-    for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) drawBone(s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
-    for (const s of G.blobules) drawSlime({ ...s, state: 'bit', blue: true });
-    for (const s of G.buddies) drawGhost({ ...s, dir: s.state === 'saved' ? U : s.dir, panic: true, frightened: false, eaten: s.state === 'saved' });
-  }
-  if (G.boss && (showEnemies || G.state === 'clear')) drawBoss(G.boss);
-  if (showEnemies) {
-    for (const o of G.orbs) drawOrb(o);
-    for (const v of G.vents) drawSteam(v);
-  }
-  if (G.cfg.dark && G.state !== 'clear') drawDark();
-  ctx.restore();
-
-  for (const p of G.popups) text(p.text, ox + p.x + 0.5, oy + p.y, p.color, 'center', 0.55);
   if (G.state === 'ready') drawBanner();
   if (G.state === 'clear' && G.timer < 1.2 && !G.cfg.boss) {
     const last = G.lvIndex === LEVELS.length - 1, stageEnd = G.lvIndex < LEVELS.length - 1 && LEVELS[G.lvIndex + 1].stage !== G.cfg.stage;
@@ -4436,10 +5295,15 @@ function resize() {
   const dpadH = getComputedStyle(dpad).display !== 'none' ? dpad.offsetHeight + 12 : 0;
   const availH = main.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - bar.offsetHeight - 12 - dpadH;
   const S = Math.max(6, Math.min(availW / SCREEN_COLS, availH / TOTAL_ROWS));
-  canvas.style.width = (S * SCREEN_COLS) + 'px';
-  canvas.style.height = (S * TOTAL_ROWS) + 'px';
-  canvas.width = Math.round(S * SCREEN_COLS * dpr);
-  canvas.height = Math.round(S * TOTAL_ROWS * dpr);
+  // Snap to a whole number of device pixels per framebuffer pixel when that costs little, so the
+  // pixel art scales evenly.
+  let p = S * dpr;
+  const k = Math.floor(p / UNIT);
+  if (k >= 2 && k * UNIT >= p * 0.82) p = k * UNIT;
+  canvas.width = Math.round(p * SCREEN_COLS);
+  canvas.height = Math.round(p * TOTAL_ROWS);
+  canvas.style.width = (canvas.width / dpr) + 'px';
+  canvas.style.height = (canvas.height / dpr) + 'px';
   px = canvas.width / SCREEN_COLS;
 }
 window.addEventListener('resize', resize);
@@ -4467,6 +5331,13 @@ function skipLevel() {
   if (i >= ROOF) { loadLevel(i + 1); G.state = 'ready'; G.timer = 2; return; }
   recordClear(i, 0);
   startLevel(i + 1);
+}
+const fxBtn = document.getElementById('fxBtn');
+function setFx(on) { // scanlines, bloom, vignette and colour grading
+  fxOn = on;
+  fxBtn.textContent = on ? 'FX: ON' : 'FX: OFF';
+  fxBtn.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('pacman.fx', on ? '1' : '0'); } catch (e) {}
 }
 function toggleSound() {
   muted = !muted;
@@ -4516,12 +5387,15 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape') { backKey(); return; }
   if (e.key === 'p' || e.key === 'P') togglePause();
   if (e.key === 'm' || e.key === 'M') toggleSound();
+  if (e.key === 'f' || e.key === 'F') setFx(!fxOn);
   if (e.key === 'i' || e.key === 'I') setInfinite(!infinite);
   if (e.key === 'n' || e.key === 'N') skipLevel();
   if ((e.key === 'u' || e.key === 'U') && (G.state === 'tower' || G.state === 'menu')) unlockAll();
 });
 pauseBtn.addEventListener('click', togglePause);
 soundBtn.addEventListener('click', toggleSound);
+fxBtn.addEventListener('click', () => setFx(!fxOn));
+try { setFx(localStorage.getItem('pacman.fx') !== '0'); } catch (e) { setFx(true); }
 infBtn.addEventListener('click', () => setInfinite(!infinite));
 document.getElementById('skipBtn').addEventListener('click', skipLevel);
 document.getElementById('unlockBtn').addEventListener('click', unlockAll);

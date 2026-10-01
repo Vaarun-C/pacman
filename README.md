@@ -8,4 +8,4 @@ A story-driven Pac-Man in a single HTML file: 31 floors across three acts, new e
 
 Open `index.html` in a browser to play. No build step or dependencies.
 
-**Controls:** arrows / WASD move · Enter select · Esc back · P pause · Space dash · M sound
+**Controls:** arrows / WASD move · Enter select · Esc back · P pause · Space dash · M sound · F effects (scanlines, bloom, vignette)
