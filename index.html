@@ -556,7 +556,7 @@ const SPEAKERS = {
   WRAITH: { name: 'THE WRAITH', color: '#c9b8ff', voice: 410, wave: 'triangle', portrait: true },
   SLIME:  { name: 'THE SLIME', color: '#5cff6b', voice: 170, wave: 'triangle', portrait: true },
   KING:   { name: 'KING GHOST', color: '#ffd86b', voice: 140, wave: 'sawtooth', portrait: true },
-  HOUND:  { name: 'THE BLOODHOUND', color: '#ff8a3a', voice: 300, portrait: true },
+  HOUND:  { name: 'THE BLOODHOUND', color: '#b4a8d0', voice: 300, portrait: true },
   BLOB:   { name: 'THE BIG BLOB', color: '#7dff5c', voice: 85, wave: 'sawtooth', portrait: true },
   GARGOYLE: { name: 'THE GARGOYLE', color: '#c3c7dc', voice: 110, wave: 'sawtooth', portrait: true },
   SPIDER: { name: 'THE SPIDER', color: '#c9a0ff', voice: 980, portrait: true },
@@ -3760,7 +3760,7 @@ function drawTitle() {
     ['-OOZER', '"SLIME"', '#5cff6b', 'SLIME'],
   ];
   const met = key => save.unlocked > LEVELS.findIndex(l => l[key]); // the rest join the cast once you've met them
-  if (met('hounds')) cast.push(['-SNIFFER', '"HOUND"', '#ff8a3a', 'HOUND']);
+  if (met('hounds')) cast.push(['-SNIFFER', '"HOUND"', '#b4a8d0', 'HOUND']);
   if (met('gargoyles')) cast.push(['-STATUE', '"GARGOYLE"', '#c3c7dc', 'GARGOYLE']);
   if (met('spiders')) cast.push(['-WEAVER', '"SPIDER"', '#c9a0ff', 'SPIDER']);
   const gap = cast.length > 7 ? 1.45 : 1.8, dy = 4.9 + (cast.length - 1) * gap - 13.9;
@@ -4539,111 +4539,112 @@ function pxKing(b) {
   fbx.drawImage(sp, Math.round((b.x + 0.5) * T - camX - sp.width / 2), Math.round((b.y + 0.4) * T - camY) - sp.dcy + bob);
 }
 
-// The Bloodhound, a cinder wolf: charcoal fur cracked with lava, a crest of flame between swept-back
-// ears, slanted ember eyes, a snarl of fangs, and a body that trails off into smoke and embers.
-// Its glowing parts are drawn again after the lighting, so it stays lit in the dark.
-const HOUND_BODY = { '': '#463036', fright: '#2121ff', flash: '#ffffff', ice: '#bdf4ff' };
-const HOUND_DARK = { '': '#1c1016', fright: '#1414a8', flash: '#c8c8ff', ice: '#8fd6ec' };
-const HOUND_MUZ = { '': '#7a5a5a', fright: '#2121ff', flash: '#ffffff', ice: '#e6fbff' };
-function houndSprite(frame, d, mode, sniff, glowOnly) { // mode: '' | 'fright' | 'flash' | 'ice' | 'eyes'
-  return spr(`hd|${T}|${frame}|${d.x}|${d.y}|${mode}|${sniff}|${glowOnly}`, () => {
-    const Wd = Math.round(T * 1.5), Hd = Math.round(T * 1.55), top = Math.round(T * 0.55), S = Wd + Math.round(T * 0.9), SH = Hd + top + 2;
-    const c = S / 2, R0 = Wd / 2, dcy = top + R0, bot = top + Hd;
-    const ice = mode === 'ice', fr = mode === 'fright' || mode === 'flash', eyesOnly = mode === 'eyes';
-    const ramp = makeRamp(HOUND_BODY[mode] || HOUND_BODY['']), dark = makeRamp(HOUND_DARK[mode] || HOUND_DARK['']), muz = makeRamp(HOUND_MUZ[mode] || HOUND_MUZ['']);
-    const inner = makeRamp(ice ? '#e6fbff' : '#ff7a1a'), hot = hex(ice ? '#e6fbff' : '#ff7a1a'), glow = hex(ice ? '#ffffff' : '#ffe066'), white = hex('#ffffff');
-    const flame = ['#ffe066', '#ff7a1a', '#c82a10'].map(hex), face = hex(mode === 'flash' ? '#ff2a2a' : '#ffb8ae');
-    const nose = hex('#140608'), noseHi = hex('#6a4a50'), mouth = hex('#1e0408'), tooth = hex('#f4ecd8'), tooth2 = hex('#b8a888');
-    const lit = new Set(ice ? [] : [hot, glow, white, ...flame]); // what glows on its own
-    const eyeY = dcy - R0 * 0.08 + d.y, eyeX = R0 * 0.38;
-    const eyeAt = (x, y) => { // slanted slits glaring inward; sniffing squeezes them shut
-      for (const s of [-1, 1]) {
-        const ex = c + s * eyeX + d.x * 2, u = (x - ex) / (R0 * 0.28), half = sniff ? 0.5 : R0 * 0.15;
-        const yc = eyeY - s * u * R0 * 0.18 + u * u * 0.8;
-        if (Math.abs(u) < 1 && Math.abs(y - yc) < half) return Math.abs(u + d.x * 0.25) < 0.3 && !sniff ? white : glow;
-        if (!eyesOnly && Math.abs(u) < 1.3 && y < yc - half && y > yc - half - 1.3) return 'brow';
+// The Bloodhound, a black wolf in profile: pointed ears, a long snout, amber eyes, a pale ruff and chest,
+// a darker saddle down its back and a bushy tail. Two gallop frames; it faces the way it last ran
+// sideways, drops its nose to the floor to sniff, and its eyes are drawn again after the lighting.
+function wolfLimb(pts, w0, w1, x, y) { // how far along a tapering polyline (x, y) lies, or -1
+  let tot = 0, run = 0;
+  for (let i = 1; i < pts.length; i++) tot += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i], ex = bx - ax, ey = by - ay, L2 = ex * ex + ey * ey, len = Math.sqrt(L2);
+    const k = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / L2)), at = (run + k * len) / tot;
+    if (Math.hypot(x - ax - ex * k, y - ay - ey * k) <= (w0 + (w1 - w0) * at) / 2) return at;
+    run += len;
+  }
+  return -1;
+}
+const wPoly = (pts, m, d = [0, 0]) => ({ t: 'p', pts: pts.map(([x, y]) => [x + d[0], y + d[1]]), m });
+const wEll = (x, y, rx, ry, m, d = [0, 0]) => ({ t: 'e', x: x + d[0], y: y + d[1], rx, ry, m });
+const wLimb = (pts, w0, w1, m, tip, d = [0, 0]) => ({ t: 'l', pts: pts.map(([x, y]) => [x + d[0], y + d[1]]), w0, w1, m, tip });
+function wolfHit(s, x, y) {
+  if (s.t === 'p') return inPoly(s.pts, x, y) ? s.m : null;
+  if (s.t === 'e') return ((x - s.x) / s.rx) ** 2 + ((y - s.y) / s.ry) ** 2 <= 1 ? s.m : null;
+  const at = wolfLimb(s.pts, s.w0, s.w1, x, y);
+  return at < 0 ? null : s.tip && at > s.tip[0] ? s.tip[1] : s.m;
+}
+// Laid out on a 34 x 22 grid facing right, back to front. Parts: F fur, U pale fur, K shadowed far
+// side, X tail tip, I inner ear, Y eye, N nose, M mouth, T tongue, W fang.
+function wolfShapes(frame, sniff, open) {
+  const b = frame ? [0, -0.6] : [0, 0], h = sniff ? [0.8, 3.2] : b, run = frame === 0, S = [];
+  if (run) S.push(wLimb([[20, 12.5], [18.2, 16.5], [16, 20.2]], 2.6, 2, 'K'), wLimb([[11, 12.5], [13, 16.5], [14.2, 20.2]], 3, 2, 'K'));
+  else S.push(wLimb([[19.5, 12.5], [21.8, 16.2], [23, 20.2]], 2.6, 2, 'K'), wLimb([[11, 12.5], [8.6, 16.2], [8, 20.2]], 3, 2, 'K'));
+  S.push(run ? wLimb([[8, 8.4], [4.5, 8], [0.8, 6.4]], 3.4, 2.4, 'F', [0.78, 'X'], b) : wLimb([[8, 8.4], [4, 9.6], [1.5, 12.6]], 3.4, 2.4, 'F', [0.78, 'X'], b));
+  S.push(wEll(9.5, 10, 4, 3.7, 'F', b), wPoly([[9, 6.6], [20, 6], [22, 14.2], [14, 13.2], [9.5, 13.6]], 'F', b), wEll(20.5, 10.4, 4.4, 4.3, 'F', b));
+  S.push(wPoly([[14, 12], [20.5, 12.6], [20.5, 14.2], [14.5, 13.1]], 'U', b)); // belly
+  S.push(wPoly([[18.5, 6.6], [22.5, 2.8 + h[1] * 0.6], [26, 5 + h[1] * 0.8], [24.5, 11.2], [19, 11.5]], 'F', [h[0] * 0.5, b[1]])); // neck
+  S.push(wEll(22.6, 11.6, 2.3, 2.8, 'U', b)); // chest
+  S.push(wPoly([[25.3, 2.6], [26.5, -0.4], [27.6, 2.9]], 'K', h)); // far ear
+  S.push(wEll(25.4, 5, 3.2, 2.8, 'F', h));
+  S.push(wPoly([[27, 3.6], [32.5, 4.6], [33.2, 6.6], [27.5, 8]], 'F', h)); // snout
+  S.push(wPoly([[28, 6.4], [33, 6.5], [32.4, 7.6], [27.6, 8]], 'U', h));
+  if (open) S.push(wPoly([[27.2, 7.6], [32.6, 6.8], [31.4, 9.4], [27.2, 9]], 'M', h), wEll(29.6, 8.6, 1, 0.7, 'T', h), wPoly([[31.4, 7], [32.2, 7], [31.7, 8.2]], 'W', h), wPoly([[27, 8.6], [31.2, 9], [30.8, 9.9], [27.4, 9.9]], 'U', h));
+  else S.push(wPoly([[27, 7.6], [32.2, 7.4], [31.6, 8.6], [27.4, 8.8]], 'U', h), wPoly([[28, 7.5], [32.4, 7.2], [32.4, 7.7], [28, 8]], 'M', h));
+  S.push(wEll(33, 5.4, 1.15, 1.05, 'N', h)); // nose
+  S.push(wPoly([[22.6, 6.4], [26.6, 7.2], [25.4, 9.8], [22.4, 9.4]], 'U', h)); // cheek ruff
+  S.push(wPoly([[23, 3.2], [23.4, -0.4], [26, 2.4]], 'F', h), wPoly([[23.7, 2.5], [23.8, 0.9], [25.1, 2.3]], 'I', h)); // near ear
+  S.push(wEll(27.3, 4.7, sniff ? 0.9 : 0.85, sniff ? 0.35 : 0.8, sniff ? 'N' : 'Y', h)); // eye
+  if (run) S.push(wLimb([[22, 12], [24.6, 16], [27.4, 19.6]], 2.8, 2.2, 'F', [0.88, 'K']), wLimb([[8.4, 11.5], [5.4, 15.4], [2.2, 18.4]], 3.6, 2.2, 'F', [0.88, 'K']));
+  else S.push(wLimb([[21.6, 12], [21.2, 16.4], [19.8, 20.4]], 2.8, 2.2, 'F', [0.88, 'K']), wLimb([[9, 11.6], [12, 15.6], [12.8, 20.4]], 3.6, 2.2, 'F', [0.88, 'K']));
+  return S;
+}
+const WOLF_COATS = {
+  '': { F: '#4a4656', S: '#2a2634', U: '#9a94a4', K: '#2a2634', X: '#1c1a24', I: '#c88a8a' },
+  fright: { F: '#2121ff', S: '#1414a8', U: '#4a5aff', K: '#1414a8', X: '#1414a8', I: '#2121ff' },
+  flash: { F: '#e8e8ff', S: '#b8b8e8', U: '#ffffff', K: '#b8b8e8', X: '#b8b8e8', I: '#ffffff' },
+  ice: { F: '#bdf4ff', S: '#8fd6ec', U: '#e6fbff', K: '#8fd6ec', X: '#8fd6ec', I: '#e6fbff' },
+};
+const WOLF_GW = 34, WOLF_GH = 22, WOLF_PAW = 20.4;
+function houndSprite(frame, left, mode, sniff) { // mode: '' | 'fright' | 'flash' | 'ice' | 'eyes' (only its eye, for the glow pass)
+  return spr(`hd|${T}|${frame}|${left}|${mode}|${sniff}`, () => {
+    const k = T / 18 * 1.22, SW = Math.ceil(WOLF_GW * k) + 2, SH = Math.ceil(WOLF_GH * k) + 2;
+    const fr = mode === 'fright' || mode === 'flash', ice = mode === 'ice', eyes = mode === 'eyes';
+    const shapes = wolfShapes(frame, sniff, frame === 0 && !sniff && !fr), grid = new Array(SW * SH).fill(null);
+    for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) {
+      let gx = (x + 0.5 - 1) / k; const gy = (y + 0.5 - 1) / k;
+      if (left) gx = WOLF_GW - gx;
+      let m = null;
+      for (const s of shapes) { const r = wolfHit(s, gx, gy); if (r) m = r; }
+      grid[y * SW + x] = m;
+    }
+    const C = WOLF_COATS[eyes ? '' : mode] || WOLF_COATS[''], R = {};
+    for (const key in C) R[key] = makeRamp(C[key]);
+    const face = hex(mode === 'flash' ? '#ff2a2a' : '#ffb8ae'), eyeC = hex(ice ? '#ffffff' : '#ffe066');
+    const solid = (x, y) => x >= 0 && y >= 0 && x < SW && y < SH && !!grid[y * SW + x] && grid[y * SW + x] !== 'K';
+    const s = pixSprite(SW, SH, (px_, py_) => {
+      const x = px_ | 0, y = py_ | 0, m = grid[y * SW + x];
+      if (!m) return null;
+      if (eyes) return m === 'Y' ? eyeC : null;
+      if (fr && (m === 'Y' || m === 'M' || m === 'T' || m === 'W')) return face; // the ghosts' frightened face
+      if (m === 'Y') return grid[y * SW + x + (left ? -1 : 1)] !== 'Y' ? hex('#1a1010') : eyeC; // pupil at the front
+      if (m === 'N') return hex(fr ? '#1414a8' : ice ? '#4a7f99' : '#141016');
+      if (m === 'M') return hex('#2a0c12');
+      if (m === 'T') return hex('#e05a70');
+      if (m === 'W') return hex('#f4ecd8');
+      if (m === 'K') return pickRamp(R.K, solid(x, y - 1) ? -0.2 : 0.3);
+      const top = !solid(x, y - 1), down = !solid(x, y + 1);
+      if (m === 'F') {
+        let up = 0; while (up < 6 && solid(x, y - up - 1) && grid[(y - up - 1) * SW + x] !== 'U') up++; // depth below the back
+        const saddle = up >= 1 && up <= 2 * k + 0.5 && y < SH * 0.62;
+        if (top) return pickRamp(saddle ? R.S : R.F, 0.7);
+        return saddle ? pickRamp(R.S, 0.3) : pickRamp(R.F, down ? -0.2 : 0.3);
       }
-      return null;
-    };
-    const paint = (x, y) => {
-      const dx = x - c;
-      if (eyesOnly) { const e = eyeAt(x, y); return e && e !== 'brow' ? e : null; }
-      const inHead = y < dcy + 1 && Math.hypot(dx, y - dcy) <= R0;
-      if (!inHead) for (const s of [-1, 1]) { // ears swept back behind the head, one flicking
-        const flick = frame && s > 0, tipX = c + s * R0 * 1.35, tipY = dcy - R0 * 1.05 + (flick ? 1 : 0), bx = c + s * R0 * 0.7, baseY = dcy - R0 * 0.2;
-        if (y >= tipY && y <= baseY + 2) {
-          const t = (y - tipY) / (baseY - tipY), mid = tipX + (bx - tipX) * t, hw = t * R0 * 0.5;
-          if (Math.abs(x - mid) <= hw) return Math.abs(x - mid + s * hw * 0.15) < hw * 0.45 && t > 0.3 && !fr ? pickRamp(inner, 0.6 - t * 0.7) : pickRamp(dark, 0.5 - t * 0.4 - s * 0.35);
-        }
-      }
-      if (!fr && !inHead && y < dcy && Math.abs(dx) < R0 * 0.75) { // a crest of flame along the crown
-        const P = R0 * 0.3, i = Math.floor((dx + R0 * 0.75) / P), u = ((dx + R0 * 0.75) / P) % 1;
-        const h = T * (0.3 + 0.28 * hash2(i, 9 + frame)) * (1 - (Math.abs(dx) / (R0 * 0.8)) ** 2);
-        const base = dcy - Math.sqrt(Math.max(0, R0 * R0 - dx * dx)) + 2, tipY = base - h * (1 - Math.abs(2 * u - 1)) ** 0.8;
-        if (y >= tipY && y <= base) { const k = (y - tipY) / Math.max(1, base - tipY); return ice ? hot : flame[k < 0.3 ? 0 : k < 0.65 ? 1 : 2]; }
-      }
-      // head, cheek ruffs, then a body that tapers into smoke
-      let body = y < dcy && Math.hypot(dx, y - dcy) <= R0;
-      const ruffTop = dcy - R0 * 0.25, ruffBot = dcy + R0 * 0.75, t = y >= dcy ? (y - dcy) / (bot - dcy) : 0;
-      if (!body && y >= ruffTop && y <= ruffBot) {
-        const k = (y - ruffTop) / (ruffBot - ruffTop), z = (((y - ruffTop) / 3.2 + frame * 0.3) % 1) * 2 - 1;
-        body = Math.abs(dx) <= R0 + T * 0.16 * Math.sin(k * Math.PI) * (1 - Math.abs(z));
-      }
-      if (!body && y >= dcy) body = Math.abs(x - c - Math.sin(y * 0.45 + frame * 2.2) * t * 2.2) <= R0 * (1 - t * 0.3) && t <= 1;
-      if (!body) return !fr && t > 0.3 && Math.abs(dx) < R0 && hash2(Math.round(x), Math.round(y) + frame * 7) > 0.975 ? hot : null; // embers
-      if (t > 0.42 && bayer(x + frame * 2, y) < (t - 0.42) / 0.58 * 0.95) return null;
-      if (fr) { // the ghosts' frightened face
-        const w = Wd, sq = Math.max(2, Math.round(w * 0.13)), ey = eyeY - 2;
-        for (const k of [-1, 1]) { const ex = Math.round(c + k * w * 0.2 - sq / 2); if (x >= ex && x < ex + sq && y >= ey && y < ey + sq) return face; }
-        const mw = w * 0.6, mx0 = c - mw / 2, my = ey + sq + Math.max(2, w * 0.14);
-        if (x >= mx0 && x <= mx0 + mw) { const zig = Math.abs(((x - mx0) / mw * 6) % 2 - 1); if (Math.abs(y - (my + (1 - zig) * 2)) < 0.8) return face; }
-      } else {
-        const e = eyeAt(x, y);
-        if (e === 'brow') return pickRamp(dark, 0.1);
-        if (e) return e;
-        // the snout, pushed toward where it's heading: nose on top, a snarl below
-        const mx = c + d.x * R0 * 0.14, my = dcy + R0 * 0.42, mrx = R0 * 0.56, mry = R0 * 0.44;
-        const nq = ((x - mx - d.x) / (R0 * (sniff && frame ? 0.36 : 0.3))) ** 2 + ((y - my + mry * 0.62) / (R0 * 0.19)) ** 2;
-        if (nq <= 1) return nq < 0.3 && x < mx + d.x ? noseHi : nose;
-        const mq = ((x - mx) / mrx) ** 2 + ((y - my) / mry) ** 2;
-        if (mq <= 1) {
-          const mw = mrx * 0.85, mdx = (x - mx) / mw, yT = my - mry * 0.05 - mdx * mdx * mry * 0.25, yB = my + mry * (sniff ? 0.4 : 0.85) - mdx * mdx * mry * 0.55;
-          if (Math.abs(mdx) < 1 && y > yT && y < yB) {
-            for (const s of [-1, 1]) if (Math.abs(x - mx - s * mw * 0.48) < 1.1 && y < yT + (sniff ? 2 : 3.5)) return tooth;
-            if (y > yB - 1.2 && Math.abs(mdx) < 0.7) return tooth2;
-            return frame && !sniff && Math.abs(mdx) < 0.35 && y > yT + 1 && !ice ? hot : mouth; // a glow in the throat
-          }
-          if (Math.abs(x - mx) < 0.6 && y < my - mry * 0.1 && y > my - mry * 0.5) return pickRamp(muz, -0.2);
-          return pickRamp(muz, lightOf((x - mx) / mrx, (y - my) / mry, Math.sqrt(1 - mq)) + 0.05);
-        }
-        if (mq <= 1.35 && y > my - mry * 0.6) return pickRamp(dark, 0); // the snout's edge
-        if (Math.abs(x - mx) < R0 * 0.14 && y > eyeY && y < my - mry) return pickRamp(muz, 0); // nose bridge
-      }
-      const nx = dx / R0, ny = y < dcy ? (y - dcy) / R0 : 0;
-      let l = lightOf(Math.max(-1, Math.min(1, nx)), ny, Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny))) - 0.18 - t * 0.75;
-      if (nx > 0.72) l += 0.25;
-      if (Math.abs(dx) > R0 * 0.98 && y >= ruffTop) l -= 0.25; // ruff fur in shadow
-      if (!fr && !ice && y > top && Math.abs(Math.sin(x * 0.8 + y * 0.3) * 5 - Math.cos(y * 0.55 + x * 0.1) * 4 - dx * 0.5) < 0.55 && hash2(x >> 2, y >> 2) > 0.45) return hot; // lava cracks
-      return pickRamp(ramp, l);
-    };
-    const s = glowOnly ? pixSprite(S, SH, (x, y) => { const p = paint(x, y); return p && lit.has(p) ? p : null; }, 0) : pixSprite(S, SH, paint);
-    s.dy = Math.round(SH / 2 - dcy - T * 0.12); // so the head sits where a ghost's dome does
+      return pickRamp(R[m] || R.F, top ? 0.7 : down ? -0.2 : 0.3);
+    }, eyes ? hex('#1a0b3a') : 0.3);
+    s.dy = Math.round(T * 0.74 - (1 + WOLF_PAW * k - SH / 2)); // paws a little below the tile centre
     return s;
   });
 }
-function houndLook(h, glowOnly) {
-  const eaten = h.state === 'eaten', fr = G.fright > 0 && h.state === 'hunt';
-  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
-  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 10) % 2; // pants a bit faster than a ghost flaps
-  const mode = eaten ? 'eyes' : iceOn() ? 'ice' : fr ? (flash ? 'flash' : 'fright') : '';
-  const sp = houndSprite(frame, h.dir || L, mode, h.sniff > 0 && !eaten, glowOnly);
-  const bob = eaten || G.chill > 0 ? 0 : frame ? -1 : 0;
-  return [sp, bob];
-}
 function pxHound(h, glowOnly = false) {
   if (h.state === 'house' && glowOnly) return;
-  const [sp, bob] = houndLook(h, glowOnly);
-  blit(sp, h.x + 0.5, h.y + 0.5, sp.dy + bob);
+  if (h.dir && h.dir.x) h.left = h.dir.x < 0;
+  const eaten = h.state === 'eaten', fr = G.fright > 0 && h.state === 'hunt';
+  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const frame = G.chill > 0 || h.state === 'house' && Math.floor(G.t * 3) % 2 ? 0 : Math.floor(G.t * 9) % 2;
+  const mode = glowOnly ? 'eyes' : iceOn() ? 'ice' : fr ? (flash ? 'flash' : 'fright') : '';
+  if (glowOnly && (fr || iceOn())) return;
+  if (eaten) { blit(ghostEyes(h.dir || L, true), h.x + 0.5, h.y + 0.5); return; } // floats home as a pair of eyes, like a ghost
+  const sp = houndSprite(frame, !!h.left, mode, h.sniff > 0);
+  blit(sp, h.x + 0.5, h.y + 0.5, sp.dy);
 }
 
 const DOT_RAMP = makeRamp('#ffb8ae');
@@ -4843,7 +4844,7 @@ function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
   }));
   if (who === 'WRAITH') return withT(t, () => wraithSprite(frame, face, ''));
   if (who === 'SLIME') return withT(t, () => slimeSprite(frame, face, scared ? 'fright' : '', false, scared));
-  if (who === 'HOUND') return withT(t, () => houndSprite(frame, face, scared ? 'fright' : '', mood === 'sniff', false));
+  if (who === 'HOUND') return withT(t, () => houndSprite(frame, face === L, scared ? 'fright' : '', mood === 'sniff'));
   if (who === 'KING') {
     const ph = mood === 'angry' ? 3 : 1, li = face === L ? 4 : face === U ? 6 : face === D ? 2 : 0;
     return withT(Math.round(t * 0.5), () => kingSprite(ph, scared ? '#2121ff' : BOSS_COLORS[ph], frame, li, scared ? 'fright' : ''));
@@ -5249,7 +5250,7 @@ function entityLights(showEnemies, pacShown) {
   }
   for (const w of G.wraiths) addLight(w.x + 0.5, w.y + 0.5, 1.8, '#c9b8ff', 0.3);
   for (const s of G.slimes) addLight(s.x + 0.5, s.y + 0.5, 1.6, '#5cff6b', 0.25);
-  for (const h of G.hounds) if (h.state !== 'house') addLight(h.x + 0.5, h.y + 0.5, 1.4, '#ffb04a', 0.2);
+  for (const h of G.hounds) if (h.state !== 'house') addLight(h.x + 0.5, h.y + 0.5, 1.2, '#ffe066', 0.1);
   for (const s of G.spiders) addLight(s.x + 0.5, s.y + 0.5, 1.2, '#c9a0ff', 0.2);
   for (const g of G.gargoyles) if (g.moving) addLight(g.x + 0.5, g.y + 0.3, 1.1, '#ff3b3b', 0.3);
   for (const o of G.orbs) addLight(o.x + 0.5, o.y + 0.5, 1.3, o.web ? '#e6e9ff' : o.goo ? '#8dff5c' : '#ff5ce1', 0.4);
@@ -5468,7 +5469,7 @@ function drawMinimap() {
   for (const g of G.ghosts) if (!g.eaten) mark(g, g.frightened && G.fright > 0 ? '#3a4aff' : g.color);
   for (const w of G.wraiths) if (w.state !== 'eaten') mark(w, '#c9b8ff');
   for (const s of G.slimes) mark(s, '#5cff6b');
-  for (const h of G.hounds) if (h.state !== 'eaten') mark(h, '#ff8a3a');
+  for (const h of G.hounds) if (h.state !== 'eaten') mark(h, '#b4a8d0');
   for (const s of G.spiders) if (s.state !== 'eaten') mark(s, '#c070ff');
   for (const g of G.gargoyles) if (g.state !== 'rubble') mark(g, g.moving ? '#ff3b3b' : '#9a9fb8');
   mark(pac, '#ffe600');
