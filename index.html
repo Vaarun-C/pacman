@@ -976,6 +976,8 @@ const SFX = {
   chip() { beep(2600, 1800, 0.04, 'square', 0.03); beep(3200, 2400, 0.03, 'triangle', 0.025, 0.02); },
   rumble() { beep(70, 45, 0.6, 'sawtooth', 0.12); beep(110, 60, 0.5, 'square', 0.05, 0.1); },
   whoosh() { beep(260, 900, 0.5, 'triangle', 0.1); beep(420, 1300, 0.4, 'sine', 0.05, 0.1); },
+  clang() { [0, 0.18, 0.42].forEach((t, i) => { beep(180 - i * 30, 90, 0.16, 'square', 0.07, t); beep(1400 - i * 200, 700, 0.06, 'square', 0.03, t); }); beep(55, 40, 1.4, 'sawtooth', 0.08); },
+  whistle() { beep(1800, 2600, 0.25, 'sine', 0.07); beep(2600, 1200, 0.2, 'triangle', 0.05, 0.22); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
@@ -1084,7 +1086,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -1592,10 +1594,10 @@ function ventsUpdate(dt) {
   for (const g of G.ghosts) {
     if (g.mode !== 'active' || g.eaten || !inSteam(g.x, g.y)) continue;
     g.eaten = true; g.frightened = false;
-    addScore(200); SFX.ghost(); popup('COOKED', g.x, g.y, '#ffa36b');
+    addScore(200); SFX.ghost(); popup('COOKED', g.x, g.y, '#ffa36b'); blrCook(g, g.color);
   }
   for (const s of [...G.slimes]) if (s.state === 'active' && s.fresh <= 0 && inSteam(s.x, s.y)) eatSlime(s);
-  for (const h of G.hounds) if (h.state === 'hunt' && inSteam(h.x, h.y)) { h.state = 'eaten'; addScore(300); SFX.ghost(); popup('COOKED', h.x, h.y, '#ffa36b'); }
+  for (const h of G.hounds) if (h.state === 'hunt' && inSteam(h.x, h.y)) { h.state = 'eaten'; addScore(300); SFX.ghost(); popup('COOKED', h.x, h.y, '#ffa36b'); blrCook(h, '#3a3440'); }
 }
 
 // Bloodhounds leave the ghost house on your scent and follow your exact trail, tile by tile.
@@ -3441,27 +3443,43 @@ function drawMagnet(cx, cy, s = 1) {
   ctx.fillStyle = '#e6e9ff'; ctx.fillRect(-0.43, -0.46, 0.26, 0.18); ctx.fillRect(0.17, -0.46, 0.26, 0.18);
   ctx.restore();
 }
-function drawVentGrate(v) {
-  const st = ventState(v), x = v.c, y = v.r;
-  const hot = st === 'warn' && Math.floor(G.t * 10) % 2 === 0;
-  ctx.fillStyle = st === 'blast' ? '#ff6a1a' : hot ? '#ff9b3d' : '#3a2418';
-  ctx.fillRect(x + 0.06, y + 0.06, 0.88, 0.88);
-  ctx.fillStyle = '#000000';
-  for (let k = 0; k < 3; k++) ctx.fillRect(x + 0.2 + k * 0.24, y + 0.18, 0.1, 0.64);
-  if (st === 'warn') { // wisps rising: it's about to blow
-    const p = (G.t * 2.5) % 1, q = (p + 0.5) % 1;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(x + 0.28, y + 0.3 - p * 0.9, 0.14, 0.14);
-    ctx.fillRect(x + 0.6, y + 0.4 - q * 0.9, 0.12, 0.12);
+function drawVentGrate(v) { // an iron grate, a dim glow under it that pulses faster and hotter as it's about to blow
+  const st = ventState(v), x0 = v.c * T - camX, y0 = v.r * T - camY;
+  if (x0 < -T || y0 < -T || x0 > VIEW_W || y0 > VIEW_H) return;
+  const s = T - 4, gx = x0 + 2, gy = y0 + 2, p = ventPressure(v);
+  const pulse = st === 'warn' ? 0.5 + 0.5 * Math.sin(G.t * (10 + (p - 0.6) * 40)) : 0;
+  const hole = st === 'blast' ? '#ffe8b0' : st === 'warn' ? css(mixc([140, 36, 8], [255, 150, 48], pulse)) : '#7a2408';
+  pr(gx - 1, gy - 1, s + 2, s + 2, '#120c0a');
+  pr(gx, gy, s, s, '#5a4a40'); pr(gx, gy, s, 1, '#8a7464'); pr(gx, gy, 1, s, '#7a6656'); pr(gx, gy + s - 1, s, 1, '#2a1e18'); pr(gx + s - 1, gy, 1, s, '#2a1e18');
+  for (let i = 2; i + 2 <= s - 2; i += 3) pr(gx + 2, gy + i, s - 4, 2, hole);
+  for (const [cx, cy] of [[1, 1], [s - 2, 1], [1, s - 2], [s - 2, s - 2]]) pr(gx + cx, gy + cy, 1, 1, '#a8927a');
+  if (st !== 'blast') addLightPx(x0 + T / 2, y0 + T / 2, (st === 'warn' ? 1.8 : 1.1) * T, [1, 0.42, 0.15], st === 'warn' ? 0.25 + pulse * 0.35 : 0.2);
+  if (st === 'warn') for (let i = 0; i < 3; i++) { // wisps rising: it's about to blow
+    const ph = (G.t * 2.2 + i / 3) % 1;
+    fbx.globalAlpha = 1 - ph;
+    pr(gx + 3 + i * 4 + Math.round(Math.sin(ph * 6 + i)), Math.round(gy + s / 2 - ph * T * 0.9), 2, 2, '#f0ece6');
   }
+  fbx.globalAlpha = 1;
 }
-function drawSteam(v) {
+function drawSteam(v) { // billowing pixel steam over the vent and the tiles beside it, a column rising off the vent
   if (ventState(v) !== 'blast') return;
-  const f = Math.floor(G.t * 10) % 2;
-  ctx.fillStyle = 'rgba(235,240,255,0.88)';
-  for (const [c, r] of v.tiles) for (const [dx, dy, rr] of [[0.28, 0.35, 0.36], [0.72, 0.38, 0.32], [0.5, 0.7, 0.38]]) {
-    ctx.beginPath(); ctx.arc(c + dx + (f ? 0.06 : -0.06), r + dy - (f ? 0.05 : 0), rr + (f ? 0.05 : 0), 0, Math.PI * 2); ctx.fill();
+  const per = G.cfg.vents.period, tb = (G.ventT + v.off) % per - (per - VENT_BLAST), end = Math.max(0, (tb - VENT_BLAST + 0.15) / 0.15);
+  const big = steamPuff(Math.max(3, Math.round(T * 0.36))), mid = steamPuff(Math.max(2, Math.round(T * 0.26))), sm = steamPuff(Math.max(2, Math.round(T * 0.17)));
+  fbx.globalAlpha = 1 - end * 0.5;
+  for (const [c, r] of v.tiles) {
+    const sd = c * 7 + r * 13;
+    for (let i = 0; i < 4; i++) {
+      const ph = (tb * 2.2 + i / 4 + hash2(sd, i) * 0.3) % 1;
+      blit(ph < 0.35 ? mid : big, c + 0.25 + hash2(sd, i + 9) * 0.5 + Math.sin(ph * 5 + i) * 0.08, r + 0.75 - ph * 0.55);
+    }
   }
+  for (let i = 0; i < 5; i++) {
+    const ph = (tb * 2.8 + i / 5) % 1;
+    fbx.globalAlpha = (1 - ph) * (1 - end * 0.5);
+    blit(ph < 0.3 ? sm : ph < 0.7 ? mid : big, v.c + 0.5 + Math.sin(ph * 7 + i * 2) * 0.15, v.r + 0.4 - ph * 1.4);
+  }
+  fbx.globalAlpha = 1;
+  pr(Math.round((v.c + 0.5) * T - camX) - 2, Math.round((v.r + 0.5) * T - camY) - 3, 4, 4, '#ffffff');
 }
 // Sewer water: a deep channel whose ripples and foam streaks drift along the current, foaming where
 // it laps against the bank. Each direction is a repeating two-tile texture slid along the flow.
@@ -5329,6 +5347,7 @@ function genericTheme(stage) {
 const themeFor = (stage, lv = 0) => {
   if (lv && (stage === 2 || stage === 3)) return THEMES[`${stage}-${lv}`] || (THEMES[`${stage}-${lv}`] = (stage === 2 ? freezerTheme : labTheme)(lv));
   if (lv && stage === 4) return THEMES['4-1'] || (THEMES['4-1'] = throneTheme());
+  if (lv && stage === 5) return THEMES[`5-${lv}`] || (THEMES[`5-${lv}`] = boilerTheme(lv));
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 };
 const curTheme = () => themeFor(G.cfg.stage, G.lvIndex >= ROOF ? 0 : G.cfg.lv);
@@ -6612,6 +6631,510 @@ function thrPost(dt) {
   fbx.globalAlpha = 1;
 }
 
+// ---------- The Boiler Room (stage 5) ----------
+// B1-B3, the first floors under the tower, where the Blob's new staff work: diamond plate and grated
+// walkways over a red glow, riveted boiler plate above soot-black brick, a pressure pipe along every wall.
+// Furnaces light the room, gauges creep into the red before a nearby vent blows, valve wheels spin as
+// you pass, and every so often the pressure surges: the pipes bang, the gauges peg and the light flares.
+// The ghost house is a furnace behind bars, its door a hatch. Ghosts sweat; steam scalds them red. B1 has
+// the big boiler, B2 is all pipes (some of them leaking goo), B3 the dark, steamy tunnels.
+TINY['↓'] = '010010010111010';
+// Wall-top runs at least six tiles long, two tiles deep, widest first: room for a board or a stencil.
+function wideTops(L) {
+  const spots = [];
+  for (let r = 1; r < L.h - 2; r++) {
+    let c = 1;
+    while (c < L.w - 1) {
+      if (!(L.solidT(c, r) && L.solidT(c, r + 1))) { c++; continue; }
+      let e = c; while (e < L.w - 1 && L.solidT(e, r) && L.solidT(e, r + 1)) e++;
+      if (e - c >= 6) {
+        const x0 = c * L.T, x1 = e * L.T, xm = ((x0 + x1) / 2) | 0;
+        let yTop = -1, yBot = -1;
+        for (let y = r * L.T; y < (r + 2) * L.T; y++) if (L.cls[y * L.PW + xm] === 1) { if (yTop < 0) yTop = y; yBot = y; }
+        if (yTop >= 0) spots.push({ c0: c, c1: e - 1, r, x0, x1, xm, yTop, yBot });
+      }
+      c = e;
+    }
+  }
+  return spots.sort((a, b) => (b.c1 - b.c0) - (a.c1 - a.c0) || a.r - b.r);
+}
+const BOILER_STENCILS = { 2: ['TO SEWER ↓', 'FRUIT CHUTE ↓', 'DRAIN 8'], 3: ['FULL STEAM AHEAD', 'TUNNEL 3', 'MIND THE VENTS'] };
+function boilerTheme(lv) {
+  const pipes = lv === 2, tunnels = lv === 3;
+  const P = Object.fromEntries(Object.entries({
+    plate: '#2e2622', plateHi: '#4a3c34', plateLo: '#191311', rust: '#6a3418', oil: '#0e0a0a',
+    grate: '#3a302c', grateHi: '#5e4c40', frame: '#140e0c', glowA: '#3a1006', glowB: '#a8380c',
+    brickA: '#3e2822', brickB: '#30201a', mortar: '#140c0a', soot: '#0e0908',
+    plateW: '#5a4438', plateWHi: '#7a5c4a', seam: '#24180f', rivet: '#a8846a',
+    pipe: '#a8602e', pipeHi: '#e8a060', pipeLo: '#5a2e14', flange: '#6a3a1c',
+    lip: '#0a0606', skirt: '#1c100c',
+    rim: '#b86a34', rimF: '#e89a58', rimR: '#7a4220', ring2: '#5a3018', ring3: '#3e2414',
+    cap: '#2a201c', capHi: '#3a2c26', capLine: '#1e1614', capIn: '#221a16',
+    fire: '#3a1006', fireHot: '#d8561a', fireBrick: '#6a2412', fireGrout: '#240a04',
+    arch: '#120a08', archRim: '#5a382a', damp: '#2a2a22',
+  }).map(([k, v]) => [k, hex(v)]));
+  return {
+    id: 'boiler' + lv, void: '#060302', map: '#c8601e', runner: !pipes, decor: true, boiler: true, lv, pipes, tunnels,
+    ambient: tunnels ? [0.44, 0.35, 0.3] : pipes ? [0.6, 0.5, 0.42] : [0.62, 0.47, 0.37], vignette: tunnels ? 0.62 : 0.55,
+    grade: ['#ff7a2a', tunnels ? 0.15 : 0.13],
+    floor(x, y, t) {
+      if (t.house) { // the furnace bed: firebrick under a layer of glowing coals
+        const n = vnoise(x / 4, y / 4);
+        if (n > 0.6) return mixc(P.fire, P.fireHot, Math.min(1, (n - 0.6) * 3.5));
+        const row = (y / 6) | 0;
+        if (y % 6 === 0 || (x + (row & 1) * 5) % 10 === 0) return P.fireGrout;
+        return mulc(P.fireBrick, 0.75 + hash2((x + (row & 1) * 5) / 10 | 0, row) * 0.35);
+      }
+      if (t.e >= 0) { // a grated walkway down the corridor, a red glow coming up through it
+        if (t.e === 0) return P.frame;
+        if (t.e === 1) return P.grateHi;
+        if (x % 3 === 0 || y % 3 === 0) return y % 3 === 0 && x % 3 !== 0 ? P.grateHi : P.grate;
+        const g = vnoise(x / 10, y / 10) * 0.8 + vnoise(x / 3, y / 3) * 0.2;
+        return mixc(P.glowA, P.glowB, Math.max(0, Math.min(1, (g - 0.3) * (tunnels ? 1.2 : 1.8))));
+      }
+      // diamond plate, rusted and oil-stained
+      const lx = x % 6, ly = y % 6, alt = (((x / 6) | 0) + ((y / 6) | 0)) & 1;
+      const on = lx > 0 && lx < 5 && ly > 0 && ly < 5 && (alt ? lx === ly || lx === ly + 1 : lx + ly === 5 || lx + ly === 4);
+      let col = on ? P.plateHi : ((alt ? lx === ly + 2 : lx + ly === 6) && lx > 0 && ly > 0 ? P.plateLo : P.plate);
+      col = mulc(col, 0.88 + vnoise(x / 13, y / 13) * 0.22);
+      const r = vnoise(x / 9 + 3, y / 9) - (tunnels ? 0.62 : 0.68);
+      if (r > 0) col = mixc(col, tunnels ? P.damp : P.rust, Math.min(0.6, r * 4));
+      const o = vnoise(x / 14 + 11, y / 14 + 5) - 0.8;
+      if (o > 0) col = mixc(col, P.oil, Math.min(0.85, o * 7));
+      return col;
+    },
+    face(x, y, v, F, edge) { // riveted boiler plate, a pressure pipe, soot-black brick, a scorched skirting
+      let col;
+      const rail = tunnels ? 1 : Math.round(F * 0.4);
+      if (v === 0) col = P.lip;
+      else if (v === F - 1) col = P.skirt;
+      else if (F >= 7 && (v === rail || v === rail + 1)) {
+        col = x % 18 < 2 ? P.flange : v === rail ? P.pipeHi : P.pipe;
+        if (x % 18 === 2 || x % 18 === 17) col = P.pipeLo;
+      } else if (F >= 7 && v < rail) {
+        col = x % 12 === 0 ? P.seam : v === 1 && x % 6 === 3 ? P.rivet : v === 1 ? P.plateWHi : P.plateW;
+        col = mulc(col, 0.9 + vnoise(x / 5, y / 3) * 0.2);
+      } else {
+        const base = F >= 7 ? rail + 2 : 1, br = ((v - base) / 3) | 0, bx = x + (br & 1) * 4;
+        col = (v - base) % 3 === 2 || bx % 8 === 0 ? P.mortar : mixc(P.brickA, P.brickB, hash2(bx >> 3, br + y * 0));
+        if (tunnels && F >= 7) { // the tunnels: brick arches running off into the dark
+          const ax = x % 30 - 15, top = rail + 2 + Math.round((ax / 10) ** 2 * 4);
+          if (Math.abs(ax) < 10 && v >= top && v < F - 1) col = v === top || Math.abs(ax) === 9 ? P.archRim : mulc(P.arch, 1 + (v - top) * 0.05);
+        }
+        const soot = (v / F) * 0.55 + (vnoise(x / 6, y / 4) - 0.5) * 0.6;
+        if (soot > 0.2) col = mixc(col, P.soot, Math.min(0.8, (soot - 0.2) * 1.6));
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // dark iron with a hot copper edge; on B2 the pipes run along the tops
+      if (ring === 1) return side === 'front' ? P.rimF : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2) return P.ring2;
+      if (ring === 3) return P.ring3;
+      if (pipes && ring >= 4 && ring <= 6) return (x + y) % 22 < 2 ? P.flange : ring === 4 ? P.pipeHi : ring === 5 ? P.pipe : P.pipeLo; // a pipe looping round each top
+      if (ring === 6) return P.capIn;
+      if (ring === 7) return P.capHi;
+      let col = x % 10 === 0 || y % 10 === 0 ? P.capLine : P.cap;
+      if (x % 10 === 5 && y % 10 === 5) col = P.ring2; // a bolt head
+      const s = vnoise(x / 6, y / 6);
+      return s > 0.7 ? mixc(col, P.soot, 0.6) : col;
+    },
+    pick(big, r, roll) {
+      if (!big) return roll < 0.55 ? 'gauge' : 'valve';
+      if (pipes) return roll < 0.3 ? 'pipes' : roll < 0.48 ? 'gauge' : roll < 0.62 ? 'valve' : roll < 0.74 ? 'lamp' : roll < 0.87 ? 'sign' : 'furnace';
+      if (tunnels) return roll < 0.26 ? 'lamp' : roll < 0.46 ? 'gauge' : roll < 0.62 ? 'pipes' : roll < 0.72 ? 'valve' : roll < 0.84 ? 'furnace' : 'sign';
+      return roll < 0.22 ? 'furnace' : roll < 0.38 ? 'gauge' : roll < 0.5 ? 'valve' : roll < 0.62 ? 'lamp' : roll < 0.72 ? 'coal' : roll < 0.86 ? 'sign' : 'pipes';
+    },
+    bake(L, g) {
+      const D = L.decor;
+      // One pressure board per floor counting the ghosts cooked; on B1 the big boiler on the top wall,
+      // a coal pile that's slightly on fire, and the King's ghost knight, dumped here after his fall.
+      const counter = D.find(d => d.kind === 'sign' && d.y1 - d.y0 >= 9);
+      if (counter) counter.kind = 'counter';
+      if (lv === 1) {
+        const top = D.filter(d => d.r === 0 && d.y1 - d.y0 >= 9).sort((a, b) => Math.abs(a.c - L.w / 2) - Math.abs(b.c - L.w / 2));
+        if (top.length) {
+          top[0].kind = 'boiler';
+          for (const d of top) if (d !== top[0] && Math.abs(d.c - top[0].c) < 5) d.kind = 'gauge';
+        }
+        const fire = D.find(d => d.kind === 'coal') || D.find(d => d.kind === 'furnace' && d.r > 0);
+        if (fire) fire.kind = 'fire';
+        const armor = D.filter(d => d.kind === 'sign' || d.kind === 'lamp').sort((a, b) => b.r - a.r || a.c - b.c)[0];
+        if (armor) armor.kind = 'armor';
+      }
+      if (pipes) { let n = 0; for (const d of D) if (d.kind === 'pipes' && n < 2 && hash2(d.c, d.r) < 0.6) { d.kind = 'goopipe'; n++; } }
+      const spots = wideTops(L);
+      if (lv === 1) { // the shift board on the widest wall top
+        const s = spots.find(s => s.yBot - s.yTop >= 15 && s.x1 - s.x0 >= 84);
+        if (s) {
+          const w = 70, h = 15, bx = s.xm - (w >> 1), by = s.yTop + ((s.yBot - s.yTop - h) >> 1);
+          g.fillStyle = '#4a3c34'; g.fillRect(bx - 1, by - 1, w + 2, h + 2);
+          g.fillStyle = '#d8d4c8'; g.fillRect(bx, by, w, h);
+          tinyText(g, 'ON SHIFT:', bx + 2, by + 2, '#2a4ad0');
+          tinyText(g, 'BLINKY', bx + 2, by + 8, '#c02030'); tinyText(g, 'PINKY', bx + 28, by + 8, '#c0408a');
+          g.fillStyle = '#e8d040'; g.fillRect(bx + w - 16, by - 3, 18, 13); // the sticky note
+          g.fillStyle = '#c8b030'; g.fillRect(bx + w - 16, by - 3, 18, 1);
+          tinyText(g, 'PAID', bx + w - 14, by - 1, '#5a4010'); tinyText(g, 'SNAX', bx + w - 14, by + 5, '#5a4010');
+        }
+      } else { // stencils painted along the wall tops
+        const lines = BOILER_STENCILS[lv], picked = [];
+        for (const s of spots) {
+          if (picked.length >= lines.length) break;
+          const txt = lines[picked.length];
+          if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 9 || tinyW(txt) > s.x1 - s.x0 - 10) continue;
+          picked.push(s);
+          tinyText(g, txt, s.xm - (tinyW(txt) >> 1), s.yTop + ((s.yBot - s.yTop - 4) >> 1), pipes ? '#b8925a' : '#8a6a52');
+        }
+      }
+      // Steam pools in dead ends and corners (more of it down the tunnels).
+      L.fog = [];
+      const open = (c, r) => r >= 0 && r < L.h && c >= 0 && c < L.w && L.reach[r * L.w + c];
+      for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
+        if (!open(c, r)) continue;
+        const u = !open(c, r - 1), d = !open(c, r + 1), l = !open(c - 1, r), rt = !open(c + 1, r), n = u + d + l + rt;
+        if ((n >= 3 || (n === 2 && !(u && d) && !(l && rt))) && hash2(c, r * 3 + 5) < (tunnels ? 0.7 : 0.4)) L.fog.push({ x: c + 0.5, y: r + 0.55, s: hash2(c, r) * 6.3 });
+      }
+    },
+  };
+}
+
+// Per-attempt state for the boiler room, reset with the level.
+const blr = { surge: { next: 10, t: 0 }, scalds: [], trail: [], house: new Set(), trailT: 0, cooked: 0 };
+function blrReset() { Object.assign(blr, { surge: { next: 10, t: 0 }, scalds: [], trail: [], house: new Set(), trailT: 0, cooked: 0 }); }
+const SURGE = 1.6;
+const surgeK = () => blr.surge.t > 0 ? Math.sin((1 - blr.surge.t / SURGE) * Math.PI) : 0;
+// A ghost (or hound) caught in steam: a red, scalded flash of it rises off as it goes back to eyes.
+function blrCook(e, col) {
+  blr.cooked++;
+  if (!curTheme().boiler) return;
+  blr.scalds.push({ x: e.x, y: e.y, col, t: 0 });
+  fxBurst(e.x + 0.5, e.y + 0.5, '#ff5a2a', 12, 4, 0.5); fxBurst(e.x + 0.5, e.y + 0.4, '#f4f0ea', 14, 3, 0.7);
+  SFX.whistle();
+}
+// How far each vent is through its cycle, as a gauge reading: 0.2 idle, climbing through the warning, 1 as it blows.
+function ventPressure(v) {
+  const per = G.cfg.vents.period, p = (G.ventT + v.off) % per, idle = per - VENT_WARN - VENT_BLAST;
+  if (p < idle) return 0.15 + 0.45 * p / idle;
+  if (p < idle + VENT_WARN) return 0.6 + 0.38 * (p - idle) / VENT_WARN;
+  return 1 - 0.85 * Math.max(0, (p - idle - VENT_WARN - VENT_BLAST + 0.3) / 0.3);
+}
+function blrUpdate(dt, theme) {
+  if (!dt) return;
+  const S = blr.surge;
+  if (S.t > 0) S.t = Math.max(0, S.t - dt);
+  if ((S.next -= dt) <= 0) {
+    S.next = theme.tunnels ? 11 + Math.random() * 5 : 15 + Math.random() * 6; S.t = SURGE;
+    if (G.state === 'play') { SFX.clang(); G.shake = Math.max(G.shake, 0.14); }
+    for (const d of art.decor) if ((d.kind === 'pipes' || d.kind === 'valve' || d.kind === 'boiler') && Math.abs(d.x - camX - VIEW_W / 2) < VIEW_W) for (let i = 0; i < 6; i++) {
+      const t = 0.5 + Math.random() * 0.5;
+      parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.6, y: d.y0 / T + 0.3, vx: (Math.random() - 0.5) * 1.6, vy: -0.6 - Math.random(), t, t0: t, col: '#ece6e0', g: 0, drag: 2 });
+    }
+  }
+  for (const s of blr.scalds) s.t += dt;
+  blr.scalds = blr.scalds.filter(s => s.t < 0.7);
+  if (G.state !== 'play' && G.state !== 'ready') return;
+  // Everyone sweats down here. Whoever's waiting in the furnace sweats buckets.
+  for (const g of G.ghosts) {
+    if (g.eaten || Math.random() > dt * (g.mode === 'house' ? 3.5 : 1.2)) continue;
+    const s = Math.random() < 0.5 ? -1 : 1;
+    parts.push({ x: g.x + 0.5 + s * 0.38, y: g.y + 0.2, vx: s * 0.5, vy: -0.6, t: 0.55, t0: 0.55, col: '#a8dcff', g: 7 });
+  }
+  // Leaving the furnace: the hatch bangs open in a burst of embers.
+  const inside = new Set([...G.ghosts.filter(g => g.mode === 'house'), ...G.slimes.filter(s => s.state === 'house')]);
+  for (const e of inside) blr.house.add(e);
+  for (const e of [...blr.house]) if (!inside.has(e)) {
+    blr.house.delete(e);
+    fxBurst(e.x + 0.5, e.y + 0.6, '#ff9a30', 14, 4, 0.55); fxBurst(e.x + 0.5, e.y + 0.6, '#ffe0a0', 6, 3, 0.4); SFX.thud();
+  }
+  // B3's slime dries out as it goes: a trail that browns and steams, and it boils near a blast.
+  if ((blr.trailT -= dt) <= 0) {
+    blr.trailT = 0.14;
+    for (const s of G.slimes) if (s.state === 'active') {
+      blr.trail.push({ x: s.x + 0.5, y: s.y + 0.5 + (s.kind === 'big' ? 0.4 : 0.25), big: s.kind === 'big', t: 0 });
+      if (Math.random() < 0.4) parts.push({ x: s.x + 0.5 + (Math.random() - 0.5) * 0.6, y: s.y + 0.8, vx: 0, vy: -0.8, t: 0.4, t0: 0.4, col: '#e8e4dc', g: 0 });
+    }
+    if (blr.trail.length > 160) blr.trail.splice(0, blr.trail.length - 160);
+  }
+  for (const p of blr.trail) p.t += dt;
+  blr.trail = blr.trail.filter(p => p.t < 3);
+  for (const s of G.slimes) if (s.state === 'active' && G.vents.some(v => ventState(v) === 'blast' && Math.hypot(v.c - s.x, v.r - s.y) < 2.5) && Math.random() < dt * 14)
+    parts.push({ x: s.x + 0.5 + (Math.random() - 0.5) * 0.7, y: s.y + 0.5, vx: 0, vy: -1, t: 0.35, t0: 0.35, col: '#8dff8a', g: 0 });
+  // Condensation drips off the wall faces.
+  if (Math.random() < dt * (theme.tunnels ? 6 : 3)) {
+    const x = (camX + Math.random() * VIEW_W) | 0, y = (camY + Math.random() * VIEW_H) | 0;
+    if (x >= 0 && y >= 0 && x < art.PW && y + 1 < art.PH && art.cls[y * art.PW + x] === 2 && art.cls[(y + 1) * art.PW + x] === 0)
+      parts.push({ x: x / T, y: y / T, vx: 0, vy: 0.2, t: 0.5, t0: 0.5, col: '#9ab8c8', g: 14 });
+  }
+}
+// The surge's orange flare, and the tunnels' lights browning out now and then.
+function blrAmbient(amb, theme) {
+  const k = surgeK();
+  if (k > 0) amb = mixc(amb, [1.05, 0.62, 0.32], k * 0.4);
+  if (theme.tunnels && hash2(Math.floor(G.t * 8), 17) > 0.96) amb = mulc(amb, 0.75);
+  return amb;
+}
+const gaugeDial = () => spr('gaugeDial', () => pixSprite(9, 9, (x, y) => {
+  const d = Math.hypot(x - 4.5, y - 4.5);
+  if (d > 4.5) return null;
+  if (d > 3.4) return hex(x + y < 8 ? '#b8a48a' : '#6a5a4a');
+  const a = Math.atan2(y - 4.5, x - 4.5);
+  if (d > 2.4 && a < -0.2 && a > -1.2) return hex('#c83030'); // the red zone, top right
+  return hex('#e8dcc0');
+}, 0.35));
+const steamPuff = r => spr(`puff|${r}`, () => pixSprite(r * 2 + 1, r * 2 + 1, (x, y) => {
+  const dx = x - r - 0.5, dy = y - r - 0.5, d = Math.hypot(dx, dy) / (r + 0.5);
+  if (d > 1) return null;
+  const l = -dx / r * 0.5 - dy / r * 0.6 + (1 - d) * 0.6;
+  return d > 0.82 && bayer(x, y) > 0.5 ? null : hex(l > 0.55 ? '#ffffff' : l > 0.05 ? '#e6e8ee' : l > -0.4 ? '#c4cad6' : '#9aa2b4');
+}, 0));
+function blrDecor(theme, dt, glow) {
+  const L = art, k = surgeK();
+  const pacNear = d => G.state === 'play' && Math.abs((pac.x + 0.5) * T - d.x) < T * 1.4 && Math.abs((pac.y + 0.5) * T - d.y1) < T * 1.6;
+  for (const d of L.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    const flick = 0.8 + hash2(Math.floor(G.t * 12), d.seed * 997 | 0) * 0.3;
+    if (d.kind === 'furnace') { // a furnace door with the fire showing through its grille
+      const fw = 14, fx = x - 7, fy = y0 + 1, fh = F - 1;
+      if (!glow) {
+        pr(fx - 1, fy - 1, fw + 2, fh + 2, '#1a1210'); pr(fx, fy, fw, fh, '#4a3a32'); pr(fx, fy, fw, 1, '#6a5446');
+        pr(fx + fw - 3, fy + (fh >> 1), 2, 1, '#a8906a'); // the latch
+        addLightPx(x, y1 + T * 0.4, 3.2 * T, [1, 0.5, 0.2], (0.7 + k * 0.3) * flick);
+        if (G.state === 'play' && Math.random() < dt * 1.2) { const t = 1 + Math.random() * 0.5; parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.4, y: d.y0 / T + 0.2, vx: (Math.random() - 0.5) * 0.3, vy: -0.6, t, t0: t, col: '#ff8a30', g: 0 }); }
+      }
+      for (let i = 0; i < 3; i++) for (let j = 0; j < fw - 6; j++) {
+        const h = hash2(j + Math.floor(G.t * 10), i + d.seed * 50 | 0);
+        pr(fx + 2 + j, fy + 2 + i * 2, 1, 1, glow ? (h > 0.6 ? '#ffe080' : h > 0.25 ? '#ff8a20' : '#c83a10') : '#1a0806');
+      }
+    } else if (d.kind === 'gauge') { // creeps toward the red before the nearest vent blows, pegs in a surge
+      if (glow) continue;
+      let p = 0.3, best = 99;
+      for (const v of G.vents) { const dd = Math.hypot(v.c + 0.5 - d.x / T, v.r + 0.5 - d.y1 / T); if (dd < best) { best = dd; p = ventPressure(v); } }
+      if (!G.vents.length) p = 0.35 + Math.sin(G.t * 0.4 + d.seed * 9) * 0.1;
+      if (theme.tunnels) p = Math.max(p, 0.86);
+      p = Math.min(1, Math.max(p, k));
+      if (p > 0.85) p -= hash2(Math.floor(G.t * 20), d.c) * 0.06; // the needle trembles in the red
+      const gx = x - 4, gy = y0 + ((F - 9) >> 1);
+      pr(x, gy + 8, 1, Math.max(0, F - 8), '#3a2e28');
+      fbx.drawImage(gaugeDial(), gx, gy);
+      const a = Math.PI * (1 + p * 1.15) - 0.1;
+      for (let s = 0; s <= 3; s++) pr(Math.round(gx + 4 + Math.cos(a) * s), Math.round(gy + 4 + Math.sin(a) * s), 1, 1, p > 0.8 ? '#c81818' : '#1a1210');
+      pr(gx + 4, gy + 4, 1, 1, '#1a1210');
+    } else if (d.kind === 'valve') { // a valve wheel on a pipe stub; it spins as you pass
+      if (glow) continue;
+      d.spin = (d.spin || 0) + dt * (pacNear(d) ? 9 : k * 6);
+      const vx = x, vy = y0 + (F >> 1);
+      pr(vx - 7, vy - 1, 14, 3, '#5a3a24'); pr(vx - 7, vy - 1, 14, 1, '#8a5a34');
+      for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) { const r = Math.hypot(i, j); if (r > 2.6 && r < 4.4) pr(vx + i, vy + j, 1, 1, i + j < 0 ? '#e85050' : '#a02828'); }
+      for (let i = 0; i < 4; i++) { const a = d.spin + i * Math.PI / 2; for (let s = 1; s <= 2; s++) pr(Math.round(vx + Math.cos(a) * s), Math.round(vy + Math.sin(a) * s), 1, 1, '#a02828'); }
+      pr(vx, vy, 1, 1, '#e8c8a0');
+    } else if (d.kind === 'lamp') { // a caged work lamp on a wire, swinging (harder in a surge)
+      const len = Math.max(3, F - 4), sw = Math.sin(G.t * 1.3 + d.seed * 6) * (0.22 + k * 0.4);
+      const bx = Math.round(x + Math.sin(sw) * len), by = Math.round(y0 + Math.cos(sw) * len);
+      const out = theme.tunnels && hash2(Math.floor(G.t * 6), d.c * 7 + d.r) > 0.93;
+      if (!glow) {
+        for (let s = 0; s < len; s++) pr(Math.round(x + Math.sin(sw) * s), Math.round(y0 + Math.cos(sw) * s), 1, 1, '#1a1210');
+        pr(bx - 2, by - 1, 5, 4, '#3a302c'); pr(bx - 1, by, 3, 2, out ? '#5a5040' : '#e8d8a0');
+        if (!out) addLightPx(bx, by + T * 0.6, 3 * T, [1, 0.82, 0.5], 0.62);
+      } else if (!out) { pr(bx - 1, by, 3, 2, '#fff4c8'); pr(bx, by + 1, 1, 1, '#ffffff'); }
+      if (!glow) { pr(bx - 2, by - 1, 1, 4, '#5a4a40'); pr(bx + 2, by - 1, 1, 4, '#5a4a40'); pr(bx - 2, by + 2, 5, 1, '#5a4a40'); }
+    } else if (d.kind === 'coal' || d.kind === 'fire') { // a heap of coal and a shovel at the foot of the wall; on B1, one's slightly on fire
+      const hx = x - 7, hy = y1 - 1;
+      if (!glow) {
+        for (let j = 0; j < 6; j++) { const hw = 7 - j; for (let i = -hw; i <= hw; i++) pr(x + i, hy - j, 1, 1, hash2(i + d.c * 9, j) > 0.78 ? '#4a4444' : '#161212'); }
+        for (let s = 0; s < 8; s++) pr(hx + 13 - (s >> 1), hy - s - 1, 1, 1, '#7a5030'); // the shovel's handle
+        pr(hx + 12, hy - 1, 3, 2, '#8a8a90');
+      }
+      if (d.kind === 'fire') {
+        if (glow) for (const [ox, sd] of [[-3, 0.1], [0, 0.5], [2, 0.8]]) drawFlame(x + ox, hy - 4 + Math.abs(ox) / 2 | 0, d.seed + sd, ox === 0);
+        else {
+          addLightPx(x, hy - 4, 3.6 * T, [1, 0.55, 0.22], 0.85 * flick);
+          if (G.state === 'play' && Math.random() < dt * 3) { const t = 1.2; parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.5, y: (d.y1 - 8) / T, vx: (Math.random() - 0.5) * 0.3, vy: -0.7, t, t0: t, col: Math.random() < 0.5 ? '#ff9a40' : '#5a5050', g: 0 }); }
+        }
+      }
+    } else if (d.kind === 'pipes' || d.kind === 'goopipe') { // a pipe run with an elbow and a leaky joint (B2's leak goo)
+      if (glow) continue;
+      const goo = d.kind === 'goopipe', py = y0 + 2;
+      pr(x - 10, py, 20, 3, '#8a4e26'); pr(x - 10, py, 20, 1, '#d08a50'); pr(x - 10, py + 2, 20, 1, '#4a260f');
+      pr(x + 6, py, 3, F - 3, '#8a4e26'); pr(x + 6, py, 1, F - 3, '#d08a50');
+      pr(x - 3, py - 1, 3, 5, '#5a3018');
+      if (goo) { pr(x - 2, py + 3, 2, 3, '#3aa83a'); pr(x - 5, y1 - 1, 7, 1, '#2e8a2e'); }
+      if (G.state === 'play' && Math.random() < dt * (goo ? 1.5 : 0.8)) {
+        const t = goo ? 0.5 : 0.7;
+        parts.push(goo ? { x: (d.x - 1.5) / T, y: (d.y0 + 6) / T, vx: 0, vy: 0.2, t, t0: t, col: '#5cff6b', g: 10 }
+          : { x: (d.x - 1.5) / T, y: (d.y0 + 2) / T, vx: (Math.random() - 0.5) * 0.4, vy: -0.6, t, t0: t, col: '#e4e0da', g: 0, drag: 1 });
+      }
+    } else if (d.kind === 'sign' || d.kind === 'counter') {
+      if (d.kind === 'counter') { // the pressure board: ghosts cooked so far this floor
+        const s = `COOKED:${blr.cooked}`, mw = tinyW(s) + 6, mx = x - (mw >> 1), my = y0 + ((F - 8) >> 1);
+        if (!glow) { pr(mx - 1, my - 1, mw + 2, 9, '#5a4a40'); pr(mx, my, mw, 7, '#140806'); addLightPx(x, my + 4, 1.4 * T, [1, 0.45, 0.2], 0.3); }
+        tinyText(fbx, s, mx + 3, my + 1, glow ? '#ffb060' : '#8a3a14');
+        continue;
+      }
+      if (glow) continue;
+      const [s, bg, ink] = [['CAUTION HOT', '#e8c020', '#18181a'], ['NO GHOSTS', '#c83030', '#ffffff'], ['PSI', '#e8dcc0', '#2a1a10'],
+        ['HOT!', '#ff8a20', '#2a0a00'], ['DAYS SAFE:0', '#2a8a3a', '#ffffff']][Math.floor(d.seed * 5)];
+      const w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      pr(sx, sy, w, 7, bg); pr(sx, sy, w, 1, css(mixc(hex(bg), [255, 255, 255], 0.4))); tinyText(fbx, s, sx + 2, sy + 1, ink);
+    } else if (d.kind === 'boiler') { // B1: the big boiler, up over the top wall, its firebox roaring
+      const bw = 48, bh = 17, bx = x - 24, by = y1 - bh;
+      if (!glow) {
+        pr(bx, by, bw, bh, '#1a1210');
+        pr(bx + 1, by + 1, bw - 2, bh - 2, '#6a5040');
+        pr(bx + 1, by + 1, bw - 2, 2, '#8a6a52'); pr(bx + 1, by + bh - 4, bw - 2, 2, '#3a2a22');
+        for (let i = 6; i < bw - 2; i += 8) pr(bx + i, by + 1, 1, bh - 2, '#3e2c22'); // its bands
+        for (let i = 3; i < bw - 2; i += 4) pr(bx + i, by + 4, 1, 1, '#b8946a');
+        pr(bx + 18, by + 6, 12, 8, '#1a1210'); pr(bx + 19, by + 7, 10, 6, '#3a2018'); // the firebox
+        pr(bx + 22, by - 4, 4, 5, '#5a4438'); pr(bx + 21, by - 5, 6, 1, '#8a6a52'); // the stack
+        fbx.drawImage(gaugeDial(), bx + 5, by + 5); fbx.drawImage(gaugeDial(), bx + bw - 14, by + 5);
+        const a = Math.PI * (1 + Math.max(0.55 + Math.sin(G.t * 0.7) * 0.15, k) * 1.15) - 0.1;
+        for (const gx of [bx + 9, bx + bw - 10]) for (let s = 0; s <= 3; s++) pr(Math.round(gx + Math.cos(a) * s), Math.round(by + 9 + Math.sin(a) * s), 1, 1, '#1a1210');
+        addLightPx(x, y1 + T * 0.4, 4.5 * T, [1, 0.5, 0.2], (0.9 + k * 0.4) * flick);
+        if (G.state === 'play' && Math.random() < dt * (2 + k * 12)) { const t = 0.9; parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.2, y: (d.y1 - bh - 5) / T, vx: (Math.random() - 0.5) * 0.5, vy: -0.9, t, t0: t, col: '#c8c0b8', g: 0, drag: 1 }); }
+      } else for (let i = 0; i < 10; i++) for (let j = 0; j < 6; j++) {
+        const h = hash2(i + Math.floor(G.t * 10), j + 77);
+        if ((j + i) % 2 === 0 || j > 3) pr(bx + 19 + i, by + 7 + j, 1, 1, h > 0.55 ? '#ffe080' : h > 0.2 ? '#ff8a20' : '#c83a10');
+      }
+    } else if (d.kind === 'armor') { // the King's ghost knight, dumped in the basement: a helmet and breastplate in a heap
+      if (glow) continue;
+      const ax = x - 6, ay = y1 - 7;
+      pr(ax + 4, ay + 2, 9, 5, '#7a7c8a'); pr(ax + 4, ay + 2, 9, 1, '#c8cad8'); pr(ax + 8, ay + 3, 1, 3, '#4a4c58');
+      pr(ax, ay + 1, 6, 6, '#9a9cac'); pr(ax, ay + 1, 6, 1, '#d8dae8'); pr(ax + 1, ay + 3, 4, 1, '#1a1a22');
+      pr(ax + 2, ay - 2, 2, 3, '#c83040'); pr(ax + 1, ay - 3, 2, 1, '#e85060');
+      pr(ax + 13, ay + 5, 3, 2, '#c8a040');
+    }
+  }
+}
+// The ghost house is a furnace: coals glowing under whoever's waiting, flames along the bottom, bars in front.
+function blrFurnace() {
+  const b = art.houseBox; if (!b) return;
+  const x0 = b.c0 * T - camX, y0 = b.r0 * T - camY, w = (b.c1 - b.c0 + 1) * T, h = (b.r1 - b.r0 + 1) * T;
+  if (x0 > VIEW_W || y0 > VIEW_H || x0 + w < 0 || y0 + h < 0) return;
+  const f = Math.floor(G.t * 10);
+  for (let i = 0; i < w; i++) { // flames licking up along the back
+    const fh = 2 + Math.floor(hash2(i >> 1, f) * 4);
+    pr(x0 + i, y0 + h - fh, 1, fh, '#ff6a1a'); pr(x0 + i, y0 + h - Math.max(1, fh - 2), 1, Math.max(1, fh - 2), '#ffc040');
+  }
+  for (let i = 3; i < w - 1; i += 6) { pr(x0 + i, y0, 2, h, '#1a1210'); pr(x0 + i, y0, 1, h, '#4a3a32'); } // the bars
+  pr(x0, y0, w, 2, '#2a201c'); pr(x0, y0 + h - 1, w, 1, '#2a201c');
+  addLightPx(x0 + w / 2, y0 + h * 0.7, 3.4 * T, [1, 0.45, 0.15], 0.55 + hash2(f, 3) * 0.15);
+}
+// The house door is a furnace hatch: it swings up when someone's coming through, and the fire shows.
+function blrDoor() {
+  const y = Math.round((house.exitY + 1.3) * T) - camY, x0 = house.doorC * T - camX, hh = Math.max(3, Math.round(T * 0.24));
+  const busy = [...G.ghosts, ...G.slimes].some(e => Math.abs(e.y - (house.exitY + 1)) < 1.4 && Math.abs(e.x - house.doorX) < 1.4);
+  if (busy) {
+    pr(x0, y, 2 * T, hh, '#ff8a20'); pr(x0, y + 1, 2 * T, hh - 1, '#ffd060');
+    pr(x0, y - 4, 2 * T, 2, '#4a3a32'); pr(x0, y - 4, 2 * T, 1, '#7a6050');
+    addLightPx(x0 + T, y, 2.4 * T, [1, 0.55, 0.2], 0.6);
+  } else {
+    pr(x0, y, 2 * T, hh, '#4a3a32'); pr(x0, y, 2 * T, 1, '#7a6050');
+    for (let i = 3; i < 2 * T; i += 6) pr(x0 + i, y + 1, 1, 1, '#a88a6a');
+    pr(x0 + T - 3, y + hh - 1, 6, 1, '#ff6a1a');
+  }
+}
+// Steam pooled in the dead ends; it parts around anyone walking through, and swells in a surge.
+const steamPool = () => spr(`steampool|${T}`, () => {
+  const w = Math.round(T * 2.6), h = Math.round(T * 1.2);
+  return pixSprite(w, h, (x, y) => {
+    const dx = (x - w / 2) / (w / 2), dy = (y - h / 2) / (h / 2), f = 1 - (dx * dx + dy * dy);
+    return f > bayer(x, y) * 0.9 ? [236, 228, 220, 62] : null;
+  }, 0);
+});
+function blrMist(theme) {
+  const fs = steamPool(), k = surgeK(), movers = [pac, ...G.ghosts, ...G.slimes];
+  for (const f of art.fog || []) {
+    let part = 1;
+    for (const e of movers) { const d = Math.hypot(e.x + 0.5 - f.x, e.y + 0.5 - f.y); if (d < 1.6) part = Math.min(part, Math.max(0, (d - 0.4) / 1.2)); }
+    const a = ((theme.tunnels ? 0.65 : 0.45) + 0.25 * Math.sin(G.t * 0.7 + f.s) + k * 0.5) * part;
+    if (a <= 0.02) continue;
+    fbx.globalAlpha = Math.min(1, a);
+    blit(fs, f.x + Math.sin(G.t * 0.4 + f.s) * 0.25, f.y + 0.1);
+  }
+  for (const p of blr.trail) { // B3's slime trail, drying from green to a brown crust
+    const k2 = p.t / 3, r = p.big ? 2 : 1;
+    fbx.globalAlpha = 0.6 * (1 - k2 * 0.6);
+    pr(Math.round(p.x * T - camX) - r, Math.round(p.y * T - camY) - 1, r * 2 + 1, 2, css(mixc([74, 192, 74], [90, 64, 30], Math.min(1, k2 * 2))));
+  }
+  fbx.globalAlpha = 1;
+}
+// Shift rows of the frame sideways, for the shimmer of hot air.
+function heatShimmer(x0, y0, w, h, amp) {
+  x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0));
+  w = Math.min(VIEW_W - x0, Math.round(w)); h = Math.min(VIEW_H - y0, Math.round(h));
+  if (w <= 2 || h <= 0) return;
+  for (let j = 0; j < h; j += 1) {
+    const off = Math.round(Math.sin(G.t * 13 + (y0 + j + camY) * 0.8) * amp * (1 - j / h * 0.3));
+    if (off) fbx.drawImage(fb, x0, y0 + j, w, 1, x0 + off, y0 + j, w, 1);
+  }
+}
+// Hot haze rising off the bottom of the screen, densest at the edge.
+const heatEdgeSprite = () => spr('heatEdge', () => {
+  const H2 = 40, c = mkCanvas(VIEW_W, H2), im = c.g.createImageData(VIEW_W, H2);
+  for (let y = 0; y < H2; y++) for (let x = 0; x < VIEW_W; x++) {
+    const f = (y / H2) * (0.6 + vnoise(x / 9, y / 5) * 0.5);
+    if (f > 0.42 + bayer(x, y) * 0.35) { const i = (y * VIEW_W + x) * 4, b = f > 0.8; im.data[i] = 255; im.data[i + 1] = b ? 150 : 96; im.data[i + 2] = b ? 60 : 30; im.data[i + 3] = b ? 120 : 70; }
+  }
+  c.g.putImageData(im, 0, 0);
+  return c;
+});
+// After the light: embers and ash in the air, scalded ghosts, the heat over the vents, the magnet's sparks.
+const embers = Array.from({ length: 40 }, (_, i) => ({ x: hash2(i, 41) * 400, y: hash2(i, 42) * 400, ph: hash2(i, 43) * 6.3, sp: 5 + hash2(i, 44) * 7, ash: i % 3 === 0 }));
+function blrPost(dt, theme) {
+  const MW = VIEW_W + 16, MH = VIEW_H + 16;
+  // Heat over every vent that's about to blow or blowing, and haze off the bottom of the screen.
+  let heat = theme.tunnels ? 0.4 : 0.15;
+  for (const v of G.vents) {
+    const st = ventState(v); if (st === 'idle') continue;
+    const cx = (v.c + 0.5) * T - camX, cy = (v.r + 0.5) * T - camY;
+    if (cx > -T * 2 && cx < VIEW_W + T * 2 && cy > -T * 3 && cy < VIEW_H + T) heatShimmer(cx - T * 1.2, cy - T * 2.4, T * 2.4, T * 2.6, st === 'blast' ? 1.5 : theme.tunnels ? 1.2 : 1);
+    heat = Math.max(heat, Math.min(1, (6 - Math.hypot(v.c - pac.x, v.r - pac.y)) / 5) * (st === 'blast' ? 0.85 : 0.6));
+  }
+  if (fxOn && heat > 0.05) {
+    heatShimmer(0, VIEW_H - 26, VIEW_W, 26, 1);
+    fbx.globalAlpha = Math.min(0.8, heat); fbx.drawImage(heatEdgeSprite(), 0, VIEW_H - 40); fbx.globalAlpha = 1;
+  }
+  for (const e of embers) { // embers drift up, glowing; ash drifts down, seen only in the light
+    if (e.ash) { e.y += e.sp * 0.4 * dt; e.x += Math.sin(G.t * 0.5 + e.ph) * 3 * dt; } else { e.y -= e.sp * dt; e.x += Math.sin(G.t * 0.9 + e.ph) * 5 * dt; }
+    const sx = ((Math.round(e.x - camX * 0.8) % MW) + MW) % MW - 8, sy = ((Math.round(e.y - camY * 0.8) % MH) + MH) % MH - 8;
+    if (e.ash) { const a = Math.min(0.7, (lightAt(sx, sy) - 0.6) * 1.8); if (a <= 0.04) continue; fbx.globalAlpha = a; pr(sx, sy, 1, 1, '#b0a49a'); }
+    else { fbx.globalAlpha = 0.35 + 0.45 * Math.max(0, Math.sin(G.t * 5 + e.ph)); pr(sx, sy, 1, 1, e.ph > 3 ? '#ffb050' : '#ff7020'); }
+  }
+  fbx.globalAlpha = 1;
+  for (const s of blr.scalds) { // the scalded ghost rises off in red, then fades
+    const k = s.t / 0.7;
+    fbx.globalAlpha = 1 - k;
+    blit(ghostBody(s.t < 0.08 ? '#ffffff' : '#ff3a1a', 0, ''), s.x + 0.5, s.y + 0.5 - k * 0.8);
+  }
+  fbx.globalAlpha = 1;
+  // The dot magnet crackles: little arcs off the horseshoe, and off Pac-Man to every dot he's pulling in.
+  const arc = (ax, ay, bx, by, seed) => {
+    const n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / 3));
+    let px = ax, py = ay;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, j = i < n ? (hash2(seed * 13 + i, Math.floor(G.t * 18)) - 0.5) * 4 : 0;
+      const qx = ax + (bx - ax) * t + j, qy = ay + (by - ay) * t + j * 0.6, m = Math.max(Math.abs(qx - px), Math.abs(qy - py));
+      for (let s = 0; s <= m; s++) pr(Math.round(px + (qx - px) * s / (m || 1)), Math.round(py + (qy - py) * s / (m || 1)), 1, 1, i === 1 ? '#ffffff' : '#9fd8ff');
+      px = qx; py = qy;
+    }
+  };
+  for (const [c, r] of G.cfg.magnets || []) {
+    if (G.dots[r * W + c] !== 5 || Math.floor(G.t * 9 + c) % 3 === 0) continue;
+    const cx = (c + 0.5) * T - camX, cy = (r + 0.3) * T - camY, a = hash2(c * 7 + r, Math.floor(G.t * 9)) * Math.PI * 2;
+    if (cx > -T && cx < VIEW_W + T && cy > -T && cy < VIEW_H + T) arc(cx, cy, cx + Math.cos(a) * T * 0.7, cy + Math.sin(a) * T * 0.5, c + r);
+  }
+  if (G.magnet > 0 && G.state === 'play') {
+    const px = (pac.x + 0.5) * T - camX, py = (pac.y + 0.5) * T - camY;
+    G.flyDots.forEach((f, i) => {
+      const k = f.t / MAGNET_FLY, fx = (f.x + (pac.x - f.x) * k + 0.5) * T - camX, fy = (f.y + (pac.y - f.y) * k + 0.5) * T - camY;
+      if (i < 3) arc(px, py, fx, fy, i + 5);
+      const dl = Math.hypot(pac.x - f.x, pac.y - f.y) || 1, ux = (pac.x - f.x) / dl, uy = (pac.y - f.y) / dl;
+      fbx.globalAlpha = 0.5; // a streak behind each dot
+      for (let s = 1; s <= 3; s++) pr(Math.round(fx - ux * s * 2), Math.round(fy - uy * s * 2), 1, 1, '#ffd8d0');
+      fbx.globalAlpha = 1;
+    });
+  }
+}
+
 // ---------- Dash effects (every floor with dash) ----------
 // A kick of dust as the dash starts, glints along the floor, speed lines streaming off behind, and a
 // white ring on a near miss through an enemy. In the lab the kick-off throws up goo as well.
@@ -6742,6 +7265,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.freezer) return frzDecor(theme, dt, glow);
   if (theme.lab) return labDecor(theme, dt, glow);
   if (theme.throne) return thrDecor(theme, dt, glow);
+  if (theme.boiler) return blrDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -6962,7 +7486,7 @@ function renderWorld() {
   const dt = G.paused ? 0 : rdt, theme = curTheme();
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -6973,15 +7497,16 @@ function renderWorld() {
   if (theme.freezer) frzUpdate(dt, theme);
   if (theme.lab) labUpdate(dt, theme);
   if (theme.throne) thrUpdate(dt, theme);
+  if (theme.boiler) blrUpdate(dt, theme);
   if (G.cfg.dash) dashUpdate(dt, theme);
   drawDecor(theme, dt);
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
   worldTf();
-  if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
   idTf();
+  if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
   drawDots();
   const cast = G.state === 'cast';
   const showEnemies = enemiesShown();
@@ -7037,6 +7562,7 @@ function renderWorld() {
     if (showEnemies) for (const g of G.ghosts) if (g !== G.eatenGhost) pxGhost(g);
     if (showEnemies && theme.freezer) frzIceBlocks();
     if (theme.lab) labVat();
+    if (theme.boiler) blrFurnace();
     if (showEnemies) for (const h of G.hounds) pxHound(h);
     if (showEnemies) for (const s of G.slimes) if (s.state !== 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state !== 'house') pxWraith(w);
@@ -7059,11 +7585,12 @@ function renderWorld() {
     if (showEnemies) {
       for (const m of G.minions) pxGhost({ ...m, frightened: true, eaten: false });
       for (const s of G.buddies) pxGhost({ ...s, dir: s.state === 'saved' ? U : s.dir, panic: true, frightened: false, eaten: s.state === 'saved' });
-      worldTf(); for (const v of G.vents) drawSteam(v); idTf();
+      for (const v of G.vents) drawSteam(v);
     }
   }
   if (theme.freezer) frzFog();
   if (theme.lab) labMist(theme);
+  if (theme.boiler) blrMist(theme);
   partsStep(dt, theme);
   fbx.restore(); idTf();
   entityLights(showEnemies, pacShown);
@@ -7072,6 +7599,7 @@ function renderWorld() {
   if (theme.freezer) amb = mulc(mixc(amb, [0.8, 0.95, 1.1], frz.ice * 0.4), frzBrown());
   if (theme.lab) amb = labAmbient(amb, theme);
   if (theme.throne) amb = thrAmbient(amb);
+  if (theme.boiler) amb = blrAmbient(amb, theme);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
@@ -7079,6 +7607,7 @@ function renderWorld() {
   if (theme.freezer) frzPost(dt);
   if (theme.lab) labPost(dt);
   if (theme.throne) thrPost(dt);
+  if (theme.boiler) blrPost(dt, theme);
   if (G.cfg.dash) dashPost();
   if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); }
   if (fxOn) {
