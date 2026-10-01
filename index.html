@@ -4558,6 +4558,83 @@ function pxSlime(s) {
   fbx.drawImage(sp, Math.round((s.x + 0.5) * T - camX - sp.width / 2), Math.round((s.y + 0.5 + r * 0.75) * T - camY) - sp.base);
 }
 
+// The King Ghost: a jagged crown, tattered uneven skirts, sunken sockets with burning eyes under heavy
+// brows, and a maw of fangs that widens every phase. In the last he cracks open with light.
+const KING_GLOW = ['', '#ffe066', '#ffa030', '#fff4b0'], KING_GOLD = makeRamp('#ffc82e');
+function kingCrown(x, y, cx, bandY, w, h, gem) { // a band and five uneven points, a gem on the band
+  const dx = x - cx;
+  if (Math.abs(dx) > w / 2 || y > bandY + h * 0.35 || y < bandY - h) return null;
+  if (y >= bandY) return Math.hypot(dx, y - bandY - h * 0.17) < h * 0.17 ? gem : pickRamp(KING_GOLD, y < bandY + 1 ? 0.7 : 0.2 - dx / w);
+  const k = (dx / w + 0.5) * 5, i = Math.min(4, Math.floor(k)), u = k - i, tall = [0.75, 0.55, 1, 0.55, 0.75][i];
+  if (bandY - y > h * tall * (1 - Math.abs(2 * u - 1))) return null;
+  return pickRamp(KING_GOLD, 0.5 - (u - 0.5) * 0.9 - (bandY - y) / h * 0.2);
+}
+function kingSprite(ph, body, frame, li, mode) { // mode: '' | 'fright' | 'flash' | 'ice'; li: one of 8 directions he looks
+  return spr(`kg|${T}|${ph}|${body}|${frame}|${li}|${mode}`, () => {
+    const W = Math.round(T * 3.1), H = Math.round(T * 3.0), top = Math.round(T * 1.1), S = W + 6, SH = H + top + 3, c = S / 2, R0 = W / 2, dcy = top + R0;
+    const ramp = makeRamp(body), glow = hex(mode === 'ice' ? '#e6fbff' : KING_GLOW[ph]), crack = hex(KING_GLOW[3]);
+    const dark = hex('#14000c'), tooth = hex('#f4ecd8'), tooth2 = hex('#b8a888'), tongue = hex('#ff2a3a');
+    const lx = Math.cos(li * Math.PI / 4), ly = Math.sin(li * Math.PI / 4), face = hex(mode === 'flash' ? '#ff2a2a' : '#ffb8ae');
+    const sp = pixSprite(S, SH, (x, y) => {
+      const cr = kingCrown(x, y, c, top + 2, W * 0.62, T * 1.1, glow);
+      if (cr && y < top + 4) return cr;
+      const dx = x - c;
+      if (y < dcy) { if (Math.hypot(dx, y - dcy) > R0) return cr; }
+      else {
+        if (Math.abs(dx) > R0 + (y - dcy) * 0.06) return null;
+        const k = (dx + R0) / (2 * R0) * 7, i = Math.floor(k), u = k - i, len = (0.5 + 0.5 * hash2(i, 3 + frame)) * T * 0.9; // tatters
+        if (y > top + H - len * (1 - Math.abs(2 * u - 1)) ** 0.7 - len * 0.1 - T * 0.2 + (frame && i % 2 ? 2 : 0)) return null;
+      }
+      const ey = dcy - R0 * 0.18, eyeX = R0 * 0.42;
+      if (mode === 'fright' || mode === 'flash') { // two square eyes and a wobbly mouth, as on the ghosts
+        const sq = Math.max(2, Math.round(W * 0.12)), fy = ey - 2;
+        for (const k of [-1, 1]) { const ex = Math.round(c + k * W * 0.2 - sq / 2); if (x >= ex && x < ex + sq && y >= fy && y < fy + sq) return face; }
+        const mw = W * 0.6, mx0 = c - mw / 2, my = fy + sq + W * 0.12;
+        if (x >= mx0 && x <= mx0 + mw && Math.abs(y - (my + (1 - Math.abs(((x - mx0) / mw * 6) % 2 - 1)) * 2)) < 1) return face;
+      } else {
+        for (const s of [-1, 1]) {
+          const ex = c + s * eyeX, q = ((x - ex) / (R0 * 0.3)) ** 2 + ((y - ey) / (R0 * 0.26)) ** 2;
+          const brow = y < ey - R0 * 0.08 + s * (x - ex) * (ph >= 2 ? 0.75 : 0.5); // the brow cuts the socket into a glare
+          if (q <= 1 && !brow) {
+            const px_ = ex + lx * R0 * 0.1, py_ = ey + ly * R0 * 0.07, dd = Math.hypot(x - px_, y - py_);
+            if (dd < R0 * 0.13) return dd < R0 * 0.05 && ph < 3 ? dark : glow;
+            return dark;
+          }
+          if (q <= 1.6 && brow && y > ey - R0 * 0.4) return pickRamp(ramp, -0.4); // brow ridge
+        }
+        const mw = R0 * (ph === 3 ? 0.78 : ph === 2 ? 0.68 : 0.58), my = dcy + R0 * 0.3, mh = R0 * (ph === 3 ? 0.42 : 0.32), mdx = (x - c) / mw;
+        if (Math.abs(mdx) < 1) {
+          const yT = my - mh * 0.15 * (1 - mdx * mdx), yB = my + mh * (1 - mdx * mdx) ** 0.5;
+          if (y >= yT && y <= yB) {
+            const fang = 1 - Math.abs(2 * (((x - c + mw) / (mw * 2 / (ph === 3 ? 7 : 6))) % 1) - 1);
+            if (y < yT + mh * 0.38 * fang) return tooth;
+            if (y > yB - mh * 0.3 * fang) return tooth2;
+            if (ph === 3 && y > yB - mh * 0.55 && Math.abs(mdx) < 0.3) return tongue;
+            return dark;
+          }
+        }
+      }
+      const nx = dx / R0, ny = y < dcy ? (y - dcy) / R0 : 0;
+      let l = lightOf(nx, ny, Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny))) - Math.max(0, (y - dcy) / H) * 0.6;
+      if (nx > 0.72) l += 0.25;
+      if (ph === 3 && !mode && Math.abs(Math.sin(x * 0.9 + y * 0.35) * 6 - Math.cos(y * 0.5) * 4 - dx * 0.4) < 0.5 && hash2(x >> 2, y >> 2) > 0.5) return crack;
+      return pickRamp(ramp, l);
+    });
+    sp.dcy = dcy;
+    return sp;
+  });
+}
+function pxKing(b) {
+  const ph = bossPhase(b), ice = iceOn(), fr = G.fright > 0 && b.state !== 'recoil';
+  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0, hit = b.inv > 0 && Math.floor(b.inv * 12) % 2 === 0;
+  const cut = G.state === 'phase' && b === G.boss && Math.floor(G.t * 8) % 2 === 0; // the phase change blinks the old colour
+  const body = ice ? '#bdf4ff' : hit || (fr && flash) ? '#ffffff' : fr ? '#2121ff' : cut ? BOSS_COLORS[ph - 1] || '#ffffff' : BOSS_COLORS[ph];
+  const li = ((Math.round(Math.atan2(pac.y - b.y, pac.x - b.x) / (Math.PI / 4)) % 8) + 8) % 8;
+  const sp = kingSprite(ph, body, G.chill > 0 ? 0 : Math.floor(G.t * 8) % 2, li, ice ? 'ice' : fr ? (flash ? 'flash' : 'fright') : '');
+  const bob = G.chill > 0 ? 0 : Math.round(Math.sin(G.t * 2.6) * T * 0.12);
+  fbx.drawImage(sp, Math.round((b.x + 0.5) * T - camX - sp.width / 2), Math.round((b.y + 0.4) * T - camY) - sp.dcy + bob);
+}
+
 const DOT_RAMP = makeRamp('#ffb8ae');
 function dotSprite() {
   return spr(`dot|${T}`, () => {
@@ -5286,10 +5363,11 @@ function renderWorld() {
         for (const g of G.gargoyles) vec(drawGargoyle, g);
         for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
       }
-      if (G.boss) vec(drawBoss, G.boss);
+      if (G.boss && (G.boss.kind !== 'king' || G.boss.state === 'dead')) vec(drawBoss, G.boss);
       if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
       vecEnd();
     }
+    if (G.boss && G.boss.kind === 'king' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) pxKing(G.boss);
     if (showEnemies) {
       for (const m of G.minions) pxGhost({ ...m, frightened: true, eaten: false });
       for (const s of G.buddies) pxGhost({ ...s, dir: s.state === 'saved' ? U : s.dir, panic: true, frightened: false, eaten: s.state === 'saved' });
