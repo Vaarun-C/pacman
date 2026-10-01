@@ -447,7 +447,7 @@ const LEVELS = [
   { stage: 3, lv: 2, maze: 'D', ghosts: ['blinky', 'pinky'], wraiths: 1, slimes: 2, pellets: true, frost: true, dash: true, tier: 2, fright: 5,
     intro: ['SLIMES MULTIPLY', 'TWO SLIMES, TWO GHOSTS, A WRAITH'] },
   { stage: 3, lv: 3, maze: 'E', ghosts: ALL4, wraiths: 1, slimes: 2, pellets: true, frost: true, dash: true, tier: 2, fright: 3, chill: 4,
-    release: { pinky: 0, inky: 0, clyde: 0 }, intro: ['FINAL LEVEL', 'EVERYTHING AT ONCE'] },
+    release: { pinky: 0, inky: 0, clyde: 0 }, intro: ['ALL HANDS ON DECK', 'EVERYTHING AT ONCE'] },
   { stage: 4, lv: 1, maze: 'K', boss: 'king', ghosts: [], pellets: true, frost: true, dash: true, tier: 2, fright: 6, chill: 4,
     intro: ['KING GHOST', 'POWER UP, THEN HIT HIM. 3 PHASES x 4 HITS'] },
   // ---- Act 2: the basement ----
@@ -967,6 +967,9 @@ const SFX = {
   chant() { [196, 233, 185, 262].forEach((f, i) => beep(f, f * 0.98, 0.28, 'triangle', 0.12, i * 0.28)); beep(98, 90, 1.2, 'sawtooth', 0.05); },
   thunder() { beep(64, 30, 1.6, 'sawtooth', 0.05); beep(96, 40, 1.1, 'square', 0.02, 0.06); beep(140, 50, 0.5, 'sawtooth', 0.03, 0.02); },
   thud() { beep(160, 60, 0.15, 'square', 0.09); },
+  klaxon() { [0, 0.32, 0.64].forEach(t => { beep(660, 660, 0.14, 'square', 0.05, t); beep(440, 440, 0.14, 'square', 0.05, t + 0.16); }); },
+  thwip() { beep(900, 2400, 0.08, 'triangle', 0.08); beep(500, 200, 0.1, 'sine', 0.06, 0.04); },
+  blorp() { beep(320, 110, 0.16, 'sine', 0.14); beep(180, 90, 0.12, 'triangle', 0.08, 0.05); },
   hum() { beep(55, 52, 2.4, 'sawtooth', 0.03); beep(110, 106, 2.2, 'triangle', 0.035, 0.05); beep(190, 80, 0.12, 'square', 0.04); },
   crack() { beep(1900, 700, 0.07, 'square', 0.035); beep(1200, 300, 0.1, 'sawtooth', 0.03, 0.04); },
   chip() { beep(2600, 1800, 0.04, 'square', 0.03); beep(3200, 2400, 0.03, 'triangle', 0.025, 0.02); },
@@ -1507,6 +1510,7 @@ function slimeAtCenter(s) {
 }
 function slimeUpdate(s, dt, sp) {
   if (s.fresh > 0) s.fresh -= dt;
+  if (s.tether > 0) s.tether -= dt; // the lab's halves, still joined by a string of goo
   if (G.chill > 0) return; // frozen solid
   if (s.state === 'house') {
     s.y += s.bob * 0.5 * BASE * dt;
@@ -1517,7 +1521,7 @@ function slimeUpdate(s, dt, sp) {
     if (s.t <= 0) s.state = 'leave';
     return;
   }
-  const v = (G.fright > 0 ? sp.slimeF : s.kind === 'big' ? sp.slime : sp.slimeS) * (s.state === 'active' ? flowMul(s) : 1);
+  const v = (G.fright > 0 ? sp.slimeF : s.kind === 'big' ? sp.slime : sp.slimeS) * (s.state === 'active' ? flowMul(s) : 1) * (s.tether > 0 ? TETHER_SLOW : 1);
   const dist = v * BASE * dt;
   if (s.state === 'leave') {
     if (Math.abs(s.x - house.doorX) > 1e-6) {
@@ -1537,10 +1541,12 @@ function eatSlime(s) {
   if (s.kind === 'big') {
     const kids = (s.dir.x ? [L, R] : [U, D]).map(d => ({ kind: 'small', group: s.group, x: s.x, y: s.y, dir: d, state: 'active', decided: -1, fresh: 0.6 }));
     G.slimes.splice(i, 1, ...kids);
+    labSplit(s, kids);
     addScore(400); SFX.split();
-    popup('400', s.x, s.y, '#8dff9a');
+    popup('400', s.x, s.y - (labActive() ? 1.4 : 0), '#8dff9a'); // in the lab, up out of the way of the goo string
   } else {
     G.slimes.splice(i, 1);
+    if (labActive()) labSplat(s.x, s.y, 6, 1.2);
     addScore(300); SFX.ghost();
     popup('300', s.x, s.y, '#8dff9a');
     if (!G.slimes.some(o => o.group === s.group)) G.slimes.push(makeSlime(s.group, 10));
@@ -4490,7 +4496,10 @@ function pxSlime(s) {
   const frame = G.chill > 0 ? 0 : Math.floor(G.t * 6 + (s.group || 0)) % 2;
   const sp = slimeSprite(frame, s.dir || D, ice ? 'ice' : fr ? (flash ? 'flash' : 'fright') : '', small, !!fr);
   const r = small ? 0.55 : 0.85; // stands where the old drawing did: its base r * 0.75 below the tile centre
-  fbx.drawImage(sp, Math.round((s.x + 0.5) * T - camX - sp.width / 2), Math.round((s.y + 0.5 + r * 0.75) * T - camY) - sp.base);
+  const q = (s.squash || 0) + (s.wob || 0); // the lab's slimes squash as they turn and wobble when you're close
+  if (!q) { fbx.drawImage(sp, Math.round((s.x + 0.5) * T - camX - sp.width / 2), Math.round((s.y + 0.5 + r * 0.75) * T - camY) - sp.base); return; }
+  const w = Math.round(sp.width * (1 + q)), h = Math.round(sp.height * (1 - q)), foot = Math.round((s.y + 0.5 + r * 0.75) * T - camY) - sp.base + sp.height;
+  fbx.drawImage(sp, Math.round((s.x + 0.5) * T - camX - w / 2), foot - h, w, h);
 }
 
 // The King Ghost: a jagged crown, tattered uneven skirts, sunken sockets with burning eyes under heavy
@@ -5309,7 +5318,7 @@ function genericTheme(stage) {
     },
   };
 }
-const themeFor = (stage, lv = 1) => stage === 2 ? THEMES[`2-${lv}`] || (THEMES[`2-${lv}`] = freezerTheme(lv)) : THEMES[stage] || (THEMES[stage] = genericTheme(stage));
+const themeFor = (stage, lv = 1) => stage === 2 || stage === 3 ? THEMES[`${stage}-${lv}`] || (THEMES[`${stage}-${lv}`] = (stage === 2 ? freezerTheme : labTheme)(lv)) : THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 // ---------- The Freezer (stage 2) ----------
 // Walk-in freezer, ice rink and cold storage: steel panels under icicles, snow on the wall tops,
 // fluorescent tubes, a compressor that kicks in every so often, and the Wraith's cold, which follows
@@ -5828,6 +5837,457 @@ function frzShatter(x, y) {
   G.hitstop = 0.12;
 }
 
+// ---------- Goo Labs (stage 3) ----------
+// The King's lab, where the Slime was grown: white tiles under goo stains, hazard tape, steel benches,
+// bubbling beakers and specimen jars, a containment vat for a ghost house and an alarm that goes off
+// every so often. Slimes leave trails and splatter when they split; dashing kicks up goo; a power
+// pellet flips the lights to blacklight. 7F is the lab proper, 8F a spa, 9F a containment breach.
+TINY['^'] = '010101000000000';
+function labTheme(lv) {
+  const spa = lv === 2, breach = lv === 3;
+  const P = Object.fromEntries(Object.entries({
+    tile: '#6e747c', tile2: '#7a8088', grout: '#34383e', goo: '#3e8a3a', gooHi: '#5cb04a',
+    spaA: '#7a5a6e', spaB: '#4e6a6c', spaGrout: '#2a2630',
+    tapeY: '#a88a2a', tapeK: '#18181a',
+    wall: '#8a9098', wallHi: '#a2a8b0', wallGr: '#545a62', trim: '#c0c6ce', pink: '#c04a80', kick: '#2a2e34', lip: '#0e1014',
+    bench: '#6a727c', benchHi: '#8a929c', benchLine: '#5a626c', rim: '#a8b0ba', rimF: '#c8d0d8', rimR: '#6a727c', gold: '#c8a040',
+    towelA: '#e8c8d8', towelB: '#c8e8e0', cucumber: '#6ab04a', cucumberIn: '#c8e8a0',
+  }).map(([k, v]) => [k, hex(v)]));
+  const POTION = ['#5cff6b', '#ff6ab8', '#b06aff', '#5cd0ff'].map(hex);
+  return {
+    id: 'lab' + lv, void: '#050806', map: '#3a8a3a', runner: !spa, decor: true, lab: true, lv, spa, breach,
+    ambient: spa ? [0.72, 0.6, 0.68] : breach ? [0.5, 0.56, 0.5] : [0.6, 0.68, 0.6], vignette: 0.45,
+    grade: spa ? ['#ff9bd0', 0.12] : ['#7dff5c', breach ? 0.13 : 0.1],
+    floor(x, y, t) {
+      const PW = W * T;
+      if (t.house) { // the bottom of the vat: dark green-stained steel
+        return mulc(mixc(P.bench, P.goo, 0.55), 0.7 + vnoise(x / 5, y / 5) * 0.3);
+      }
+      if (t.e === 0 && ((x + y) >> 2) & 1 && hash2(x >> 3, y >> 3) < 0.85) return P.tapeY; // hazard tape along the corridor, peeling in places
+      const tx = (x / 9) | 0, ty = (y / 9) | 0, gx = x % 9, gy = y % 9;
+      let col;
+      if (spa) col = gx === 0 || gy === 0 ? P.spaGrout : (tx + ty) & 1 ? P.spaA : P.spaB;
+      else col = gx === 0 || gy === 0 ? P.grout : mixc(P.tile, P.tile2, hash2(tx, ty));
+      if (gx > 0 && gy > 0) col = mulc(col, 0.92 + vnoise(x / 3, y / 3) * 0.14);
+      const g = vnoise(x / 11 + 7, y / 11) - (spa ? 0.8 : breach ? 0.64 : 0.74); // goo stains seeping in
+      if (g > 0) col = mixc(col, g > 0.08 ? P.gooHi : P.goo, Math.min(0.75, g * 6));
+      if (breach) { // the split level: the right half sits a step lower
+        const step = x - (PW >> 1);
+        if (step >= 0) col = mulc(col, 0.8);
+        if (step === 0 || step === 1) col = mixc(col, [230, 230, 230], 0.5);
+        if (step === 2 || step === 3) col = mulc(col, 0.55);
+      }
+      return col;
+    },
+    face(x, y, v, F, edge) { // little white wall tiles, a steel trim, a pink safety stripe, a kick plate
+      let col;
+      if (v === 0) col = P.lip;
+      else if (v === 1 && F >= 6) col = breach && (x >> 4) & 1 ? P.gold : P.trim;
+      else if (v === F - 1) col = P.kick;
+      else if (F >= 7 && v === Math.round(F * 0.62)) col = spa ? hex('#3aa0a0') : P.pink;
+      else col = x % 4 === 0 || v % 4 === 2 ? P.wallGr : (v % 4 === 3 ? P.wallHi : P.wall);
+      if (vnoise(x / 6, y / 4 + 3) > (breach ? 0.7 : 0.8) && v > 1) col = mixc(col, P.goo, 0.5); // splashes
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // brushed steel benches with lab clutter (or spa towels and cucumber slices)
+      if (ring === 1) return side === 'front' ? (breach ? P.gold : P.rimF) : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2 || ring === 3) return P.benchLine;
+      if (ring >= 5) {
+        const cx = x >> 3, cy = y >> 3, lx = x & 7, ly = y & 7, h = hash2(cx * 3 + lv, cy * 5);
+        if (h > 0.86) {
+          if (spa) {
+            if (h > 0.93) { const d = Math.hypot(lx - 3.5, ly - 3.5); if (d < 2.6) return d < 1.6 ? P.cucumberIn : P.cucumber; }
+            else if (ly >= 2 && ly <= 5 && lx >= 1 && lx <= 6) return ly === 2 ? mulc(P.towelA, 1.1) : (lx & 1 ? P.towelA : P.towelB);
+          } else if (lx >= 2 && lx <= 4 && ly >= 1 && ly <= 6) { // a beaker
+            if (ly === 1) return lx === 3 ? P.rimF : P.bench;
+            const pc = POTION[Math.floor(hash2(cx, cy) * POTION.length)];
+            return ly >= 4 ? mulc(pc, 0.8) : [190, 205, 210];
+          }
+        }
+      }
+      return (x + (y >> 1)) % 7 === 0 ? P.benchLine : y % 2 ? P.bench : mixc(P.bench, P.benchHi, 0.5);
+    },
+    pick(big, r, roll) {
+      if (!big) return roll < 0.5 ? 'beaker' : roll < 0.75 ? 'extinguisher' : 'eyewash';
+      if (spa) return roll < 0.22 ? 'towels' : roll < 0.42 ? 'plant' : roll < 0.56 ? 'relax' : roll < 0.72 ? 'jar' : roll < 0.86 ? 'beakers' : 'monitor';
+      if (breach) return roll < 0.26 ? 'tank' : roll < 0.4 ? 'poster' : roll < 0.52 ? 'throne' : roll < 0.66 ? 'pipes' : roll < 0.78 ? 'monitor' : roll < 0.9 ? 'jar' : 'beakers';
+      return roll < 0.2 ? 'tank' : roll < 0.38 ? 'jar' : roll < 0.52 ? 'beakers' : roll < 0.66 ? 'pipes' : roll < 0.8 ? 'monitor' : 'sign';
+    },
+    bake(L, g) {
+      // One slime counter per floor, one throne-room sign; on 7F the case the dashing shoes came from.
+      let counter = false, throne = false;
+      for (const d of L.decor) {
+        if (d.kind === 'monitor' && !counter && d.y1 - d.y0 >= 9) { d.kind = 'counter'; counter = true; }
+        if (d.kind === 'throne') { if (throne) d.kind = 'poster'; throne = true; }
+        if (d.kind === 'tank' && breach) d.cracked = hash2(d.c, d.r) < 0.7;
+      }
+      if (lv === 1) {
+        let best = null, bd = Infinity;
+        for (const d of L.decor) { const dd = Math.hypot(d.c - meta.pac.x, d.r - meta.pac.y); if (d.y1 - d.y0 >= 9 && dd < bd) { bd = dd; best = d; } }
+        if (best) best.kind = 'case';
+      }
+      // Wall-top spots, widest first: the King's whiteboard on 7F.
+      const spots = [];
+      for (let r = 1; r < L.h - 2; r++) {
+        let c = 1;
+        while (c < L.w - 1) {
+          if (!(L.solidT(c, r) && L.solidT(c, r + 1))) { c++; continue; }
+          let e = c; while (e < L.w - 1 && L.solidT(e, r) && L.solidT(e, r + 1)) e++;
+          if (e - c >= 6) spots.push({ c0: c, c1: e - 1, r });
+          c = e;
+        }
+      }
+      spots.sort((a, b) => (b.c1 - b.c0) - (a.c1 - a.c0) || a.r - b.r);
+      if (lv === 1 && spots.length) {
+        const s = spots[0], x0 = s.c0 * L.T, x1 = (s.c1 + 1) * L.T, xm = ((x0 + x1) / 2) | 0;
+        let yTop = -1, yBot = -1;
+        for (let y = s.r * L.T; y < (s.r + 2) * L.T; y++) if (L.cls[y * L.PW + xm] === 1) { if (yTop < 0) yTop = y; yBot = y; }
+        const txt = 'SECRET WEAPON!!', w = tinyW(txt) + 30, h = Math.min(13, yBot - yTop - 3);
+        if (yTop >= 0 && h >= 9 && w < x1 - x0 - 6) {
+          const bx = xm - (w >> 1), by = yTop + ((yBot - yTop - h) >> 1);
+          g.fillStyle = '#5a626c'; g.fillRect(bx - 1, by - 1, w + 2, h + 2);
+          g.fillStyle = '#e8ecee'; g.fillRect(bx, by, w, h);
+          const ink = '#2a4ad0', cy = by + (h >> 1);
+          g.fillStyle = ink; // the doodle: one blob, an arrow, two blobs
+          for (const [ox, oy, r] of [[5, 0, 3], [16, -2, 2], [16, 3, 2]]) for (let a = 0; a < 16; a++) g.fillRect(Math.round(bx + ox + Math.cos(a / 16 * 6.28) * r), Math.round(cy + oy + Math.sin(a / 16 * 6.28) * r), 1, 1);
+          g.fillRect(bx + 9, cy, 3, 1); g.fillRect(bx + 11, cy - 1, 1, 3);
+          tinyText(g, txt, bx + 24, cy - 2, '#c02030');
+        }
+      }
+      // Goo puddles on the floor, and green mist pooled in the dead ends.
+      L.puddles = []; L.fog = [];
+      const open = (c, r) => r >= 0 && r < L.h && c >= 0 && c < L.w && L.reach[r * L.w + c];
+      for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
+        if (!open(c, r)) continue;
+        const u = !open(c, r - 1), d = !open(c, r + 1), l = !open(c - 1, r), rt = !open(c + 1, r), n = u + d + l + rt;
+        if ((n >= 3 || (n === 2 && !(u && d) && !(l && rt))) && hash2(c, r * 3 + 5) < 0.5) L.fog.push({ x: c + 0.5, y: r + 0.55, s: hash2(c, r) * 6.3 });
+        if (hash2(c * 7 + lv, r * 11) < (breach ? 0.07 : 0.045) && Math.hypot(c - meta.pac.x, r - meta.pac.y) > 3) L.puddles.push({ x: c + 0.5, y: r + 0.5, s: hash2(c, r + 9), size: 1, pop: 0 });
+      }
+      for (const d of L.decor) if (d.cracked) L.puddles.push({ x: d.x / L.T, y: d.y1 / L.T + 0.6, s: d.seed, size: 1.2, pop: 0 }); // under a leaking tank
+    },
+  };
+}
+
+// Per-floor state for the lab, reset whenever the level art is rebuilt.
+const lab = { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, dashing: false, miss: 0, near: new WeakMap(), house: new Set(), trailT: 0 };
+function labReset() { Object.assign(lab, { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, dashing: false, miss: 0, near: new WeakMap(), house: new Set(), trailT: 0 }); }
+const labActive = () => themeFor(G.cfg.stage, G.cfg.lv).lab;
+const gooBlob = r => spr(`goo|${r}`, () => pixSprite(r * 2 + 1, r * 2 + 1, (x, y) => {
+  const d = Math.hypot(x - r - 0.5, y - r - 0.5) / (r + 0.5);
+  return d > 1 ? null : d < 0.35 && x < r && y < r ? [190, 255, 170, 230] : d < 0.8 ? [72, 190, 70, 210] : [40, 120, 44, 200];
+}, 0));
+// A split: goo splatters the floor and walls, and the halves stay joined by a string of taffy for a moment.
+function labSplat(x, y, n, reach) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, d = Math.random() * reach;
+    lab.stains.push({ x: x + 0.5 + Math.cos(a) * d, y: y + 0.5 + Math.sin(a) * d, r: 1 + Math.floor(Math.random() * 3), t: 0 });
+  }
+  if (lab.stains.length > 90) lab.stains.splice(0, lab.stains.length - 90);
+  fxBurst(x + 0.5, y + 0.5, '#5cff6b', 18, 5, 0.6); fxBurst(x + 0.5, y + 0.5, '#c8ffb0', 8, 3, 0.4);
+  G.shake = Math.max(G.shake, 0.15);
+}
+// The string holds for exactly as long as the halves are 'fresh' (untouchable anyway), so it costs no time.
+const TETHER_SLOW = 0.6;
+function labSplit(s, kids) {
+  if (!labActive()) return;
+  labSplat(s.x, s.y, 14, 2.4);
+  if (kids && kids.length === 2) {
+    for (const k of kids) k.tether = k.fresh;
+    lab.taffy.push({ a: kids[0], b: kids[1], t: 0, life: kids[0].fresh });
+  }
+}
+function labUpdate(dt, theme) {
+  if (!dt) return;
+  // The containment alarm: a klaxon, red light sweeping the room. More often on the breached floor.
+  const A = lab.alarm;
+  if (A.t > 0) A.t = Math.max(0, A.t - dt);
+  if ((A.next -= dt) <= 0) { A.next = theme.breach ? 8 + Math.random() * 6 : 15 + Math.random() * 10; A.t = 2.2; if (G.state === 'play') SFX.klaxon(); }
+  for (const s of lab.stains) s.t += dt;
+  lab.stains = lab.stains.filter(s => s.t < 7);
+  for (const p of lab.trail) p.t += dt;
+  lab.trail = lab.trail.filter(p => p.t < 3.5);
+  for (const q of art.puddles || []) if (q.size < 1) q.size = Math.min(1, q.size + dt * 0.3);
+  // Slimes: a glistening trail, a squash as they turn, a wobble when Pac-Man is close.
+  if ((lab.trailT -= dt) <= 0) {
+    lab.trailT = 0.12;
+    for (const s of G.slimes) if (s.state === 'active') lab.trail.push({ x: s.x + 0.5, y: s.y + 0.5 + (s.kind === 'big' ? 0.4 : 0.25), big: s.kind === 'big', t: 0 });
+    if (lab.trail.length > 200) lab.trail.splice(0, lab.trail.length - 200);
+  }
+  for (const s of G.slimes) {
+    if (s._d && s._d !== s.dir && s.state === 'active') s.squash = 0.22;
+    s._d = s.dir;
+    s.squash = Math.max(0, (s.squash || 0) - dt * 1.2);
+    const near = Math.hypot(s.x - pac.x, s.y - pac.y);
+    s.wob = s.state === 'active' && near < 2.5 ? Math.sin(G.t * 16) * 0.07 * (1 - near / 2.5) : 0;
+  }
+  for (const q of lab.taffy) q.t += dt;
+  // Anyone leaving the vat slops out with a splash.
+  const inside = new Set([...G.slimes.filter(s => s.state === 'house'), ...G.ghosts.filter(g => g.mode === 'house'), ...G.wraiths.filter(w => w.state === 'house')]);
+  for (const e of inside) lab.house.add(e);
+  for (const e of [...lab.house]) if (!inside.has(e)) {
+    lab.house.delete(e);
+    fxBurst(e.x + 0.5, e.y + 0.3, '#5cff6b', 14, 4, 0.55); fxBurst(e.x + 0.5, e.y + 0.3, '#c8ffb0', 6, 3, 0.4); SFX.blorp();
+  }
+  // Dash: a kick of dust and goo, glints along the tiles, a splash through any puddle, a flash on a near miss.
+  const dashing = pac.dash > 0;
+  if (dashing && !lab.dashing) {
+    const d = pac.dir || pac.face;
+    for (let i = 0; i < 10; i++) { const t = 0.35 + Math.random() * 0.2; parts.push({ x: pac.x + 0.5 - d.x * 0.5, y: pac.y + 0.9, vx: -d.x * (1 + Math.random() * 2) + (Math.random() - 0.5), vy: -d.y * 2 - Math.random(), t, t0: t, col: i % 3 ? '#c8c8b8' : '#5cff6b', g: 3, drag: 3 }); }
+  }
+  lab.dashing = dashing;
+  if (dashing) {
+    if (Math.random() < dt * 30) parts.push({ x: pac.x + 0.5 + (Math.random() - 0.5) * 0.8, y: pac.y + 0.5 + (Math.random() - 0.5) * 0.8, vx: 0, vy: 0, t: 0.25, t0: 0.25, col: '#ffffff', g: 0 });
+    for (const q of art.puddles || []) if (q.size > 0.6 && Math.hypot(q.x - pac.x - 0.5, q.y - pac.y - 0.5) < 0.8) { q.size = 0.2; fxBurst(q.x, q.y, '#5cff6b', 16, 5, 0.5); SFX.blorp(); }
+    const foes = [...G.ghosts.filter(g => g.mode === 'active' && !g.eaten), ...G.slimes.filter(s => s.state === 'active'), ...G.wraiths.filter(w => w.state === 'active')];
+    for (const e of foes) if (Math.hypot(e.x - pac.x, e.y - pac.y) < 0.8 && !(lab.near.get(e) > G.t)) { lab.near.set(e, G.t + 0.6); lab.miss = 0.25; }
+  }
+  if (lab.miss > 0) lab.miss = Math.max(0, lab.miss - dt);
+  // The lab bubbles.
+  for (const d of art.decor) if ((d.kind === 'beaker' || d.kind === 'beakers') && Math.random() < dt * 0.6 && G.state === 'play') {
+    const t = 0.7 + Math.random() * 0.4;
+    parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.3, y: d.y0 / T + 0.2, vx: (Math.random() - 0.5) * 0.2, vy: -0.7, t, t0: t, col: '#c8ffb0', g: 0 });
+  }
+}
+// The alarm's red sweep, the blacklight, and the breached floor's flickering lights.
+function labAmbient(amb, theme) {
+  if (G.fright > 0) amb = mixc(amb, [0.42, 0.28, 0.72], Math.min(1, G.fright * 3) * 0.85); // blacklight
+  if (lab.alarm.t > 0) amb = mixc(amb, [1, 0.25, 0.22], (0.5 + 0.5 * Math.sin(G.t * 9)) * 0.45);
+  if (theme.breach && hash2(Math.floor(G.t * 10), 5) > 0.94) amb = mulc(amb, 0.6);
+  return amb;
+}
+const POTION_CSS = ['#5cff6b', '#ff6ab8', '#b06aff', '#5cd0ff'];
+function labDecor(theme, dt, glow) {
+  const L = art, uv = G.fright > 0;
+  for (const d of L.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    const pc = POTION_CSS[Math.floor(d.seed * 4)];
+    if (d.kind === 'beaker' || d.kind === 'beakers') { // flasks of bubbling potion, glowing
+      const n = d.kind === 'beaker' ? 1 : 3;
+      for (let i = 0; i < n; i++) {
+        const fx = x + (i - (n - 1) / 2) * 6, col = POTION_CSS[Math.floor(hash2(i, d.seed * 999 | 0) * 4)], fy = y1 - 1, h = Math.min(F - 1, 6);
+        if (!glow) {
+          pr(fx - 1, fy - h, 2, 2, '#c8d4d8'); pr(fx - 2, fy - h + 2, 4, h - 2, '#c8d4d8');
+          pr(fx - 1, fy - h + 3, 2, h - 4, col); pr(fx - 2, fy - 2, 4, 1, col);
+          addLightPx(fx, fy - 3, 1.8 * T, lightCol(col), uv ? 0.7 : 0.35);
+        } else if (uv || Math.floor(G.t * 3 + i + d.seed * 9) % 4 === 0) pr(fx - 1, fy - h + 3, 1, 1, '#ffffff');
+      }
+    } else if (d.kind === 'jar') { // a specimen jar with a tiny slime that watches you, and presses up against the glass
+      const jx = x - 5, jy = y0 + 1, jw = 10, jh = F - 1;
+      const dx = (pac.x + 0.5) * T - d.x, lk = Math.abs(dx) < T * 0.8 ? 0 : Math.sign(dx);
+      const close = G.state === 'play' && Math.hypot(dx, (pac.y + 0.5) * T - d.y1) < T * 2.4;
+      const rattle = G.slimes.some(s => s.state === 'active' && Math.hypot(s.x + 0.5 - d.x / T, s.y + 0.5 - d.y1 / T) < 3) ? Math.round(Math.sin(G.t * 40)) : 0;
+      if (glow) continue;
+      pr(jx + rattle, jy, jw, jh, '#1c3a24'); pr(jx + rattle, jy, jw, 1, '#8a929c');
+      pr(jx + 1 + rattle, jy + 1, jw - 2, jh - 2, '#2a6a34');
+      const bx = jx + 3 + lk * (close ? 2 : 1) + rattle, by = jy + jh - 5 - (close ? 1 : 0);
+      pr(bx, by, 5, 4, close ? '#7dff8a' : '#5cff6b'); pr(bx + 1, by - 1, 3, 1, '#5cff6b');
+      pr(bx + 1 + (lk > 0 ? 1 : 0), by + 1, 1, 1, '#0a1a0a'); pr(bx + 3 + (lk > 0 ? 1 : 0) - 1, by + 1, 1, 1, '#0a1a0a');
+      pr(jx + 1 + rattle, jy + 1, 1, jh - 3, '#a8d8b0');
+      addLightPx(x, y0 + jh / 2, 1.6 * T, [0.4, 1, 0.45], uv ? 0.6 : 0.25);
+    } else if (d.kind === 'tank') { // a glass tank of goo set into the wall, bubbles rising; on 9F most of them leak
+      const tw = 14, th = F - 1, tx = x - 7, ty = y0 + 1, lvl = d.cracked ? Math.round(th * 0.45) : 1;
+      if (!glow) {
+        pr(tx - 1, ty - 1, tw + 2, th + 2, '#5a626c');
+        pr(tx, ty, tw, th, '#0e2412'); pr(tx, ty + lvl, tw, th - lvl, '#1e6a2a'); pr(tx, ty + lvl, tw, 1, '#5cff6b');
+        if (d.cracked) { pr(tx + 4, ty + 2, 1, 2, '#e8f0e8'); pr(tx + 5, ty + 4, 1, 2, '#e8f0e8'); pr(tx + 4, ty + 6, 1, 1, '#e8f0e8'); }
+        addLightPx(x, y0 + th / 2, 2.6 * T, [0.35, 1, 0.4], uv ? 0.9 : 0.45);
+      }
+      for (let i = 0; i < 3; i++) {
+        const bh = th - lvl - 1, by = ty + th - 1 - ((G.t * (6 + i * 3) + i * 7 + d.seed * 20) % Math.max(1, bh));
+        pr(tx + 2 + i * 4, Math.round(by), 1, 1, glow ? '#c8ffb0' : '#5cff6b');
+      }
+      if (d.cracked && !glow && G.state === 'play' && Math.random() < dt * 2) parts.push({ x: d.x / T, y: d.y1 / T, vx: 0, vy: 0.3, t: 0.5, t0: 0.5, col: '#5cff6b', g: 10 });
+    } else if (d.kind === 'pipes') { // pipes and a valve wheel along the wall, dripping at a joint
+      if (glow) continue;
+      const py = y0 + 3;
+      pr(x - 9, py, 18, 2, '#6a7a72'); pr(x - 9, py, 18, 1, '#9aaaa2'); pr(x - 4, py - 1, 2, 4, '#4a5a52'); pr(x + 4, py - 1, 2, 4, '#4a5a52');
+      pr(x + 1, py + 2, 1, 2, '#4a5a52'); pr(x, py + 4, 3, 3, '#c83a3a'); pr(x + 1, py + 5, 1, 1, '#4a1a1a');
+      if (G.state === 'play' && Math.random() < dt * 0.8) parts.push({ x: (d.x - 3) / T, y: (d.y0 + 5) / T, vx: 0, vy: 0.2, t: 0.45, t0: 0.45, col: '#5cff6b', g: 10 });
+    } else if (d.kind === 'monitor' || d.kind === 'counter') { // a lab monitor: a waveform, or the slime count
+      const mw = d.kind === 'counter' ? tinyW('SLIMES:0') + 6 : 14, mx = x - (mw >> 1), my = y0 + ((F - 8) >> 1);
+      if (!glow) { pr(mx - 1, my - 1, mw + 2, 9, '#5a626c'); pr(mx, my, mw, 7, '#08140a'); addLightPx(x, my + 4, 1.4 * T, [0.4, 1, 0.45], 0.3); }
+      if (d.kind === 'counter') {
+        const n = G.slimes.filter(s => s.state !== 'eaten').length;
+        tinyText(fbx, `SLIMES:${n}`, mx + 3, my + 1, glow ? '#9dff8a' : '#2a8a2a');
+      } else for (let i = 0; i < mw - 2; i++) {
+        const v = Math.round(Math.sin(G.t * 6 + i * 0.9 + d.seed * 9) * 2 * (lab.alarm.t > 0 ? 1.5 : 1));
+        pr(mx + 1 + i, my + 3 + Math.max(-3, Math.min(3, v)), 1, 1, glow ? (lab.alarm.t > 0 ? '#ff6a6a' : '#9dff8a') : '#2a8a2a');
+      }
+    } else if (d.kind === 'sign' || d.kind === 'relax' || d.kind === 'poster' || d.kind === 'throne') {
+      if (glow) continue;
+      const kinds = { sign: [['DO NOT FEED', 'SPLITS!', 'BIOHAZARD'][Math.floor(d.seed * 3)], '#e8c020', '#18181a'], relax: ['RELAX', '#e8a8c8', '#6a2a4a'],
+        poster: ['ALL HANDS!', '#c83040', '#ffe8a0'], throne: ['THRONE ROOM ^', '#c8a040', '#2a1a08'] };
+      const [s, bg, ink] = kinds[d.kind], w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      pr(sx, sy, w, 7, bg); pr(sx, sy, w, 1, css(mixc(hex(bg), [255, 255, 255], 0.4))); tinyText(fbx, s, sx + 2, sy + 1, ink);
+    } else if (d.kind === 'case') { // 7F: the display case the dashing shoes were taken from, empty but for their outline in the dust
+      if (glow) continue;
+      const cw = 16, ch = F - 1, cx = x - 8, cy = y0 + 1;
+      pr(cx, cy, cw, ch, '#2a3a40'); pr(cx, cy, cw, 1, '#c8e0e8'); pr(cx, cy, 1, ch, '#a8c8d0'); pr(cx + cw - 1, cy, 1, ch, '#6a8a94');
+      pr(cx + 3, cy + ch - 3, 4, 1, '#5a6a70'); pr(cx + 3, cy + ch - 4, 2, 1, '#5a6a70'); pr(cx + 9, cy + ch - 3, 4, 1, '#5a6a70'); pr(cx + 9, cy + ch - 4, 2, 1, '#5a6a70');
+      pr(cx + 4, cy + ch, 8, 2, '#c8a040'); tinyText(fbx, 'LAB', cx + 3, cy + ch + 3, '#c8a040');
+    } else if (d.kind === 'extinguisher') {
+      if (glow) continue;
+      pr(x - 1, y1 - Math.min(F, 6), 3, Math.min(F, 6) - 1, '#c83030'); pr(x - 1, y1 - Math.min(F, 6), 3, 1, '#2a2a2a');
+    } else if (d.kind === 'eyewash') {
+      if (glow) continue;
+      const s = Math.min(F - 1, 5), ex = x - (s >> 1), ey = y0 + ((F - s) >> 1);
+      pr(ex, ey, s, s, '#2a9a4a'); pr(ex + (s >> 1), ey + 1, 1, s - 2, '#ffffff'); pr(ex + 1, ey + (s >> 1), s - 2, 1, '#ffffff');
+    } else if (d.kind === 'towels') {
+      if (glow) continue;
+      for (let i = 0; i < 3; i++) { const col = ['#e8c8d8', '#c8e8e0', '#f0f0e8'][i]; pr(x - 7 + i * 5, y1 - 4, 4, 3, col); pr(x - 6 + i * 5, y1 - 3, 2, 1, '#b0a0a8'); }
+      pr(x - 6, y1 - 7, 4, 3, '#c8e8e0'); pr(x - 1, y1 - 7, 4, 3, '#e8c8d8');
+    } else if (d.kind === 'plant') {
+      if (glow) continue;
+      pr(x - 3, y1 - 4, 6, 4, '#a8603a'); pr(x - 3, y1 - 4, 6, 1, '#c87a4a');
+      for (const [ox, oy] of [[-3, -7], [0, -9], [2, -6], [-1, -6], [3, -8]]) pr(x + ox, y1 + oy, 2, 3, '#3a9a4a');
+    }
+  }
+  if (glow) return;
+  // The alarm's beacons: two red lights sweeping around the room.
+  if (lab.alarm.t > 0) for (let i = 0; i < 2; i++) {
+    const a = G.t * 4 + i * Math.PI;
+    addLightPx(VIEW_W / 2 + Math.cos(a) * VIEW_W * 0.35, VIEW_H / 2 + Math.sin(a) * VIEW_H * 0.3, 7 * T, [1, 0.15, 0.1], 0.55);
+  }
+  // On the floor: goo puddles, the slimes' trails, and splatter from every split.
+  for (const q of L.puddles || []) {
+    const r = Math.max(1, Math.round(T * 0.32 * q.size)), b = gooBlob(r);
+    fbx.globalAlpha = 0.85;
+    fbx.drawImage(b, Math.round(q.x * T - camX - r * 1.6), Math.round(q.y * T - camY - r * 0.6), r * 3.2 + 1, r * 1.4 + 1);
+    const ph = (G.t * 0.5 + q.s * 7) % 3; // now and then a bubble pops
+    if (ph < 0.3) { fbx.globalAlpha = 1 - ph / 0.3; pr(Math.round(q.x * T - camX + (q.s - 0.5) * r * 2), Math.round(q.y * T - camY - ph * 6), 1, 1, '#c8ffb0'); }
+  }
+  for (const p of lab.trail) {
+    fbx.globalAlpha = Math.max(0, 0.55 * (1 - p.t / 3.5));
+    const r = p.big ? 2 : 1;
+    pr(Math.round(p.x * T - camX) - r, Math.round(p.y * T - camY) - 1, r * 2 + 1, 2, '#4ac04a');
+    if (p.t < 0.6) pr(Math.round(p.x * T - camX) - r + 1, Math.round(p.y * T - camY) - 1, 1, 1, '#c8ffb0');
+  }
+  for (const s of lab.stains) {
+    fbx.globalAlpha = s.t < 4 ? 0.9 : Math.max(0, 0.9 * (1 - (s.t - 4) / 3));
+    const b = gooBlob(s.r);
+    fbx.drawImage(b, Math.round(s.x * T - camX - s.r), Math.round(s.y * T - camY - s.r));
+  }
+  fbx.globalAlpha = 1;
+}
+// The ghost house is a containment vat: whoever's waiting in it floats in green goo behind glass.
+function labVat() {
+  const b = art.houseBox; if (!b) return;
+  const x0 = b.c0 * T - camX, y0 = b.r0 * T - camY, w = (b.c1 - b.c0 + 1) * T, h = (b.r1 - b.r0 + 1) * T, top = y0 + Math.round(h * 0.18);
+  const spa = themeFor(G.cfg.stage, G.cfg.lv).spa;
+  fbx.globalAlpha = 0.42;
+  for (let i = 0; i < w; i++) { const sy = Math.round(top + Math.sin(G.t * 2 + i * 0.25) * 1.5); pr(x0 + i, sy, 1, y0 + h - sy, spa ? '#4ac08a' : '#3aa84a'); }
+  fbx.globalAlpha = 0.9;
+  for (let i = 0; i < w; i += 2) pr(x0 + i, Math.round(top + Math.sin(G.t * 2 + i * 0.25) * 1.5), 2, 1, '#9dff8a');
+  for (let i = 0; i < (spa ? 10 : 6); i++) { // bubbles (the spa's hot tub has more)
+    const bx = x0 + 3 + ((hash2(i, 7) * (w - 6)) | 0), by = y0 + h - 2 - ((G.t * (8 + i * 2) + i * 13) % (h * 0.8));
+    pr(bx, Math.round(by), 1, 1, '#c8ffb0');
+  }
+  fbx.globalAlpha = 0.16; // the glass front catches the light
+  for (let i = 0; i < h; i++) { pr(x0 + Math.round(w * 0.2) + i * 0.4, y0 + i, 2, 1, '#ffffff'); pr(x0 + Math.round(w * 0.62) + i * 0.4, y0 + i, 1, 1, '#ffffff'); }
+  fbx.globalAlpha = 1;
+  addLightPx(x0 + w / 2, y0 + h / 2, 3 * T, [0.35, 1, 0.45], G.fright > 0 ? 0.8 : 0.4);
+  if (spa && G.state === 'play' && Math.random() < 0.25) { const t = 0.8; parts.push({ x: (x0 + camX) / T + Math.random() * w / T, y: (top + camY) / T, vx: 0, vy: -0.5, t, t0: t, col: '#e8f0f0', g: 0 }); }
+}
+// The house door is an airlock: hazard stripes and an amber light that flashes when someone comes through.
+function labDoor() {
+  const y = Math.round((house.exitY + 1.3) * T) - camY, x0 = house.doorC * T - camX, hh = Math.max(2, Math.round(T * 0.22));
+  for (let i = 0; i < 2 * T; i++) pr(x0 + i, y, 1, hh, ((i >> 2) & 1) ? '#c8a020' : '#18181a');
+  const busy = [...G.ghosts, ...G.slimes, ...G.wraiths].some(e => Math.abs(e.y - (house.exitY + 1)) < 1.6 && Math.abs(e.x - house.doorX) < 1.6);
+  const on = busy ? Math.floor(G.t * 8) % 2 === 0 : Math.floor(G.t * 1.5) % 4 === 0;
+  pr(x0 + T - 1, y - 3, 3, 2, on ? '#ffb020' : '#5a3a10');
+  if (on) addLightPx(x0 + T, y - 2, 1.8 * T, [1, 0.6, 0.15], 0.45);
+}
+// The halves of a split slime stay joined by a string of goo: thick where it leaves each half, thin and
+// sagging in the middle, shedding drips. When the halves firm up it snaps and both ends whip back in.
+function labTaffy() {
+  const at = (e, o) => { // the side of each half that faces the other
+    const dx = o.x - e.x, dy = o.y - e.y, d = Math.hypot(dx, dy) || 1, r = e.kind === 'big' ? 0.5 : 0.38;
+    return [(e.x + 0.5 + dx / d * Math.min(r, d / 2)) * T - camX, (e.y + 0.68 + dy / d * Math.min(r, d / 2)) * T - camY];
+  };
+  for (const q of lab.taffy) {
+    const live = G.slimes.includes(q.a) && G.slimes.includes(q.b);
+    if (!q.snap && (!live || q.t >= q.life)) { // snap
+      q.snap = q.t;
+      if (live) { const [ax, ay] = at(q.a, q.b), [bx, by] = at(q.b, q.a); q.mid = [(ax + bx) / 2 + camX, (ay + by) / 2 + camY]; fxBurst(q.mid[0] / T, q.mid[1] / T, '#5cff6b', 10, 3, 0.4); SFX.thwip(); }
+    }
+    if (!live) { q.done = true; continue; }
+    const [ax, ay] = at(q.a, q.b), [bx, by] = at(q.b, q.a), len = Math.hypot(bx - ax, by - ay);
+    if (!q.snap) {
+      const n = Math.max(2, Math.ceil(len)), stretch = Math.min(1, len / (T * 2)), sag = T * (0.15 + 0.35 * stretch);
+      for (let i = 0; i <= n; i++) {
+        const k = i / n, x = ax + (bx - ax) * k, y = ay + (by - ay) * k + Math.sin(k * Math.PI) * sag;
+        const thick = Math.max(2, Math.round((5 - stretch * 2) * (1 - Math.sin(k * Math.PI) * 0.55)));
+        pr(Math.round(x - thick / 2), Math.round(y - thick / 2), thick, thick, '#2e9a3a');
+        pr(Math.round(x - thick / 2), Math.round(y - thick / 2), thick, Math.max(1, thick - 1), '#6aff5a');
+        pr(Math.round(x - thick / 2), Math.round(y - thick / 2), thick, 1, '#d8ffb8');
+      }
+      if (Math.random() < 0.35) { // a drip falls off the low point
+        const x = (ax + bx) / 2, y = (ay + by) / 2 + sag;
+        parts.push({ x: (x + camX) / T, y: (y + camY) / T, vx: 0, vy: 0.4, t: 0.4, t0: 0.4, col: '#5cff6b', g: 12 });
+      }
+    } else { // both ends whip back into their halves
+      const k = (q.t - q.snap) / 0.18;
+      if (k >= 1) { q.done = true; continue; }
+      for (const [sx, sy, ex, ey] of [[ax, ay, bx, by], [bx, by, ax, ay]]) {
+        const reach = 0.45 * (1 - k), n = Math.ceil(len * reach);
+        for (let i = 0; i <= n; i++) { const f = i / Math.max(1, n) * reach; pr(Math.round(sx + (ex - sx) * f), Math.round(sy + (ey - sy) * f + Math.sin(f * Math.PI) * 3), 2, 2, '#6aff5a'); }
+      }
+    }
+  }
+  lab.taffy = lab.taffy.filter(q => !q.done);
+}
+// Green mist pooled in the dead ends (steam on the spa floor).
+const mistSprite = spa => spr(`mist|${T}|${spa}`, () => {
+  const w = Math.round(T * 2.6), h = Math.round(T * 1.2);
+  return pixSprite(w, h, (x, y) => {
+    const dx = (x - w / 2) / (w / 2), dy = (y - h / 2) / (h / 2), f = 1 - (dx * dx + dy * dy);
+    return f > bayer(x, y) * 0.9 ? (spa ? [230, 236, 236, 60] : [120, 230, 120, 52]) : null;
+  }, 0);
+});
+function labMist(theme) {
+  const fs = mistSprite(theme.spa);
+  for (const f of art.fog || []) {
+    fbx.globalAlpha = 0.5 + 0.3 * Math.sin(G.t * 0.6 + f.s);
+    blit(fs, f.x + Math.sin(G.t * 0.35 + f.s) * 0.25, f.y + 0.1);
+  }
+  fbx.globalAlpha = 1;
+}
+// After the light: spores, the blacklight's glow, speed lines and the near-miss flash.
+const spores = Array.from({ length: 48 }, (_, i) => ({ x: hash2(i, 31) * 400, y: hash2(i, 32) * 400, ph: hash2(i, 33) * 6.3, sp: 2 + hash2(i, 34) * 4 }));
+function labPost(dt) {
+  const MW = VIEW_W + 16, MH = VIEW_H + 16, uv = G.fright > 0;
+  if (enemiesShown()) labTaffy(); // after the light, so the goo glows even under the blacklight
+  for (const f of spores) {
+    f.y -= f.sp * dt; f.x += Math.sin(G.t * 0.6 + f.ph) * 3 * dt;
+    const sx = ((Math.round(f.x - camX * 0.7) % MW) + MW) % MW - 8, sy = ((Math.round(f.y - camY * 0.7) % MH) + MH) % MH - 8;
+    fbx.globalAlpha = uv ? 0.8 : Math.max(0.15, Math.min(0.7, (lightAt(sx, sy) - 0.5) * 2));
+    pr(sx, sy, 1, 1, uv ? '#d8ff6a' : '#9dff8a');
+  }
+  if (uv) { // under blacklight the goo fluoresces
+    fbx.globalCompositeOperation = 'lighter'; fbx.globalAlpha = 0.5;
+    for (const p of lab.trail) pr(Math.round(p.x * T - camX) - 1, Math.round(p.y * T - camY) - 1, 3, 2, '#5cff3a');
+    for (const s of lab.stains) { const b = gooBlob(s.r); fbx.drawImage(b, Math.round(s.x * T - camX - s.r), Math.round(s.y * T - camY - s.r)); }
+    for (const q of art.puddles || []) { const r = Math.max(1, Math.round(T * 0.32 * q.size)); fbx.drawImage(gooBlob(r), Math.round(q.x * T - camX - r * 1.6), Math.round(q.y * T - camY - r * 0.6), r * 3.2 + 1, r * 1.4 + 1); }
+    fbx.globalCompositeOperation = 'source-over';
+  }
+  if (pac.dash > 0) { // speed lines streaming off behind
+    const d = pac.dir || pac.face, cx = (pac.x + 0.5) * T - camX, cy = (pac.y + 0.5) * T - camY;
+    fbx.globalAlpha = 0.7;
+    for (let i = 0; i < 4; i++) {
+      const off = (hash2(Math.floor(G.t * 30), i) - 0.5) * T * 1.2, len = T * (0.8 + hash2(i, Math.floor(G.t * 30)) * 0.8), st = T * 0.7;
+      if (d.x) pr(Math.round(cx - d.x * (st + (d.x > 0 ? len : 0))), Math.round(cy + off), Math.round(len), 1, '#ffffff');
+      else pr(Math.round(cx + off), Math.round(cy - d.y * (st + (d.y > 0 ? len : 0))), 1, Math.round(len), '#ffffff');
+    }
+  }
+  if (lab.miss > 0) { // a near miss: a white flash ring
+    const k = 1 - lab.miss / 0.25, r = T * (0.6 + k * 1.2), cx = (pac.x + 0.5) * T - camX, cy = (pac.y + 0.5) * T - camY;
+    fbx.globalAlpha = 1 - k;
+    for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; pr(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1, '#ffffff'); }
+  }
+  fbx.globalAlpha = 1;
+}
+
 // ---------- Light ----------
 // Light is summed per 2x2-pixel cell from the theme's ambient plus every source near the view, then
 // quantised with an ordered dither (so it falls off in pixel-art bands) and multiplied over the frame;
@@ -5917,6 +6377,7 @@ function drawFlame(x, y, seed, big) { // x: left column of a 2px wick; y: wick t
 // Drawn twice: once before the light map, and again after it (glow) for the parts that give off light.
 function drawDecor(theme, dt, glow) {
   if (theme.freezer) return frzDecor(theme, dt, glow);
+  if (theme.lab) return labDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -6137,7 +6598,7 @@ function renderWorld() {
   const dt = G.paused ? 0 : rdt, theme = themeFor(G.cfg.stage, G.cfg.lv);
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -6146,10 +6607,11 @@ function renderWorld() {
   if (G.state === 'clear' && G.timer > 1 && Math.floor((G.timer - 1) / 0.22) % 2 === 0) { fbx.globalAlpha = 0.85; fbx.drawImage(art.mask, -camX, -camY); fbx.globalAlpha = 1; }
   atmoUpdate(dt, theme);
   if (theme.freezer) frzUpdate(dt, theme);
+  if (theme.lab) labUpdate(dt, theme);
   drawDecor(theme, dt);
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
   worldTf();
   if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
@@ -6208,6 +6670,7 @@ function renderWorld() {
     if (showEnemies) for (const w of G.wraiths) if (w.state === 'house') pxWraith(w);
     if (showEnemies) for (const g of G.ghosts) if (g !== G.eatenGhost) pxGhost(g);
     if (showEnemies && theme.freezer) frzIceBlocks();
+    if (theme.lab) labVat();
     if (showEnemies) for (const h of G.hounds) pxHound(h);
     if (showEnemies) for (const s of G.slimes) if (s.state !== 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state !== 'house') pxWraith(w);
@@ -6234,21 +6697,25 @@ function renderWorld() {
     }
   }
   if (theme.freezer) frzFog();
+  if (theme.lab) labMist(theme);
   partsStep(dt, theme);
   fbx.restore(); idTf();
   entityLights(showEnemies, pacShown);
   const fl = flashLevel();
   let amb = fl > 0 ? mixc(theme.ambient, [1.25, 1.3, 1.55], fl) : theme.ambient;
   if (theme.freezer) amb = mulc(mixc(amb, [0.8, 0.95, 1.1], frz.ice * 0.4), frzBrown());
+  if (theme.lab) amb = labAmbient(amb, theme);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
   if (theme.dust) drawMotes(dt);
   if (theme.freezer) frzPost(dt);
+  if (theme.lab) labPost(dt);
   if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); }
   if (fxOn) {
     bloom();
     if (theme.grade) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = theme.grade[1]; pr(0, 0, VIEW_W, VIEW_H, theme.grade[0]); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
+    if (theme.lab && G.fright > 0) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = 0.2; pr(0, 0, VIEW_W, VIEW_H, '#8a4aff'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
     if (theme.freezer && frz.ice > 0.02) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = frz.ice * 0.28; pr(0, 0, VIEW_W, VIEW_H, '#9ff0ff'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
   }
   if (!cast) drawMinimap();
