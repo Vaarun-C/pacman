@@ -3798,27 +3798,24 @@ function drawTitle() {
   ctx.fillRect(1, TOP + 2.2, 26, 24.4);
   const blink = Math.floor(G.t * 2) % 2 === 0;
   text('CHARACTER / NICKNAME', 14, TOP + 3, '#ffffff', 'center', 0.62);
-  const at = row => ({ x: 3.5, y: row, dir: R });
-  const cast = [
-    ...ghosts.map((g, i) => [['-SHADOW', '-SPEEDY', '-BASHFUL', '-POKEY'][i], `"${g.name.toUpperCase()}"`, g.color, row => drawGhost({ ...at(row), color: g.color, frightened: false, eaten: false })]),
-    ['-DRIFTER', '"WRAITH"', '#c9b8ff', row => drawWraith({ ...at(row), state: 'active' })],
-    ['-OOZER', '"SLIME"', '#5cff6b', row => drawSlime({ ...at(row), kind: 'big', state: 'active', group: 0 })],
+    const cast = [
+    ...ghosts.map((g, i) => [['-SHADOW', '-SPEEDY', '-BASHFUL', '-POKEY'][i], `"${g.name.toUpperCase()}"`, g.color, 'BLINKY PINKY INKY CLYDE'.split(' ')[i]]),
+    ['-DRIFTER', '"WRAITH"', '#c9b8ff', 'WRAITH'],
+    ['-OOZER', '"SLIME"', '#5cff6b', 'SLIME'],
   ];
   const met = key => save.unlocked > LEVELS.findIndex(l => l[key]); // the rest join the cast once you've met them
-  if (met('hounds')) cast.push(['-SNIFFER', '"HOUND"', '#e8a25c', row => drawHound({ ...at(row), state: 'hunt', sniff: 0 })]);
-  if (met('gargoyles')) cast.push(['-STATUE', '"GARGOYLE"', '#c3c7dc', row => drawGargoyle({ ...at(row), dir: D, state: 'active', moving: true })]);
-  if (met('spiders')) cast.push(['-WEAVER', '"SPIDER"', '#c9a0ff', row => drawSpider({ ...at(row), state: 'active', fresh: 0 })]);
+  if (met('hounds')) cast.push(['-SNIFFER', '"HOUND"', '#e8a25c', 'HOUND']);
+  if (met('gargoyles')) cast.push(['-STATUE', '"GARGOYLE"', '#c3c7dc', 'GARGOYLE']);
+  if (met('spiders')) cast.push(['-WEAVER', '"SPIDER"', '#c9a0ff', 'SPIDER']);
   const gap = cast.length > 7 ? 1.45 : 1.8, dy = 4.9 + (cast.length - 1) * gap - 13.9;
-  cast.forEach(([a, b, color, draw], i) => {
+  cast.forEach(([a, b, color, who], i) => {
     const row = 4.9 + i * gap;
-    screenSpace(); ctx.translate(0, TOP);
-    draw(row);
+    drawCharacter(who, who === 'GARGOYLE' ? 'angry' : null, 4, TOP + row + 0.5, 1, R);
     text(a, 6, TOP + row, color, 'left', 0.6);
     text(b, 25, TOP + row, color, 'right', 0.6);
   });
+  withT(UNIT, () => { drawImgPx(dotSprite(), 5.5, TOP + dy + 16.4); drawImgPx(pelletSprite(), 5.5, TOP + dy + 17.8); });
   screenSpace(); ctx.translate(0, TOP + dy);
-  ctx.fillStyle = '#ffb8ae'; ctx.fillRect(5.4, 16.3, 0.25, 0.25);
-  ctx.beginPath(); ctx.arc(5.5, 17.8, 0.4, 0, Math.PI * 2); ctx.fill();
   drawFrostBerry(5.5, 19.2, 1);
   text('DOT          10', 7, TOP + dy + 15.9, '#ffffff', 'left', 0.52);
   text('POWER PELLET 50', 7, TOP + dy + 17.3, '#ffffff', 'left', 0.52);
@@ -3850,49 +3847,10 @@ function drawBanner() {
 // ---------- Story screens ----------
 // Draws with G.fright forced on, so sprites show their blue frightened face.
 function withFright(on, fn) { const f = G.fright; if (on) G.fright = 5; fn(); G.fright = f; }
-const STARS = (() => {
-  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  return Array.from({ length: 46 }, () => ({ x: rnd() * 28, y: 2.5 + rnd() * 27, z: rnd() < 0.2 ? 0.2 : 0.12, p: Math.floor(rnd() * 5), c: rnd() < 0.3 ? '#8f9bff' : '#ffffff' }));
-})();
-function drawSky(moon = true) {
-  screenSpace();
-  for (const s of STARS) {
-    if ((Math.floor(G.t * 2) + s.p) % 7 === 0) continue;
-    ctx.fillStyle = s.c; ctx.fillRect(s.x, s.y, s.z, s.z);
-  }
-  if (!moon) return;
-  ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(3.6, 5.6, 1.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#000000'; ctx.beginPath(); ctx.arc(4.3, 5.1, 1.3, 0, Math.PI * 2); ctx.fill();
-}
 function roundRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-}
-// Draws one character sprite centered on (cx, cy) in screen tiles, at scale k.
-function drawCharacter(who, mood, cx, cy, k, face = R, open = 0.4) {
-  const sp = SPEAKERS[who];
-  screenSpace();
-  ctx.save();
-  ctx.translate(cx, cy);
-  if (who === 'KING' || who === 'SKULL') { ctx.scale(k * 0.5, k * 0.5); ctx.translate(0, 0.45); }
-  else if (who === 'BLOB') { ctx.scale(k * 0.42, k * 0.42); ctx.translate(0, 0.3); }
-  else if (who === 'GARGOYLE') { ctx.scale(k * 0.9, k * 0.9); ctx.translate(0, 0.2); }
-  else ctx.scale(k, k);
-  const at = { x: -0.5, y: -0.5 };
-  withFright(mood === 'scared', () => {
-    if (who === 'PAC') drawPac(at.x, at.y, face, open);
-    else if (sp.ghost !== undefined) drawGhost({ ...at, dir: face, color: sp.color, frightened: mood === 'scared', eaten: false });
-    else if (who === 'WRAITH') drawWraith({ ...at, state: 'active', dir: face });
-    else if (who === 'SLIME') drawSlime({ kind: 'big', ...at, dir: face, state: 'active', group: 0 });
-    else if (who === 'KING') drawBoss({ ...at, kind: 'king', state: 'chase', hp: mood === 'angry' ? 1 : BOSSES.king.hp, inv: 0 });
-    else if (who === 'BLOB') drawBlob({ ...at, kind: 'blob', state: 'chase', hp: BOSSES.blob.hp, look: mood === 'angry' ? 3 : 1, inv: 0, flash: 0, eaten: [] });
-    else if (who === 'HOUND') drawHound({ ...at, dir: face, state: 'hunt', sniff: mood === 'sniff' ? 1 : 0 });
-    else if (who === 'GARGOYLE') drawGargoyle({ ...at, dir: D, state: 'active', moving: mood === 'angry' });
-    else if (who === 'SPIDER') drawSpider({ ...at, dir: face, state: 'active', fresh: 0 });
-    else if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: mood === 'scared' ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
-  });
-  ctx.restore();
 }
 function wrapText(s, maxW, size) {
   ctx.save();
@@ -3959,7 +3917,17 @@ function drawParade(row, speed = 7) {
 }
 
 function drawMenu() {
-  drawSky();
+  scrBegin();
+  sg.drawImage(moonSprite(), 19, 39);
+  const flash = (G.t % 11) < 0.12 || ((G.t % 11) > 0.2 && (G.t % 11) < 0.27);
+  if (flash) { sg.globalAlpha = 0.25; sg.fillStyle = '#b8c8ff'; sg.fillRect(0, 0, VIEW_W, TOTAL_ROWS * UNIT); sg.globalAlpha = 1; }
+  sg.drawImage(skyline(), 0, TOTAL_ROWS * UNIT - 120);
+  withT(6, () => ['#ff2a2a', '#ffb8ff', '#00f0ff', '#ffb852'].forEach((c, k) => { // ghosts circling the Spookscraper's roof
+    const a = G.t * 0.9 + k * Math.PI / 2, gx = 140 + Math.cos(a) * 34, gy = TOTAL_ROWS * UNIT - 126 + Math.sin(a) * 9;
+    if (Math.sin(a) < 0) sg.globalAlpha = 0.55;
+    sg.drawImage(ghostBody(c, Math.floor(G.t * 6) % 2, ''), Math.round(gx - 5), Math.round(gy - 5)); sg.globalAlpha = 1;
+  }));
+  scrBlit();
   text(`HIGH SCORE ${hi || '00'}`, 14, 0.4, '#ffffff', 'center', 0.5);
   text('PAC-MAN', 14.25, 4.7, '#2a3cff', 'center', 2.3);
   text('PAC-MAN', 14, 4.5, '#ffe600', 'center', 2.3);
@@ -3978,137 +3946,178 @@ function drawMenu() {
     text(save.won ? 'THE LANDLORD IS BEATEN! ROOF OPEN' : `REACHED ${floorLabel(save.unlocked)}: ${FLOOR_NAMES[save.unlocked]}`, 14, pr, save.won ? '#ffd86b' : '#6b6f93', 'center', 0.42);
   }
   if (G.menu.confirm && blink) text('THIS ERASES YOUR SAVE. PRESS AGAIN', 14, pr + 1.4, '#ff2a2a', 'center', 0.42);
-  text('A GOOFY GHOST STORY IN 31 FLOORS', 14, 31, '#6b6f93', 'center', 0.4);
+  screenSpace(); ctx.fillStyle = 'rgba(4,3,12,0.6)'; ctx.fillRect(0, 30.4, SCREEN_COLS, 4.2); // keeps the footer readable over the skyline
+  text('A GOOFY GHOST STORY IN 31 FLOORS', 14, 31, '#8f88aa', 'center', 0.4);
   const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   text(coarse ? 'TAP TO CHOOSE' : 'UP/DOWN + ENTER', 14, 33, '#b9bddc', 'center', 0.45);
 }
 
-function drawIconStar(cx, cy, r, color) {
-  ctx.fillStyle = color; ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
-    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
-  }
-  ctx.fill();
+// Tower art, cached per kind of storey: brick for floors above ground, stone blocks below it.
+function facadeSprite(st, locked, under) {
+  return spr(`fac|${st}|${locked}|${under}`, () => {
+    const w = TOWER_W * UNIT, h = Math.round(FLOOR_H * UNIT), wc = locked ? [42, 45, 85] : hex(WALL_COLORS[st]);
+    const brick = mixc([16, 14, 28], wc, 0.24), mortar = mulc(brick, 0.5);
+    return pixSprite(w, h, (fx, fy) => {
+      const x = fx | 0, y = fy | 0;
+      if (y <= 1) return y === 0 ? mixc(wc, [255, 255, 255], locked ? 0 : 0.15) : mulc(wc, 0.55); // cornice
+      if (y >= h - 2) return mulc(wc, y === h - 1 ? 0.25 : 0.5);
+      if (x <= 1 || x >= w - 2) return mulc(wc, x === 0 || x === w - 1 ? 0.35 : 0.7); // corner pillars
+      const bw = under ? 12 : 6, bh = under ? 6 : 3, row = ((y - 2) / bh) | 0, xs = x + (row % 2) * (bw >> 1);
+      if ((y - 2) % bh === bh - 1 || xs % bw === 0) return mortar;
+      return mulc(brick, 0.85 + hash2((xs / bw) | 0, row + st * 9) * 0.3 + (under ? 0 : -0.05));
+    }, 0);
+  });
 }
-function drawIconLock(cx, cy, color) {
-  ctx.strokeStyle = color; ctx.lineWidth = 0.12;
-  ctx.beginPath(); ctx.arc(cx, cy - 0.12, 0.24, Math.PI, 0); ctx.stroke();
-  ctx.fillStyle = color; ctx.fillRect(cx - 0.34, cy - 0.12, 0.68, 0.5);
+const dirtTile = () => spr('dirt', () => pixSprite(VIEW_W, 64, (x, y) => {
+  const n = vnoise(x / 5, y / 5), peb = hash2((x / 3) | 0, (y / 3) | 0) > 0.94;
+  if (peb) return hash2(x | 0, y | 0) > 0.5 ? [58, 38, 24] : [42, 26, 16];
+  return mixc([13, 8, 5], [24, 15, 9], n > 0.6 ? 1 : n > 0.45 && bayer(x, y) > 0.5 ? 1 : 0);
+}, 0));
+const roofSprite = won => spr(`roof|${won}`, () => {
+  const w = Math.round((TOWER_W + 1.6) * UNIT), h = 43, trim = hex(won ? '#ffd86b' : '#3a3d75');
+  return pixSprite(w, h, (fx, fy) => {
+    const x = fx | 0, y = fy | 0, hw = (y + 1) / h * (w / 2);
+    if (Math.abs(x + 0.5 - w / 2) > hw) return null;
+    if (Math.abs(x + 0.5 - w / 2) > hw - 2 || y >= h - 2) return mulc(trim, y >= h - 1 ? 0.6 : 1);
+    const row = (y / 4) | 0;
+    if (y % 4 === 3 || (x + (row % 2) * 3) % 6 === 0) return won ? [92, 70, 30] : [16, 14, 34];
+    return mulc(won ? [140, 108, 40] : [30, 26, 58], 0.85 + hash2((x / 6) | 0, row) * 0.3);
+  }, 0);
+});
+const STAR_ICON = ['....#....', '...###...', '#########', '.#######.', '..#####..', '.###.###.', '.##...##.'];
+const LOCK_ICON = ['.###.', '#...#', '#...#', '#####', '##.##', '#####'];
+const iconSprite = (rows, col) => spr(`ic|${rows[0]}|${col}`, () => pixSprite(rows[0].length, rows.length, (x, y) => rows[y | 0][x | 0] === '#' ? hex(col) : null, 0.3));
+const cloudSprite = () => spr('cloud', () => pixSprite(40, 16, (x, y) => {
+  const inside = [[10, 10, 8], [20, 7, 9], [30, 10, 7]].some(([cx, cy, r]) => Math.hypot(x - cx, (y - cy) * 1.3) < r) && y < 15;
+  return inside ? (y < 7 ? [30, 34, 80] : [20, 23, 56]) : null;
+}, 0));
+function pxLine(g, x0, y0, x1, y1, col) { // a 1px line, one pixel per step
+  const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); g.fillStyle = col;
+  for (let i = 0; i <= n; i++) g.fillRect(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), 1, 1);
 }
-const PEBBLES = (() => {
-  let s = 11; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  return Array.from({ length: 90 }, () => ({ x: rnd() * 28, y: 0.6 + rnd() * 26, w: 0.2 + rnd() * 0.35 }));
-})();
 function drawTower() {
-  drawSky();
-  const T = G.tower, top = topFloor(), blink = Math.floor(G.t * 3) % 2 === 0, cam = towerCam(T.py), open = basementOpen();
-  const Y = y => y - cam;
+  const TW = G.tower, top = topFloor(), blink = Math.floor(G.t * 3) % 2 === 0, cam = towerCam(TW.py), open = basementOpen();
+  const Y = y => y - cam, P = v => Math.round(v * UNIT), g = sg;
+  const shown = i => !((underground(i) && !open) || (skyFloor(i) && !skyOpen()));
+  scrBegin();
+  g.drawImage(moonSprite(), 19, 39);
+  g.save();
+  g.beginPath(); g.rect(0, P(VIEW_TOP), VIEW_W, P(VIEW_BOT - VIEW_TOP)); g.clip();
+  // Earth under the ground line; once the King falls through, a shaft of basement floors is dug out of it.
+  const gy = P(Y(GROUND));
+  for (let y0 = gy; y0 < TOTAL_ROWS * UNIT; y0 += 64) g.drawImage(dirtTile(), 0, y0);
+  if (open) {
+    const bot = P(Y(floorTop(BLOB_FLOOR) + FLOOR_H)), x0 = P(TOWER_X - 0.3), w = P(TOWER_W + 0.6);
+    g.fillStyle = '#000000'; g.fillRect(x0, gy, w, bot - gy + 3);
+    g.fillStyle = '#3a2418'; g.fillRect(x0 - 2, gy, 2, bot - gy + 3); g.fillRect(x0 + w, gy, 2, bot - gy + 3); // timber
+    g.fillStyle = '#2a1a10'; for (let y = gy + 11; y < bot; y += 23) { g.fillRect(x0 - 3, y, 4, 2); g.fillRect(x0 + w - 1, y, 4, 2); }
+    const pxp = P(TOWER_X - 1.5); // a pipe down the shaft, dripping into the sewer at the bottom
+    g.fillStyle = '#3a7a1e'; g.fillRect(pxp, gy + 10, 4, bot - gy - 10); g.fillStyle = '#7ad84a'; g.fillRect(pxp + 1, gy + 10, 1, bot - gy - 10);
+    g.fillStyle = '#58b82e'; for (let y = gy + 18; y < bot; y += 22) g.fillRect(pxp - 1, y, 6, 2);
+    g.fillStyle = '#9be86f'; g.fillRect(pxp + 1, gy + 10 + ((G.t * 6) % 12) * (bot - gy - 10) / 12, 2, 3);
+    g.fillStyle = '#1f6f8b'; g.fillRect(x0 - 2, bot + 3, w + 4, 5);
+    g.fillStyle = '#4fb0d0'; for (let k = 0; k < 6; k++) g.fillRect(x0 + ((k * 23 + G.t * 9) % w | 0), bot + 4, 4, 1);
+  }
+  g.fillStyle = '#2a2d55'; g.fillRect(0, gy, VIEW_W, 3); g.fillStyle = '#3a3f7a'; g.fillRect(0, gy, VIEW_W, 1); // the pavement
+  if (skyOpen()) { // clouds drift past the sky floors
+    g.globalAlpha = 0.8;
+    for (let k = 0; k < 6; k++) g.drawImage(cloudSprite(), Math.round(((k * 97 + G.t * (4 + k * 0.7)) % 360) - 40), P(Y(floorTop(SKY + k * 2)) + 0.4));
+    g.globalAlpha = 1;
+  }
+  // Roof: dark until the Skeleton King is beaten, gold after. It sits on the top floor built so far.
+  const ry = P(Y(floorTop(topStory()))), rs = roofSprite(save.won), peak = ry - rs.height;
+  g.drawImage(rs, 140 - rs.width / 2, peak);
+  pxLine(g, 140, peak, 140, peak - 13, '#8f88aa');
+  g.fillStyle = save.won ? '#ffe600' : '#9b3dff';
+  for (let k = 0; k < 6; k++) g.fillRect(141, peak - 13 + Math.floor(k / 2) + (k % 2) * 0, 14 - k * 2 - (Math.floor(G.t * 4) % 2 && k > 2 ? 2 : 0), 1); // waving flag
+  if (!save.won) g.drawImage(iconSprite(LOCK_ICON, '#2a2d55'), 137, ry - 12);
+  // Floors: windows glow once a floor is cleared; locked ones are boarded up, the basement's barred.
+  for (let i = 0; i < ROOF; i++) {
+    if (!shown(i)) continue;
+    const y = P(Y(floorTop(i))), st = floorStage(i), locked = i > top, cleared = isCleared(i), under = underground(i);
+    if (y > TOTAL_ROWS * UNIT || y + P(FLOOR_H) < 0) continue;
+    g.drawImage(facadeSprite(st, locked, under), P(TOWER_X), y);
+    for (let k = 0; k < 4; k++) {
+      const wx = P(15 + k * 1.15), wy = y + 6, ww = 8, wh = 11;
+      g.fillStyle = locked ? '#0e1028' : under ? '#05050a' : cleared ? '#ffd23f' : '#141838';
+      g.fillRect(wx, wy + 1, ww, wh - 1); g.fillRect(wx + 1, wy, ww - 2, 1);
+      if (locked) { g.fillStyle = '#4a3424'; g.fillRect(wx - 1, wy + 3, ww + 2, 2); g.fillRect(wx - 1, wy + 7, ww + 2, 2); }
+      else if (under) { g.fillStyle = '#3a3a48'; for (let b = 1; b < ww; b += 2) g.fillRect(wx + b, wy, 1, wh); g.fillRect(wx, wy + 5, ww, 1); }
+      else if (cleared) {
+        const fl = hash2(i * 4 + k, Math.floor(G.t * 3)) > 0.93;
+        g.fillStyle = fl ? '#ffb020' : '#fff0a0'; g.fillRect(wx + 1, wy + 1, ww - 2, 2);
+        g.fillStyle = '#c8901e'; g.fillRect(wx + 3, wy + 1, 1, wh - 1); g.fillRect(wx, wy + 6, ww, 1);
+        g.globalAlpha = 0.25; g.fillStyle = '#ffd23f'; g.fillRect(wx - 1, wy - 1, ww + 2, wh + 2); g.globalAlpha = 1;
+      } else {
+        g.fillStyle = '#2a3070'; g.fillRect(wx + 1, wy + 1, 2, 1);
+        if (i === top && k === i % 4 && Math.floor(G.t * 1.5) % 3) { g.fillStyle = '#ffffff'; g.fillRect(wx + 2, wy + 5, 1, 2); g.fillRect(wx + 5, wy + 5, 1, 2); } // someone's home
+      }
+    }
+    const ix = P(TOWER_X + TOWER_W + 0.9), mid = y + P(FLOOR_H / 2);
+    if (i !== TW.fresh) {
+      if (cleared) g.drawImage(iconSprite(STAR_ICON, '#ffd23f'), ix - 4, mid - 4);
+      else if (locked) g.drawImage(iconSprite(LOCK_ICON, '#2a2d55'), ix - 2, mid - 3);
+    }
+  }
+  for (let st = 1; st <= 12; st++) { // stage brackets
+    const idx = LEVELS.map((l, i) => l.stage === st ? i : -1).filter(i => i >= 0);
+    if (!shown(idx[0])) continue;
+    const tops = idx.map(floorTop), y0 = P(Y(Math.min(...tops)) + 0.3), y1 = P(Y(Math.max(...tops)) + FLOOR_H - 0.3);
+    g.fillStyle = idx[0] <= top ? WALL_COLORS[st] : '#2a2d55';
+    g.fillRect(232, y0, 1, y1 - y0); g.fillRect(232, y0, 3, 1); g.fillRect(232, y1 - 1, 3, 1);
+  }
+  // Selection frame and Pac-Man
+  const sel = TW.sel, still = Math.abs(TW.py - floorMid(sel)) < 1e-6;
+  if (still && blink) {
+    if (sel === ROOF) {
+      const l = P(TOWER_X - 1.2), r = P(TOWER_X + TOWER_W + 1.2);
+      pxLine(g, l, ry + 2, 140, peak - 5, '#ffe600'); pxLine(g, 140, peak - 5, r, ry + 2, '#ffe600'); pxLine(g, l, ry + 2, r, ry + 2, '#ffe600');
+    } else {
+      const x0 = P(TOWER_X - 0.2), y0 = P(Y(floorTop(sel)) - 0.12), w = P(TOWER_W + 0.4), h = P(FLOOR_H + 0.24);
+      g.fillStyle = '#ffe600'; g.fillRect(x0 + 1, y0, w - 2, 1); g.fillRect(x0 + 1, y0 + h - 1, w - 2, 1); g.fillRect(x0, y0 + 1, 1, h - 2); g.fillRect(x0 + w - 1, y0 + 1, 1, h - 2);
+    }
+  }
+  const roofY = floorMid(ROOF), mTop = floorMid(topStory());
+  const pacX = TW.py >= mTop ? 12.3 : 12.3 + (mTop - TW.py) / (mTop - roofY) * 1.7;
+  const pimg = charImg('PAC', null, still ? R : (floorMid(sel) < TW.py ? U : D), still ? 0.4 : (1 - Math.cos(G.t * 18)) / 2, 8);
+  g.drawImage(pimg, Math.round(P(pacX) - pimg.width / 2), Math.round(P(Y(TW.py)) - pimg.height / 2));
+  g.restore();
+  scrBlit();
+  // Labels go on top at full resolution.
   screenSpace();
   ctx.save();
   ctx.beginPath(); ctx.rect(0, VIEW_TOP, SCREEN_COLS, VIEW_BOT - VIEW_TOP); ctx.clip();
-  // Earth under the ground line. Once the King falls through, a shaft of basement floors is dug out below.
-  const gy = Y(GROUND);
-  ctx.fillStyle = '#0d0805'; ctx.fillRect(0, gy, SCREEN_COLS, 60);
-  ctx.fillStyle = '#2a1a10';
-  for (const p of PEBBLES) ctx.fillRect(p.x, gy + p.y, p.w, p.w * 0.6);
-  if (open) {
-    const bot = Y(floorTop(BLOB_FLOOR) + FLOOR_H);
-    ctx.fillStyle = '#000000'; ctx.fillRect(TOWER_X - 0.3, gy, TOWER_W + 0.6, bot - gy + 0.3);
-    ctx.fillStyle = '#3a2418'; ctx.fillRect(TOWER_X - 0.5, gy, 0.2, bot - gy + 0.3); ctx.fillRect(TOWER_X + TOWER_W + 0.3, gy, 0.2, bot - gy + 0.3);
-    // Pipes run down the shaft; the sewer pools at the bottom.
-    ctx.fillStyle = '#58b82e'; ctx.fillRect(TOWER_X - 1.5, gy + 1, 0.35, bot - gy - 1);
-    ctx.fillStyle = '#1f6f8b'; ctx.fillRect(TOWER_X - 0.5, bot + 0.3, TOWER_W + 1, 0.5);
-    const drip = (G.t * 6) % 12;
-    ctx.fillStyle = '#9be86f'; ctx.fillRect(TOWER_X - 1.4, gy + 1 + drip * (bot - gy - 1) / 12, 0.15, 0.3);
-  }
-  ctx.fillStyle = '#1a1d44'; ctx.fillRect(0, gy + 0.05, SCREEN_COLS, 0.18);
-  if (skyOpen()) { // clouds drift past the sky floors
-    ctx.fillStyle = '#141738';
-    for (let k = 0; k < 6; k++) {
-      const x = (k * 9.7 + G.t * (0.4 + k * 0.07)) % 36 - 4, y = Y(floorTop(SKY + k * 2)) + 1.1;
-      for (const [dx, dy, r] of [[0, 0, 0.9], [1, -0.4, 1.1], [2.1, 0, 0.8]]) { ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2); ctx.fill(); }
-    }
-  }
-  // Roof: dark until the Skeleton King is beaten, gold after. It sits on the top floor built so far.
-  const ry = Y(floorTop(topStory())), peak = ry - 4.3, roofCol = save.won ? '#ffd86b' : '#2a2d55';
-  ctx.fillStyle = '#000000'; ctx.strokeStyle = roofCol; ctx.lineWidth = 0.12; ctx.lineJoin = 'round';
-  ctx.beginPath(); ctx.moveTo(TOWER_X - 0.8, ry); ctx.lineTo(14, peak); ctx.lineTo(TOWER_X + TOWER_W + 0.8, ry); ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(14, peak); ctx.lineTo(14, peak - 1.3); ctx.stroke();
-  ctx.fillStyle = save.won ? '#ffe600' : '#9b3dff';
-  const wave = Math.floor(G.t * 4) % 2 ? 0.12 : 0;
-  ctx.beginPath(); ctx.moveTo(14, peak - 1.3); ctx.lineTo(15.4, peak - 1 + wave); ctx.lineTo(14, peak - 0.6); ctx.fill();
-  if (save.won) text('ENDLESS', 14, ry - 1.1, '#ffd86b', 'center', 0.38);
-  else { screenSpace(); drawIconLock(14, ry - 0.9, '#2a2d55'); }
-  // Floors
+  if (save.won) text('ENDLESS', 14, Y(floorTop(topStory())) - 1.1, '#ffd86b', 'center', 0.38);
   for (let i = 0; i < ROOF; i++) {
-    const under = underground(i);
-    if ((under && !open) || (skyFloor(i) && !skyOpen())) continue;
-    const y = Y(floorTop(i)), st = floorStage(i), locked = i > top, cleared = isCleared(i), mid = y + FLOOR_H / 2;
+    if (!shown(i)) continue;
+    const y = Y(floorTop(i)), st = floorStage(i), locked = i > top, mid = y + FLOOR_H / 2, under = underground(i);
     if (y > VIEW_BOT || y + FLOOR_H < VIEW_TOP) continue;
-    const col = locked ? '#2a2d55' : WALL_COLORS[st];
-    screenSpace();
-    ctx.fillStyle = '#000000'; ctx.fillRect(TOWER_X, y, TOWER_W, FLOOR_H);
-    ctx.strokeStyle = col; ctx.lineWidth = 0.12;
-    roundRect(TOWER_X + 0.1, y + 0.14, TOWER_W - 0.2, FLOOR_H - 0.28, under ? 0.15 : 0.45); ctx.stroke();
-    for (let k = 0; k < 4; k++) { // windows up top, barred grates down below
-      const wx = 15 + k * 1.15, wy = y + 0.62;
-      ctx.fillStyle = locked ? '#15173a' : cleared ? '#ffd23f' : '#1a1d44';
-      ctx.fillRect(wx, wy, 0.75, 1.05);
-      if (locked || under) { ctx.fillStyle = locked ? '#2a2d55' : '#000000'; ctx.fillRect(wx + 0.32, wy, 0.1, 1.05); if (under) ctx.fillRect(wx, wy + 0.47, 0.75, 0.1); }
-    }
-    const label = LEVELS[i].boss ? 'BOSS' : `${LEVELS[i].stage}-${LEVELS[i].lv}`;
-    text(label, TOWER_X + 0.7, mid - 0.5, locked ? '#2a2d55' : STAGE_INK[st], 'left', 0.42);
+    text(LEVELS[i].boss ? 'BOSS' : `${LEVELS[i].stage}-${LEVELS[i].lv}`, TOWER_X + 0.7, mid - 0.5, locked ? '#2a2d55' : STAGE_INK[st], 'left', 0.42);
     text(floorLabel(i), TOWER_X - 0.4, mid - 0.5, locked ? '#2a2d55' : under ? '#a0804a' : '#6b6f93', 'right', 0.38);
-    screenSpace();
-    if (i === T.fresh) { if (blink) text('NEW', TOWER_X + TOWER_W + 0.5, mid - 0.5, '#ffe600', 'left', 0.38); }
-    else if (cleared) drawIconStar(TOWER_X + TOWER_W + 0.9, mid, 0.42, '#ffd23f');
-    else if (locked) drawIconLock(TOWER_X + TOWER_W + 0.9, mid, '#2a2d55');
+    if (i === TW.fresh && blink) text('NEW', TOWER_X + TOWER_W + 0.5, mid - 0.5, '#ffe600', 'left', 0.38);
   }
-  // Stage brackets
   for (let st = 1; st <= 12; st++) {
     const idx = LEVELS.map((l, i) => l.stage === st ? i : -1).filter(i => i >= 0);
-    if ((!open && underground(idx[0])) || (!skyOpen() && skyFloor(idx[0]))) continue;
-    const tops = idx.map(floorTop), y0 = Y(Math.min(...tops)) + 0.3, y1 = Y(Math.max(...tops)) + FLOOR_H - 0.3;
-    const on = idx[0] <= top;
-    screenSpace();
-    ctx.fillStyle = on ? WALL_COLORS[st] : '#2a2d55'; ctx.fillRect(23.2, y0, 0.14, y1 - y0);
+    if (!shown(idx[0])) continue;
+    const tops = idx.map(floorTop), y0 = Y(Math.min(...tops)) + 0.3, y1 = Y(Math.max(...tops)) + FLOOR_H - 0.3, on = idx[0] <= top;
     text(`STAGE ${st}`, 23.7, (y0 + y1) / 2 - 1, on ? '#6b6f93' : '#2a2d55', 'left', 0.34);
     text(STAGE_SHORT[st], 23.7, (y0 + y1) / 2 - 0.1, on ? STAGE_INK[st] : '#2a2d55', 'left', 0.4);
   }
-  // Selection frame and Pac-Man
-  const sel = T.sel, still = Math.abs(T.py - floorMid(sel)) < 1e-6;
-  screenSpace();
-  if (still && blink) {
-    ctx.strokeStyle = '#ffe600'; ctx.lineWidth = 0.1;
-    if (sel === ROOF) { ctx.beginPath(); ctx.moveTo(TOWER_X - 1.2, ry + 0.25); ctx.lineTo(14, peak - 0.5); ctx.lineTo(TOWER_X + TOWER_W + 1.2, ry + 0.25); ctx.closePath(); ctx.stroke(); }
-    else { roundRect(TOWER_X - 0.2, Y(floorTop(sel)) - 0.12, TOWER_W + 0.4, FLOOR_H + 0.24, 0.55); ctx.stroke(); }
-  }
-  const roofY = floorMid(ROOF), mTop = floorMid(topStory());
-  const pacX = T.py >= mTop ? 12.3 : 12.3 + (mTop - T.py) / (mTop - roofY) * 1.7;
-  drawCharacter('PAC', null, pacX, Y(T.py), 0.75, still ? R : (floorMid(sel) < T.py ? U : D), still ? 0.4 : (1 - Math.cos(G.t * 18)) / 2);
-  if (T.fall && !still && blink) text('AAAAH!', pacX + 1.2, Y(T.py) - 1, '#ffe600', 'left', 0.4);
-  if (T.rise && !still && blink) text('WHEEE!', pacX + 1.2, Y(T.py) - 1, '#ffe600', 'left', 0.4);
+  if (TW.fall && !still && blink) text('AAAAH!', pacX + 1.2, Y(TW.py) - 1, '#ffe600', 'left', 0.4);
+  if (TW.rise && !still && blink) text('WHEEE!', pacX + 1.2, Y(TW.py) - 1, '#ffe600', 'left', 0.4);
   ctx.restore();
-  // Header, the Act 2 title card, and the info panel sit on top of the scrolling view.
+  // Header, the act title cards, and the info panel sit on top of the scrolling view.
   text('THE SPOOKSCRAPER', 14, 0.35, '#ff4fa3', 'center', 0.72);
   text(`HIGH SCORE ${hi || '00'}`, 14, 1.55, '#ffffff', 'center', 0.42);
-  if (T.fresh === BASEMENT && still && G.timer < 6) {
+  for (const [fresh, ink, line, act, name, sub] of [[BASEMENT, '#58b82e', '#9be86f', 'ACT 2', 'THE BASEMENT', 'FIND THE FRUIT SALAD. BEWARE THE BLOB.'],
+    [SKY, '#7a9cff', '#b8ccff', 'ACT 3', 'THE SKY FLOORS', 'THE LANDLORD WANTS HIS RENT. IN FRUIT.']]) {
+    if (TW.fresh !== fresh || !still || G.timer >= 6) continue;
     screenSpace();
     ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(3, 4, 22, 4.6);
-    ctx.strokeStyle = '#58b82e'; ctx.lineWidth = 0.12; ctx.strokeRect(3, 4, 22, 4.6);
-    text('ACT 2', 14, 4.7, '#9be86f', 'center', 1.1);
-    text('THE BASEMENT', 14, 6.5, '#ffffff', 'center', 0.6);
-    text('FIND THE FRUIT SALAD. BEWARE THE BLOB.', 14, 7.6, '#b9bddc', 'center', 0.34);
-  }
-  if (T.fresh === SKY && still && G.timer < 6) {
-    screenSpace();
-    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(3, 4, 22, 4.6);
-    ctx.strokeStyle = '#7a9cff'; ctx.lineWidth = 0.12; ctx.strokeRect(3, 4, 22, 4.6);
-    text('ACT 3', 14, 4.7, '#b8ccff', 'center', 1.1);
-    text('THE SKY FLOORS', 14, 6.5, '#ffffff', 'center', 0.6);
-    text('THE LANDLORD WANTS HIS RENT. IN FRUIT.', 14, 7.6, '#b9bddc', 'center', 0.34);
+    ctx.strokeStyle = ink; ctx.lineWidth = 0.12; ctx.strokeRect(3, 4, 22, 4.6);
+    text(act, 14, 4.7, line, 'center', 1.1);
+    text(name, 14, 6.5, '#ffffff', 'center', 0.6);
+    text(sub, 14, 7.6, '#b9bddc', 'center', 0.34);
   }
   const st = floorStage(sel), ink = sel >= ROOF ? '#ffd86b' : STAGE_INK[st];
   text(sel >= ROOF ? 'THE ROOF' : `${floorLabel(sel)}  ${FLOOR_NAMES[sel]}`, 14, 32.1, ink, 'center', 0.62);
@@ -4128,7 +4137,7 @@ function drawEnding() {
   // Victory lap: Pac-Man leads, the fruit follows, the whole cast tags along happily.
   const x = (G.t * 5) % 66 - 4;
   drawCharacter('PAC', null, x, 14, 1, R, (1 - Math.cos(G.t * 18)) / 2);
-  FRUITS.slice(0, 5).forEach((f, k) => { screenSpace(); drawFruit(f, x - 2 - k * 1.6 - 0.5, 13.5); });
+  FRUITS.slice(0, 5).forEach((f, k) => drawImgPx(fruitIcon(f, UNIT), x - 2 - k * 1.6, 14));
   ['BLINKY', 'PINKY', 'INKY', 'CLYDE', 'WRAITH', 'SLIME', 'HOUND', 'GARGOYLE', 'SPIDER'].forEach((c, k) => drawCharacter(c, null, x - 11 - k * 2.3, 14, 1, R));
   const bob = Math.floor(G.t * 3) % 2 ? 0.15 : 0;
   drawCharacter('KING', 'scared', 6, 20 + bob, 1.3);
@@ -4747,49 +4756,113 @@ function portraitBackdrop(color) {
   }, 0));
 }
 function drawPortrait(who, mood, typing, x, y, s) {
-  const sp = SPEAKERS[who], g = portrait.g, scared = mood === 'scared', frame = Math.floor(G.t * 4) % 2;
+  const sp = SPEAKERS[who], g = portrait.g, bob = typing && Math.floor(G.t * 8) % 2 ? -2 : 0;
   g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.imageSmoothingEnabled = false;
   g.drawImage(portraitBackdrop(sp.color), 0, 0);
-  const bob = typing && Math.floor(G.t * 8) % 2 ? -2 : 0;
-  const put = (img, cy = 30) => g.drawImage(img, Math.round(PORTRAIT / 2 - img.width / 2), Math.round(cy - img.height / 2) + bob);
-  const shadow = w => { g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(PORTRAIT / 2 - w / 2, 47, w, 2); g.fillRect(PORTRAIT / 2 - w / 2 + 2, 46, w - 4, 4); };
-  if (who === 'PAC') { shadow(26); withT(24, () => put(pacSprite(0, pacMouth(typing ? Math.floor(G.t * 12) % 2 : 0.3)))); }
-  else if (sp.ghost !== undefined) withT(22, () => {
-    shadow(24);
-    put(ghostBody(scared ? '#2121ff' : sp.color, frame, scared ? 'fright' : ''), 28);
-    if (!scared) put(ghostEyes(R, false), 28);
-  });
-  else if (who === 'WRAITH') { shadow(22); withT(20, () => put(wraithSprite(frame, R, ''), 27)); }
-  else if (who === 'SLIME') withT(24, () => { const sl = slimeSprite(frame, R, scared ? 'fright' : '', false, scared); shadow(32); g.drawImage(sl, Math.round(PORTRAIT / 2 - sl.width / 2), 48 - sl.base + bob); });
-  else if (who === 'KING') withT(11, () => {
-    const ph = mood === 'angry' ? 3 : 1;
-    shadow(26);
-    put(kingSprite(ph, scared ? '#2121ff' : BOSS_COLORS[ph], frame, 2, scared ? 'fright' : ''), 27);
-  });
-  else { // not redrawn yet: the vector drawing, hardened into pixels
-    const v = pvec.g, k = 23;
-    v.setTransform(1, 0, 0, 1, 0, 0); v.clearRect(0, 0, PORTRAIT, PORTRAIT);
-    v.setTransform(k, 0, 0, k, PORTRAIT / 2, 29 + bob);
-    const o = ctx; ctx = v;
-    if (who === 'BLOB') { v.scale(0.42, 0.42); v.translate(0, 0.3); }
-    else if (who === 'GARGOYLE') { v.scale(0.9, 0.9); v.translate(0, 0.2); }
-    else if (who === 'SKULL') { v.scale(0.5, 0.5); v.translate(0, 0.45); }
-    const at = { x: -0.5, y: -0.5 };
-    withFright(scared, () => {
-      if (who === 'HOUND') drawHound({ ...at, dir: R, state: 'hunt', sniff: mood === 'sniff' ? 1 : 0 });
-      else if (who === 'BLOB') drawBlob({ ...at, kind: 'blob', state: 'chase', hp: BOSSES.blob.hp, look: mood === 'angry' ? 3 : 1, inv: 0, flash: 0, eaten: [] });
-      else if (who === 'GARGOYLE') drawGargoyle({ ...at, dir: D, state: 'active', moving: mood === 'angry' });
-      else if (who === 'SPIDER') drawSpider({ ...at, dir: R, state: 'active', fresh: 0 });
-      else if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: scared ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
-    });
-    ctx = o;
-    hardenCanvas(pvec);
-    shadow(26);
-    g.drawImage(pvec, 0, 0);
-  }
+  g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(PORTRAIT / 2 - 13, 47, 26, 2); g.fillRect(PORTRAIT / 2 - 11, 46, 22, 4); // shadow
+  const open = who === 'PAC' ? (typing ? Math.floor(G.t * 12) % 2 : 0.3) : 0.4, img = charImg(who, mood, R, open, 23);
+  g.drawImage(img, Math.round(PORTRAIT / 2 - img.width / 2), (who === 'SLIME' ? 48 - img.base : Math.round(29 - img.height / 2)) + bob);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
   ctx.drawImage(portrait, Math.round(x * px), Math.round(y * px), Math.round(s * px), Math.round(s * px));
 }
+
+// ---------- Characters off the playfield ----------
+// Any of the cast as a pixel sprite, t pixels to a tile: menus, the tower, the cast screen and the
+// ending draw them at a screen tile scale of k (t = k * UNIT).
+const vecChars = {};
+function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
+  const sp = SPEAKERS[who], scared = mood === 'scared', frame = Math.floor(G.t * 4) % 2;
+  if (who === 'PAC') return withT(t, () => pacSprite(face.a, pacMouth(open)));
+  if (sp.ghost !== undefined) return spr(`cg|${t}|${sp.color}|${frame}|${face.x}|${face.y}|${scared}`, () => withT(t, () => {
+    const b = ghostBody(scared ? '#2121ff' : sp.color, frame, scared ? 'fright' : ''), c = mkCanvas(b.width, b.height);
+    c.g.drawImage(b, 0, 0); if (!scared) c.g.drawImage(ghostEyes(face, false), 0, 0);
+    return c;
+  }));
+  if (who === 'WRAITH') return withT(t, () => wraithSprite(frame, face, ''));
+  if (who === 'SLIME') return withT(t, () => slimeSprite(frame, face, scared ? 'fright' : '', false, scared));
+  if (who === 'KING') {
+    const ph = mood === 'angry' ? 3 : 1, li = face === L ? 4 : face === U ? 6 : face === D ? 2 : 0;
+    return withT(Math.round(t * 0.5), () => kingSprite(ph, scared ? '#2121ff' : BOSS_COLORS[ph], frame, li, scared ? 'fright' : ''));
+  }
+  // Not redrawn yet: the vector drawing at this size, hardened into pixels.
+  const size = Math.round(t * 2.4) + 2, key = `${who}|${size}`, c = vecChars[key] || (vecChars[key] = mkCanvas(size, size, true)), v = c.g;
+  v.setTransform(1, 0, 0, 1, 0, 0); v.clearRect(0, 0, size, size);
+  v.setTransform(t, 0, 0, t, size / 2, size / 2);
+  if (who === 'BLOB') { v.scale(0.42, 0.42); v.translate(0, 0.3); }
+  else if (who === 'GARGOYLE') { v.scale(0.9, 0.9); v.translate(0, 0.2); }
+  else if (who === 'SKULL') { v.scale(0.5, 0.5); v.translate(0, 0.45); }
+  const at = { x: -0.5, y: -0.5 }, o = ctx; ctx = v;
+  withFright(scared, () => {
+    if (who === 'HOUND') drawHound({ ...at, dir: face, state: 'hunt', sniff: mood === 'sniff' ? 1 : 0 });
+    else if (who === 'BLOB') drawBlob({ ...at, kind: 'blob', state: 'chase', hp: BOSSES.blob.hp, look: mood === 'angry' ? 3 : 1, inv: 0, flash: 0, eaten: [] });
+    else if (who === 'GARGOYLE') drawGargoyle({ ...at, dir: D, state: 'active', moving: mood === 'angry' });
+    else if (who === 'SPIDER') drawSpider({ ...at, dir: face, state: 'active', fresh: 0 });
+    else if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: scared ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
+  });
+  ctx = o;
+  hardenCanvas(c);
+  return c;
+}
+// Draws an image on the main canvas centred on (cx, cy) in screen tiles, on the shared pixel grid.
+function drawImgPx(img, cx, cy, top) {
+  const s = px / UNIT, x = Math.round(cx * UNIT - img.width / 2), y = top !== undefined ? Math.round(top) : Math.round(cy * UNIT - img.height / 2);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, x * s, y * s, img.width * s, img.height * s);
+}
+// One character centred on (cx, cy) in screen tiles at scale k, facing face, mouth open (Pac-Man only).
+function drawCharacter(who, mood, cx, cy, k, face = R, open = 0.4) {
+  const img = charImg(who, mood, face, open, Math.round(k * UNIT));
+  if (who === 'SLIME') drawImgPx(img, cx, cy, (cy + 0.64 * k) * UNIT - img.base);
+  else drawImgPx(img, cx, cy);
+}
+
+// ---------- Night sky ----------
+// Shared by the menu, the tower and the ending: dithered bands from deep navy to a violet haze,
+// twinkling stars, and a crescent moon.
+const scr = mkCanvas(VIEW_W, TOTAL_ROWS * UNIT), sg = scr.g;
+const SKY_STOPS = ['#03030c', '#06061a', '#0b0a26', '#140e34', '#1e1240'].map(hex);
+const skyBack = (() => {
+  let c = null;
+  return () => c || (c = pixSprite(VIEW_W, TOTAL_ROWS * UNIT, (x, y) => {
+    const f = Math.min(0.999, y / (TOTAL_ROWS * UNIT)) * (SKY_STOPS.length - 1), i = Math.floor(f);
+    return SKY_STOPS[Math.min(SKY_STOPS.length - 1, i + (f - i > bayer(x, y) ? 1 : 0))];
+  }, 0));
+})();
+const SKY_STARS = Array.from({ length: 80 }, (_, i) => ({ x: (hash2(i, 11) * VIEW_W) | 0, y: 22 + ((hash2(i, 12) * 290) | 0), b: hash2(i, 13), p: hash2(i, 14) * 6.3 }));
+const moonSprite = () => spr('moon', () => pixSprite(34, 34, (x, y) => {
+  const dx = x - 17, dy = y - 17, d = Math.hypot(dx, dy);
+  if (d > 15 || Math.hypot(x - 24, y - 12) < 13) return null; // the bite that makes a crescent
+  const crater = [[9, 20, 2.5], [13, 27, 1.8], [7, 13, 1.6]].some(([cx, cy, r]) => Math.hypot(x - cx, y - cy) < r);
+  return pickRamp(makeRamp('#fff3c4'), lightOf(dx / 15, dy / 15, Math.sqrt(Math.max(0, 1 - d * d / 225))) + 0.35 - (crater ? 0.45 : 0));
+}, 0.35));
+function scrBegin() {
+  sg.setTransform(1, 0, 0, 1, 0, 0); sg.globalAlpha = 1; sg.globalCompositeOperation = 'source-over'; sg.imageSmoothingEnabled = false;
+  sg.drawImage(skyBack(), 0, 0);
+  for (const st of SKY_STARS) {
+    const tw = Math.sin(G.t * (1.2 + st.b * 2) + st.p);
+    if (tw < -0.6) continue;
+    const col = st.b < 0.3 ? '#8f9bff' : st.b < 0.85 ? '#d8dcff' : '#ffffff';
+    sg.fillStyle = col; sg.fillRect(st.x, st.y, 1, 1);
+    if (st.b > 0.85 && tw > 0.6) { sg.globalAlpha = 0.5; sg.fillRect(st.x - 1, st.y, 3, 1); sg.fillRect(st.x, st.y - 1, 1, 3); sg.globalAlpha = 1; }
+  }
+}
+const scrBlit = () => { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false; ctx.drawImage(scr, 0, 0, canvas.width, canvas.height); };
+function drawSky(moon = true) { scrBegin(); if (moon) sg.drawImage(moonSprite(), 19, 39); scrBlit(); }
+
+// The title screen's skyline: a row of dark buildings with a few lit windows, and the Spookscraper
+// standing over them with a glowing crown of a top floor. Lightning lights it all up now and then.
+const skyline = (() => {
+  let c = null;
+  return () => c || (c = pixSprite(VIEW_W, 120, (x, y) => {
+    const roofY = 2 + Math.abs(x - 140) * 0.9, tower = x > 116 && x < 164 && y > roofY; // a pointed roof over the middle
+    const h = 40 + hash2(Math.floor(x / 23), 1) * 40, topY = tower ? roofY : 120 - h;
+    if (y <= topY) return null;
+    if (y < topY + 1.5) return tower ? [90, 80, 160] : [44, 40, 86]; // moonlit edge
+    const ix = x | 0, iy = y | 0, win = (ix % 6 === 2 || ix % 6 === 3) && iy % 7 > 2 && iy % 7 < 6 && hash2(ix >> 1, iy >> 3) > (tower ? 0.5 : 0.75);
+    if (win) return tower ? [255, 210, 63] : [190, 140, 60];
+    return tower ? [30, 24, 62] : [18, 16, 38];
+  }, 0));
+})();
 
 // ---------- Maze art ----------
 // Solid tiles are the walls plus pockets Pac-Man can never reach (the outside of the building). Each
