@@ -967,6 +967,9 @@ const SFX = {
   chant() { [196, 233, 185, 262].forEach((f, i) => beep(f, f * 0.98, 0.28, 'triangle', 0.12, i * 0.28)); beep(98, 90, 1.2, 'sawtooth', 0.05); },
   thunder() { beep(64, 30, 1.6, 'sawtooth', 0.05); beep(96, 40, 1.1, 'square', 0.02, 0.06); beep(140, 50, 0.5, 'sawtooth', 0.03, 0.02); },
   thud() { beep(160, 60, 0.15, 'square', 0.09); },
+  hum() { beep(55, 52, 2.4, 'sawtooth', 0.03); beep(110, 106, 2.2, 'triangle', 0.035, 0.05); beep(190, 80, 0.12, 'square', 0.04); },
+  crack() { beep(1900, 700, 0.07, 'square', 0.035); beep(1200, 300, 0.1, 'sawtooth', 0.03, 0.04); },
+  chip() { beep(2600, 1800, 0.04, 'square', 0.03); beep(3200, 2400, 0.03, 'triangle', 0.025, 0.02); },
   rumble() { beep(70, 45, 0.6, 'sawtooth', 0.12); beep(110, 60, 0.5, 'square', 0.05, 0.1); },
   whoosh() { beep(260, 900, 0.5, 'triangle', 0.1); beep(420, 1300, 0.4, 'sine', 0.05, 0.1); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
@@ -1042,10 +1045,10 @@ function resetActors() {
   Object.assign(pac, { x: meta.pac.x, y: meta.pac.y, dir: null, face: L, anim: 0, dash: 0, grace: 0, trail: [] });
   G.dashCharge = 1;
   G.want = null; G.fright = 0; G.chill = 0; G.combo = 0; G.modeIdx = 0; G.modeTime = 0; G.idle = 0;
-  G.fruit = null; G.popups = []; G.eatenGhost = null;
+  G.fruit = null; G.popups = []; G.eatenGhost = null; G.hitstop = 0;
   G.ghosts = ghosts.filter(g => G.cfg.ghosts.includes(g.name));
   for (const g of G.ghosts) {
-    Object.assign(g, { x: house.doorX + g.off, y: house.homeY, dir: U, mode: 'house', bob: -1, frightened: false, eaten: false, reverse: false, decided: -1 });
+    Object.assign(g, { x: house.doorX + g.off, y: house.homeY, dir: U, mode: 'house', bob: -1, frightened: false, eaten: false, reverse: false, decided: -1, crack: 0, iced: false });
   }
   if (G.ghosts.includes(blinky)) Object.assign(blinky, { x: house.doorX, y: house.exitY, dir: L, mode: 'active' });
   pinky.dir = D; pinky.bob = 1;
@@ -1354,6 +1357,10 @@ function ghostAtCenter(g) {
   g.dir = best;
   return true;
 }
+// On the Freezer floors anyone waiting in the ghost house is frozen into a block of ice: they hold
+// still, and when it's time to come out the ice cracks for ICE_CRACK seconds before they break free.
+const ICE_CRACK = 1, ICE_HOLD = 1.5; // ICE_HOLD: how long a ghost sent home sits frozen before it starts cracking
+const iceHouse = () => G.cfg.stage === 2;
 function ghostUpdate(g, dt, sp) {
   if (G.chill > 0 && !g.eaten) return; // frozen solid
   let v;
@@ -1366,6 +1373,11 @@ function ghostUpdate(g, dt, sp) {
   const dist = v * BASE * dt;
   switch (g.mode) {
     case 'house':
+      if (iceHouse()) {
+        g.y = house.homeY;
+        if (g.crack > 0 && (g.crack -= dt) <= 0) { g.crack = 0; g.mode = 'leave'; }
+        return;
+      }
       g.y += g.bob * dist;
       if (g.y < house.homeY - 0.5) { g.y = house.homeY - 0.5; g.bob = 1; }
       if (g.y > house.homeY + 0.5) { g.y = house.homeY + 0.5; g.bob = -1; }
@@ -1385,7 +1397,11 @@ function ghostUpdate(g, dt, sp) {
       if (Math.abs(g.x - house.doorX) > 1e-6) moveToward(g, 'x', house.doorX, dist);
       else {
         moveToward(g, 'y', house.homeY, dist);
-        if (g.y === house.homeY) { g.eaten = false; g.frightened = false; g.mode = 'leave'; }
+        if (g.y === house.homeY) {
+          g.eaten = false; g.frightened = false;
+          // Back home on a Freezer floor: frozen into a fresh block, held a moment, then it cracks out.
+          if (iceHouse()) { g.mode = 'house'; g.crack = ICE_CRACK + ICE_HOLD; } else g.mode = 'leave';
+        }
       }
       return;
     default:
@@ -1425,13 +1441,17 @@ function wraithUpdate(w, dt, sp) {
   }
   if (G.chill > 0) return; // frozen solid
   if (w.state === 'house') {
-    const bob = 0.5 * BASE * dt;
-    w.y += w.bob * bob;
-    if (w.y < house.homeY - 0.5) { w.y = house.homeY - 0.5; w.bob = 1; }
-    if (w.y > house.homeY + 0.5) { w.y = house.homeY + 0.5; w.bob = -1; }
-    w.dir = w.bob < 0 ? U : D;
+    if (iceHouse()) w.y = house.homeY;
+    else {
+      const bob = 0.5 * BASE * dt;
+      w.y += w.bob * bob;
+      if (w.y < house.homeY - 0.5) { w.y = house.homeY - 0.5; w.bob = 1; }
+      if (w.y > house.homeY + 0.5) { w.y = house.homeY + 0.5; w.bob = -1; }
+      w.dir = w.bob < 0 ? U : D;
+    }
     w.t -= dt;
-    if (w.t <= 0) { w.state = 'leave'; w.reforming = false; w.tx = Math.round(w.x); SFX.wraith(); }
+    if (w.t <= 0 && iceHouse() && (w.crack = (w.crack || ICE_CRACK) - dt) > 0) return; // cracking the ice
+    if (w.t <= 0) { w.state = 'leave'; w.reforming = false; w.crack = 0; w.tx = Math.round(w.x); SFX.wraith(); }
     return;
   }
   if (w.state === 'leave') {
@@ -2526,7 +2546,11 @@ function releaseCheck(dt) {
   const limits = G.cfg.release || { pinky: 0, inky: 20, clyde: 40 };
   const limit = G.globalMode ? { pinky: 7, inky: 17, clyde: 32 }[g.name] : limits[g.name];
   const count = G.globalMode ? G.globalDots : g.dotCount;
-  if (count >= limit || G.idle >= 4) { g.mode = 'leave'; G.idle = 0; }
+  if (count >= limit || G.idle >= 4) {
+    G.idle = 0;
+    if (!iceHouse()) g.mode = 'leave';
+    else if (!(g.crack > 0)) g.crack = ICE_CRACK;
+  }
 }
 
 // ---------- Play loop ----------
@@ -2710,6 +2734,7 @@ function play(dt) {
     if (!touching) continue;
     if (G.chill > 0) {
       w.state = 'eaten';
+      if (themeFor(G.cfg.stage, G.cfg.lv).freezer) frzShatter(w.x, w.y);
       addScore(500); SFX.shatter(); SFX.ghost();
       popup('500', w.x, w.y, '#bdf4ff');
       continue;
@@ -2833,7 +2858,7 @@ function update(dt) {
       G.timer -= dt;
       if (G.timer <= 0) { G.state = 'play'; if (G.boss && G.boss.hp === BOSSES[G.boss.kind].hp && !G.bossSay) bossTalk(BOSSES[G.boss.kind].lines.start); }
       break;
-    case 'play': play(dt); if (G.pendingPhase && G.state === 'play') startPhase(G.pendingPhase); break;
+    case 'play': if (G.hitstop > 0) { G.hitstop -= dt; break; } play(dt); if (G.pendingPhase && G.state === 'play') startPhase(G.pendingPhase); break;
     case 'phase': G.timer -= dt; if (G.timer <= 0) endPhase(); break;
     case 'eatpause':
       G.timer -= dt;
@@ -4358,11 +4383,13 @@ function ghostEyes(d, alone) { // outlined, so the whites read on pale bodies to
   });
 }
 function pxGhost(g) {
+  if (g.iced && !iceDrawing) return; // drawn faintly inside its block of ice instead
   const fr = (g.frightened && G.fright > 0) || g.panic;
   const flash = fr && !g.panic && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
   const ice = !g.eaten && iceOn();
-  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 8) % 2;
-  const bob = g.eaten || G.chill > 0 ? 0 : Math.round(Math.sin(G.t * 4.2 + g.color.charCodeAt(2)) * T * 0.07);
+  const still = G.chill > 0 || g.iced;
+  const frame = still ? 0 : Math.floor(G.t * 8) % 2;
+  const bob = g.eaten || still ? 0 : Math.round(Math.sin(G.t * 4.2 + g.color.charCodeAt(2)) * T * 0.07);
   if (!g.eaten) blit(ghostBody(ice ? '#bdf4ff' : fr ? (flash ? '#ffffff' : '#2121ff') : g.color, frame, fr && !ice ? (flash ? 'flash' : 'fright') : ''), g.x + 0.5, g.y + 0.5, bob);
   if (!fr || g.eaten || ice) blit(ghostEyes(g.dir || L, !!g.eaten), g.x + 0.5, g.y + 0.5, bob);
 }
@@ -4404,7 +4431,8 @@ function wraithSprite(frame, d, mode) { // mode: '' | 'ice' | 'eyes'
   });
 }
 function pxWraith(w) {
-  const d = w.dir || D, eaten = w.state === 'eaten', frozen = G.chill > 0 && !eaten;
+  if (w.iced && !iceDrawing) return;
+  const d = w.dir || D, eaten = w.state === 'eaten', frozen = (G.chill > 0 || w.iced) && !eaten;
   if (!eaten && w.reforming && Math.floor(G.t * 10) % 2 === 0) return; // still pulling itself together
   const frame = frozen ? 0 : Math.floor(G.t * 6) % 2, bob = eaten || frozen ? 0 : Math.round(Math.sin(G.t * 3.2 + w.hx) * T * 0.08);
   const inWall = tile(Math.round(w.x), Math.round(w.y)) === '#';
@@ -5151,12 +5179,13 @@ function bakeLevel(rows, theme) {
   mini.g.fillStyle = theme.map;
   for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) if (solidT(c, r)) mini.g.fillRect(c * 2, r * 2, 2, 2);
   const L = { canvas: out, mask, mini, cls, PW, PH, w, h, T, reach, house, solidT, houseBox: hb, decor: [] };
-  if (theme.decor) L.decor = planDecor(L);
+  if (theme.decor) L.decor = planDecor(L, theme);
+  if (theme.bake) theme.bake(L, out.g);
   return L;
 }
 
 // Wall decorations hang on front faces at least three tiles wide; the left half is rolled and mirrored.
-function planDecor(L) {
+function planDecor(L, theme) {
   const { w, h, PW } = L, out = [];
   let s = 1234567 + w * 31 + h * 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const faceTile = (c, r) => r + 1 < h && c >= 0 && c < w && L.solidT(c, r) && L.reach[(r + 1) * w + c] && !L.house[(r + 1) * w + c];
@@ -5173,7 +5202,7 @@ function planDecor(L) {
       const f = faceAt(c, r);
       if (!f || f.y1 - f.y0 < 4) continue;
       const big = f.y1 - f.y0 >= 9, roll = rnd();
-      const kind = !big ? 'candle' : r === 0 && roll < 0.55 ? 'window' : roll < 0.36 ? 'candle' : roll < 0.58 ? 'candelabra' : roll < 0.84 ? 'portrait' : 'window';
+      const kind = theme.pick ? theme.pick(big, r, roll) : !big ? 'candle' : r === 0 && roll < 0.55 ? 'window' : roll < 0.36 ? 'candle' : roll < 0.58 ? 'candelabra' : roll < 0.84 ? 'portrait' : 'window';
       const seed = rnd();
       out.push({ kind, ...f, c, r, seed });
       const mc = w - 1 - c, g = mc !== c && flat(mc, r) && faceAt(mc, r);
@@ -5280,7 +5309,524 @@ function genericTheme(stage) {
     },
   };
 }
-const themeFor = stage => THEMES[stage] || (THEMES[stage] = genericTheme(stage));
+const themeFor = (stage, lv = 1) => stage === 2 ? THEMES[`2-${lv}`] || (THEMES[`2-${lv}`] = freezerTheme(lv)) : THEMES[stage] || (THEMES[stage] = genericTheme(stage));
+// ---------- The Freezer (stage 2) ----------
+// Walk-in freezer, ice rink and cold storage: steel panels under icicles, snow on the wall tops,
+// fluorescent tubes, a compressor that kicks in every so often, and the Wraith's cold, which follows
+// him through the walls. Each floor of the stage gets its own variant (lv 1, 2, 3).
+const TINY = { // a 3x5 pixel font for signs, ads, the scoreboard and the Wraith's poetry in the snow
+  A: '010101111101101', B: '110101110101110', C: '011100100100011', D: '110101101101110', E: '111100110100111',
+  F: '111100110100100', G: '011100101101011', H: '101101111101101', I: '111010010010111', J: '001001001101010',
+  K: '101101110101101', L: '100100100100111', M: '101111111101101', N: '110101101101101', O: '010101101101010',
+  P: '110101110100100', Q: '010101101110011', R: '110101110101101', S: '011100010001110', T: '111010010010010',
+  U: '101101101101111', V: '101101101101010', W: '101101111111101', X: '101101010101101', Y: '101101010010010',
+  Z: '111001010100111', 0: '111101101101111', 1: '010110010010111', 2: '110001010100111', 3: '110001010001110',
+  4: '101101111001001', 5: '111100110001110', 6: '011100111101111', 7: '111001010010010', 8: '111101111101111',
+  9: '111101111001110', '.': '000000000000010', ',': '000000000010100', '!': '010010010000010', '?': '110001010000010',
+  "'": '010010000000000', '-': '000000111000000', ':': '000010000010000', '(': '010100100100010', ')': '010001001001010',
+};
+const tinyW = s => s.length * 4 - 1;
+function tinyText(g, s, x, y, col) {
+  g.fillStyle = col;
+  for (let i = 0; i < s.length; i++) {
+    const glyph = TINY[s[i]];
+    if (glyph) for (let k = 0; k < 15; k++) if (glyph[k] === '1') g.fillRect(x + i * 4 + k % 3, y + ((k / 3) | 0), 1, 1);
+  }
+}
+const FREEZER_POEMS = {
+  1: ['I DRIFT THROUGH WALLS', 'AS A SAD POEM DRIFTS', 'THROUGH THE SOUL.', 'BRRR.'],
+  2: ['COLD HANDS. COLDER HEART.', 'SKATE AWAY, LITTLE ONE.', 'THE ICE REMEMBERS.'],
+  3: ['ROSES ARE RED.', 'PAC-MAN IS DOOMED.', "THAT DOESN'T RHYME. -CLYDE", 'SILENCE, CLYDE.'],
+};
+const RINK_ADS = [['WAKKA COLA', '#d83040'], ['SALAD SOON', '#30a050'], ['KING GHOST', '#c89a20'], ['NO WRAITHS', '#7050c0'], ['SKATE SAFE', '#2a70d0'], ['BUY FRUIT', '#d86020']];
+function freezerTheme(lv) {
+  const frost = [0.35, 0.6, 1][lv - 1] ?? 0.6, rink = lv === 2;
+  const P = Object.fromEntries(Object.entries({
+    plate: '#26323e', plateHi: '#405466', plateLo: '#161e28', rime: '#7e9fb6',
+    mat: '#15191f', matRib: '#252b33', matEdge: '#3a4652',
+    ice: '#5e8eac', ice2: '#9cc4dc', iceDeep: '#3e6a8c', scratch: '#a8cce0', rinkRed: '#a8384c', rinkBlue: '#3a56b0',
+    panel: '#4a5a6c', panelHi: '#6a7e92', rib: '#26303a', rivet: '#94a6b8', skirt: '#161d24', lip: '#0a1016',
+    icicle: '#c8e4f2', icicle2: '#86b8d4',
+    snow: '#8ea4b8', snow2: '#768ca2', snowSh: '#5c7290', snowRim: '#bcd0de', snowRimR: '#6e88a2', snowEdge: '#4e6680',
+    chest: '#7e98aa', chestLine: '#566e82', chestDeep: '#6a8496',
+  }).map(([k, v]) => [k, hex(v)]));
+  return {
+    id: 'freezer' + lv, void: '#04080c', map: '#2a6f98', runner: !rink, decor: true, freezer: true, snow: true, lv, frost,
+    ambient: rink ? [0.58, 0.66, 0.8] : lv === 3 ? [0.44, 0.52, 0.7] : [0.56, 0.64, 0.8], vignette: 0.45,
+    grade: ['#4ab8e8', lv === 3 ? 0.17 : 0.12],
+    floor(x, y, t) {
+      if (t.house) { // the inside of a chest freezer: frosted white tiles
+        if (x % 9 === 0 || y % 9 === 0) return P.chestLine;
+        return mixc(P.chest, P.chestDeep, vnoise(x / 6, y / 6) * 0.8);
+      }
+      if (rink) { // glossy ice with skate scratches, and the rink's lines frozen under it
+        let col = mixc(P.iceDeep, P.ice, 0.35 + vnoise(x / 40, y / 40) * 0.65);
+        const PW = W * T, PH = H * T, cx = PW / 2, cy = PH / 2;
+        if (Math.abs(y - cy) < 2) col = mixc(col, P.rinkRed, 0.55);
+        else if (Math.abs(y - PH * 0.3) < 1.5 || Math.abs(y - PH * 0.7) < 1.5) col = mixc(col, P.rinkBlue, 0.45);
+        const rr = Math.hypot(x - cx, y - cy);
+        if (Math.abs(rr - T * 2.6) < 1) col = mixc(col, P.rinkBlue, 0.45);
+        if (((x + y * 0.55) % 90 + 90) % 90 < 2) col = mixc(col, P.ice2, 0.3); // a gloss streak
+        const u = x - 2 * y, u2 = x + 3 * y;
+        if ((((u % 53) + 53) % 53 === 0 && hash2(x >> 3, (u / 53) | 0) > 0.55) || (((u2 % 71) + 71) % 71 === 0 && hash2(x >> 3, (u2 / 71) | 0) > 0.6)) col = mixc(col, P.scratch, 0.7);
+        return col;
+      }
+      let col;
+      if (t.e >= 0) { // anti-slip matting down the corridors
+        col = t.e === 0 ? P.matEdge : (x + y) % 4 === 0 ? P.matRib : P.mat;
+        if (vnoise(x / 6, y / 6) > 1 - frost * 0.3) col = mixc(col, P.rime, 0.3);
+        return col;
+      }
+      // diamond plate, frosted over in patches
+      const lx = x % 6, ly = y % 6, alt = (((x / 6) | 0) + ((y / 6) | 0)) & 1;
+      const on = lx > 0 && lx < 5 && ly > 0 && ly < 5 && (alt ? lx === ly || lx === ly + 1 : lx + ly === 5 || lx + ly === 4);
+      col = on ? P.plateHi : ((alt ? lx === ly + 2 : lx + ly === 6) && lx > 0 && ly > 0 ? P.plateLo : P.plate);
+      col = mulc(col, 0.9 + vnoise(x / 13, y / 13) * 0.2);
+      const r = (vnoise(x / 7, y / 7) * 0.7 + hash2(x >> 1, y >> 1) * 0.3 - (0.74 - frost * 0.14)) * 2;
+      if (r > 0) col = mixc(col, P.rime, Math.min(0.5, r));
+      return col;
+    },
+    face(x, y, v, F, edge) { // insulated steel panels, icicles at the top, frost creeping up from the floor
+      let col;
+      const icy = hash2(x >> 1, 91) > 0.62 - frost * 0.25 ? 1 + Math.floor(hash2(x >> 1, 92) * (F >= 7 ? 2 + frost * 4 : 2)) : 0;
+      if (v === 0) col = P.lip;
+      else if (v <= icy && (x & 1) === 0) return v === icy ? P.icicle2 : P.icicle;
+      else if (v === F - 1) col = mixc(P.skirt, P.rime, frost * 0.4);
+      else {
+        const lx = x % 6;
+        col = lx === 0 ? P.rib : lx === 1 ? P.panelHi : mulc(P.panel, 1.08 - v / F * 0.25);
+        if (v === 2 && x % 12 === 3 && F >= 7) col = P.rivet;
+        const fr = frost * (v / F) * 1.25 + (vnoise(x / 4, y / 3) - 0.5) * 0.7;
+        if (fr > 0.5) col = mixc(col, P.rime, Math.min(0.85, (fr - 0.5) * 2.2));
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.64) : col;
+    },
+    cap(x, y, ring, side) { // the wall tops are drifts of snow
+      if (ring === 1) return side === 'front' ? P.snowRim : side === 'right' ? P.snowRimR : P.snowRim;
+      if (ring === 2) return P.snow2;
+      if (ring === 6 || ring === 3) return mixc(P.snow, P.snowSh, 0.35);
+      if (hash2(x, y * 7) > 0.988) return P.snowRim; // a glint
+      const n = vnoise(x / 7, y / 5);
+      return n > 0.66 ? mixc(P.snow, P.snowRim, 0.5) : n < 0.3 ? P.snow2 : P.snow;
+    },
+    pick(big, r, roll) {
+      if (!big) return roll < 0.45 ? 'thermo' : 'stube';
+      if (lv === 2) return roll < 0.45 ? 'board' : roll < 0.75 ? 'tube' : roll < 0.88 ? 'fportrait' : 'scoreboard';
+      if (lv === 3) return roll < 0.32 ? 'crates' : roll < 0.58 ? 'tube' : roll < 0.72 ? 'shelf' : roll < 0.88 ? 'fportrait' : 'thermo';
+      return roll < 0.28 ? 'tube' : roll < 0.52 ? 'shelf' : roll < 0.72 ? 'hooks' : roll < 0.84 ? 'sign' : 'fportrait';
+    },
+    bake(L, g) {
+      // One scoreboard per rink; the others become ad boards.
+      let board = false;
+      for (const d of L.decor) if (d.kind === 'scoreboard') { if (board) d.kind = 'board'; board = true; }
+      // The Wraith's poetry, written into the snow on the widest wall tops.
+      const spots = [];
+      for (let r = 1; r < L.h - 2; r++) {
+        let c = 1;
+        while (c < L.w - 1) {
+          if (!(L.solidT(c, r) && L.solidT(c, r + 1))) { c++; continue; }
+          let e = c; while (e < L.w - 1 && L.solidT(e, r) && L.solidT(e, r + 1)) e++;
+          if (e - c >= 6) spots.push({ c0: c, c1: e - 1, r });
+          c = e;
+        }
+      }
+      spots.sort((a, b) => (b.c1 - b.c0) - (a.c1 - a.c0) || a.r - b.r);
+      // Pick a wall for each line, then hand the lines out top to bottom so the poem reads in order.
+      const lines = FREEZER_POEMS[lv] || [], longest = Math.max(0, ...lines.map(tinyW)), picked = [];
+      for (const s of spots) {
+        if (picked.length >= lines.length) break;
+        if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue; // one line per wall
+        const x0 = s.c0 * L.T, x1 = (s.c1 + 1) * L.T, xm = ((x0 + x1) / 2) | 0;
+        let yTop = -1, yBot = -1;
+        for (let y = s.r * L.T; y < (s.r + 2) * L.T; y++) if (L.cls[y * L.PW + xm] === 1) { if (yTop < 0) yTop = y; yBot = y; }
+        if (yTop < 0 || yBot - yTop < 10 || longest > x1 - x0 - 10) continue;
+        picked.push({ r: s.r, xm, y: yTop + ((yBot - yTop - 4) >> 1) });
+      }
+      picked.sort((a, b) => a.r - b.r || a.xm - b.xm);
+      picked.forEach((q, i) => tinyText(g, lines[i], q.xm - (tinyW(lines[i]) >> 1), q.y, '#4a6078'));
+      // Fog pools in dead ends and corners.
+      L.fog = [];
+      const open = (c, r) => r >= 0 && r < L.h && c >= 0 && c < L.w && L.reach[r * L.w + c];
+      for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
+        if (!open(c, r)) continue;
+        const u = !open(c, r - 1), d = !open(c, r + 1), l = !open(c - 1, r), rt = !open(c + 1, r), n = u + d + l + rt;
+        if ((n >= 3 || (n === 2 && !(u && d) && !(l && rt))) && hash2(c, r * 3 + 5) < 0.55) L.fog.push({ x: c + 0.5, y: r + 0.55, s: hash2(c, r) * 6.3 });
+      }
+    },
+  };
+}
+
+// Per-floor effects state, reset whenever the level art is rebuilt.
+const frz = { blooms: [], wave: null, ice: 0, cold: 0, chill: 0, comp: { next: 9, t: 0 }, breath: new Map(), inHouse: new Set() };
+function frzReset() { Object.assign(frz, { blooms: [], wave: null, ice: 0, cold: 0, chill: 0, comp: { next: 9, t: 0 }, breath: new Map(), inHouse: new Set() }); }
+// A fern of frost, grown from the centre outward: offsets in pixels with k = when (0..1) each one appears.
+const FERN = (() => {
+  const out = [], seen = new Set();
+  const put = (x, y, k) => { const key = `${x},${y}`; if (!seen.has(key)) { seen.add(key); out.push({ dx: x, dy: y, k }); } };
+  for (let b = 0; b < 7; b++) {
+    let a = b / 7 * Math.PI * 2 + hash2(b, 3) * 0.6, x = 0, y = 0;
+    for (let s = 0; s < 13; s++) {
+      a += (hash2(b, s) - 0.5) * 0.5; x += Math.cos(a); y += Math.sin(a);
+      put(Math.round(x), Math.round(y), s / 13);
+      if (s % 3 === 2) for (const side of [-1, 1]) { // little twigs
+        let tx = x, ty = y; const ta = a + side * 0.9;
+        for (let q = 1; q <= 3; q++) { tx += Math.cos(ta); ty += Math.sin(ta); put(Math.round(tx), Math.round(ty), Math.min(1, (s + q) / 13)); }
+      }
+    }
+  }
+  return out.sort((a, b) => a.k - b.k);
+})();
+// Frost creeping in from the screen edges: crystals, densest at the border.
+const frostEdgeSprite = () => spr('frostEdge', () => {
+  const c = mkCanvas(VIEW_W, VIEW_H), im = c.g.createImageData(VIEW_W, VIEW_H);
+  for (let y = 0; y < VIEW_H; y++) for (let x = 0; x < VIEW_W; x++) {
+    const e = Math.min(x, y, VIEW_W - 1 - x, VIEW_H - 1 - y), f = (1 - e / 34) * (0.55 + vnoise(x / 5, y / 5) * 0.45 + hash2(x, y) * 0.15);
+    if (f > 0.62 + bayer(x, y) * 0.2) { const i = (y * VIEW_W + x) * 4, b = f > 0.9; im.data[i] = b ? 240 : 190; im.data[i + 1] = b ? 250 : 228; im.data[i + 2] = 255; im.data[i + 3] = b ? 230 : 150; }
+  }
+  c.g.putImageData(im, 0, 0);
+  return c;
+});
+const fogSprite = () => spr(`fog|${T}`, () => {
+  const w = Math.round(T * 2.6), h = Math.round(T * 1.2);
+  return pixSprite(w, h, (x, y) => {
+    const dx = (x - w / 2) / (w / 2), dy = (y - h / 2) / (h / 2), f = 1 - (dx * dx + dy * dy);
+    return f > bayer(x, y) * 0.9 ? [214, 236, 248, 70] : null;
+  }, 0);
+});
+// Everything that moves with time: the compressor, frost blooms, the berry's freeze and thaw, breath.
+const iceDwellers = () => [...G.ghosts.filter(g => g.mode === 'house'), ...G.wraiths.filter(w => w.state === 'house')];
+function frzUpdate(dt, theme) {
+  for (const g of G.ghosts) g.iced = g.mode === 'house';
+  for (const w of G.wraiths) w.iced = w.state === 'house';
+  if (!dt) return;
+  const C = frz.comp;
+  if (C.t > 0) C.t = Math.max(0, C.t - dt);
+  if ((C.next -= dt) <= 0) { C.next = 12 + Math.random() * 8; C.t = 3.2; if (G.state === 'play') SFX.hum(); }
+  // The Wraith leaves frost on any wall he drifts through.
+  for (const w of G.wraiths) {
+    if (w.state !== 'active' && w.state !== 'leave') continue;
+    if (tile(Math.round(w.x), Math.round(w.y)) !== '#') continue;
+    const x = (w.x + 0.5) * T, y = (w.y + 0.5) * T;
+    if (frz.blooms.some(b => b.t < 0.3 && Math.hypot(b.x - x, b.y - y) < T * 0.8)) continue;
+    frz.blooms.push({ x, y, t: 0 });
+    if (frz.blooms.length > 40) frz.blooms.shift();
+  }
+  for (const b of frz.blooms) b.t += dt;
+  frz.blooms = frz.blooms.filter(b => b.t < 6);
+  // A frost berry: a shockwave of ice, then the thaw.
+  if (G.chill > 0 && frz.chill === 0) frz.wave = { x: pac.x + 0.5, y: pac.y + 0.5, t: 0 };
+  frz.chill = G.chill;
+  if (frz.wave && (frz.wave.t += dt) > 0.7) frz.wave = null;
+  frz.ice += ((G.chill > 0 ? 1 : 0) - frz.ice) * Math.min(1, dt * (G.chill > 0 ? 10 : 2.5));
+  if (G.chill > 0 && G.chill < 1.6 && art) for (let k = 0; k < 30 && Math.random() < dt * 40; k++) { // the walls drip as it thaws
+    const x = (camX + Math.random() * VIEW_W) | 0, y = (camY + Math.random() * VIEW_H) | 0;
+    if (x < 0 || y < 0 || x >= art.PW || y + 1 >= art.PH || art.cls[y * art.PW + x] !== 2 || art.cls[(y + 1) * art.PW + x] !== 0) continue;
+    parts.push({ x: x / T, y: y / T, vx: 0, vy: 0.2, t: 0.5, t0: 0.5, col: '#9fe0ff', g: 14 });
+  }
+  // The cold follows the Wraith: the closer he is, the more the screen frosts over.
+  let near = 0;
+  for (const w of G.wraiths) if (w.state === 'active' || w.state === 'leave') near = Math.max(near, Math.min(1, (7 - Math.hypot(w.x - pac.x, w.y - pac.y)) / 5));
+  frz.cold += (Math.max(near, frz.ice * 0.55) - frz.cold) * Math.min(1, dt * 3);
+  // Ice blocks: cracks spread in three stages, then the block shatters as its prisoner breaks out.
+  const inside = new Set(iceDwellers());
+  for (const e of inside) {
+    frz.inHouse.add(e);
+    const stage = e.crack > 0 && e.crack <= ICE_CRACK ? Math.min(3, 1 + Math.floor((1 - e.crack / ICE_CRACK) * 3)) : 0;
+    if (stage > (e.iceStage || 0)) { SFX.chip(); fxBurst(e.x + 0.5, e.y + 0.3, '#e8faff', 3 + stage * 2, 2.5, 0.35); }
+    e.iceStage = stage;
+  }
+  for (const e of [...frz.inHouse]) if (!inside.has(e)) {
+    frz.inHouse.delete(e); e.iceStage = 0;
+    fxBurst(e.x + 0.5, e.y + 0.5, '#ffffff', 12, 6, 0.5); fxBurst(e.x + 0.5, e.y + 0.5, '#bfe8ff', 18, 4.5, 0.75); fxBurst(e.x + 0.5, e.y + 0.5, '#7ab4d8', 10, 3, 0.6);
+    G.shake = Math.max(G.shake, 0.12); SFX.crack();
+  }
+  if (G.state !== 'play' && G.state !== 'ready') return;
+  // Breath: little clouds every so often. The Wraith doesn't breathe.
+  const puff = (who, x, y, d) => {
+    if (!frz.breath.has(who)) frz.breath.set(who, { ph: Math.random() * 1.7, n: -1 });
+    const b = frz.breath.get(who), n = Math.floor((G.t + b.ph) / 1.7);
+    if (b.n === n) return; b.n = n;
+    for (let i = 0; i < 4; i++) { const t = 0.5 + Math.random() * 0.3; parts.push({ x: x + 0.5 + d.x * 0.45, y: y + 0.4 + d.y * 0.3, vx: d.x * (0.8 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3, vy: -0.25 + d.y * 0.6 + (Math.random() - 0.5) * 0.3, t, t0: t, col: '#e6f4ff', g: 0, drag: 2.5 }); }
+  };
+  if (G.state === 'play') puff(pac, pac.x, pac.y, pac.face || L);
+  for (const g of G.ghosts) if (g.mode === 'active' && !g.eaten) puff(g, g.x, g.y, g.dir || L);
+  // Ghosts (and the Wraith) shed a few ice crystals as they go.
+  for (const e of [...G.ghosts.filter(g => g.mode === 'active' && !g.eaten), ...G.wraiths.filter(w => w.state === 'active')]) {
+    if (Math.random() > dt * 7) continue;
+    const t = 0.6 + Math.random() * 0.4;
+    parts.push({ x: e.x + 0.5 + (Math.random() - 0.5) * 0.8, y: e.y + 1, vx: (Math.random() - 0.5) * 0.2, vy: 0.15, t, t0: t, col: Math.random() < 0.5 ? '#dff6ff' : '#9fd8f0', g: 0, drag: 1 });
+  }
+}
+// The compressor browns the lights out as it kicks in.
+const frzBrown = () => { const t = 3.2 - frz.comp.t; return frz.comp.t <= 0 || t > 1.3 ? 1 : 0.72 + (Math.floor(G.t * 14) % 3 === 0 ? -0.12 : 0.06); };
+// Wall decorations, the chest freezer, strip curtain, frost blooms and the rink's reflections.
+function frzDecor(theme, dt, glow) {
+  const L = art, lv = theme.lv;
+  let nearest = 99;
+  for (const d of L.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    const near = w => Math.hypot(w.x + 0.5 - d.x / T, w.y + 0.5 - d.y1 / T);
+    const spook = G.wraiths.some(w => (w.state === 'active' || w.state === 'leave') && near(w) < 3.5);
+    if (d.kind === 'tube' || d.kind === 'stube') { // a fluorescent tube that buzzes and stutters, and dies near the Wraith
+      const len = d.kind === 'tube' ? 16 : 8, tx = x - (len >> 1), ty = y0 + (d.kind === 'tube' ? 2 : 1);
+      const f = Math.floor(G.t * (spook ? 18 : 9)), stutter = spook ? hash2(f, d.seed * 997 | 0) < 0.55 : hash2(f, d.seed * 997 | 0) > 0.985;
+      const k = stutter ? 0.15 : 1;
+      if (!glow) { pr(tx - 1, ty - 1, len + 2, 3, '#2a3440'); pr(tx, ty, len, 1, '#9ab0bc'); }
+      else if (k > 0.5) { pr(tx, ty, len, 1, '#f2fdff'); pr(tx + 1, ty, len - 2, 1, '#ffffff'); }
+      if (!glow) addLightPx(x, y1 + T * 0.5, (d.kind === 'tube' ? 3.2 : 2.2) * T, [0.72, 0.9, 1], (d.kind === 'tube' ? 0.5 : 0.3) * k);
+    } else if (d.kind === 'thermo') { // the needle sits low, and drops further while a frost berry's on
+      if (glow) continue;
+      const th = Math.max(4, F - 1), tx = x, ty = y0 + 1, lvl = Math.round((th - 2) * (G.chill > 0 ? 0.12 : 0.35));
+      pr(tx - 1, ty, 3, th, '#c8d4dc'); pr(tx, ty + 1, 1, th - 2, '#3a4652');
+      pr(tx, ty + th - 1 - lvl, 1, lvl, G.chill > 0 ? '#5ad0ff' : '#d84050');
+      pr(tx - 1, ty + th - 1, 3, 2, G.chill > 0 ? '#5ad0ff' : '#d84050');
+    } else if (d.kind === 'shelf') {
+      if (glow) continue;
+      const sy = y0 + Math.round(F * 0.62), sx = x - 9;
+      pr(sx, sy, 18, 1, '#8a9aaa'); pr(sx, sy - 1, 18, 1, '#e4f2fa'); pr(sx + 1, sy + 1, 1, 2, '#5a6a7a'); pr(sx + 16, sy + 1, 1, 2, '#5a6a7a');
+      const items = [['box', '#c86a3a'], ['tub', '#e89ab8'], ['fish', '#7a9ab0'], ['box', '#4a8ac8'], ['tub', '#f0e0a0']];
+      let ix = sx + 1;
+      for (let i = 0; i < 3; i++) {
+        const [kind, col] = items[Math.floor(hash2(i, d.seed * 1000 | 0) * items.length)];
+        if (kind === 'box') { pr(ix, sy - 5, 5, 4, col); pr(ix, sy - 5, 5, 1, '#e8f4fa'); ix += 6; }
+        else if (kind === 'tub') { pr(ix, sy - 4, 4, 3, col); pr(ix, sy - 5, 4, 1, '#ffffff'); ix += 5; }
+        else { pr(ix, sy - 3, 5, 2, col); pr(ix + 5, sy - 4, 1, 4, col); pr(ix + 1, sy - 3, 1, 1, '#1a2430'); ix += 7; }
+      }
+    } else if (d.kind === 'hooks') { // a meat rail with frozen treats swaying on it
+      if (glow) continue;
+      pr(x - 9, y0 + 1, 18, 1, '#3a4652');
+      for (let i = 0; i < 3; i++) {
+        const hx = x - 6 + i * 6, sway = Math.round(Math.sin(G.t * 1.4 + d.seed * 9 + i * 1.7) * 0.7), hy = y0 + 2;
+        pr(hx, hy, 1, 2, '#8a9aaa');
+        const pop = hash2(i, d.seed * 1000 | 0) < 0.6;
+        if (pop) { const col = ['#ff6a80', '#ffb040', '#7ad0ff'][i]; pr(hx - 1 + sway, hy + 2, 3, 4, col); pr(hx - 1 + sway, hy + 2, 3, 1, '#ffffff'); pr(hx + sway, hy + 6, 1, 2, '#d8b878'); }
+        else { pr(hx - 2 + sway, hy + 2, 5, 4, '#d8b088'); pr(hx - 2 + sway, hy + 2, 5, 1, '#f0e0d0'); pr(hx + 2 + sway, hy + 6, 1, 1, '#d8b088'); }
+      }
+    } else if (d.kind === 'sign') {
+      if (glow) continue;
+      const s = 'KEEP SHUT', w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      pr(sx, sy, w, 7, '#e8c020'); pr(sx, sy, w, 1, '#fff0a0'); tinyText(fbx, s, sx + 2, sy + 1, '#b02020');
+    } else if (d.kind === 'board') { // rink boards with goofy ads
+      if (glow) continue;
+      const [s, col] = RINK_ADS[Math.floor(d.seed * RINK_ADS.length)], w = tinyW(s) + 6, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      pr(sx, sy, w, 7, '#eef4f8'); pr(sx, sy + 6, w, 1, '#9aaab8'); pr(sx, sy, 2, 7, col); tinyText(fbx, s, sx + 4, sy + 1, col);
+    } else if (d.kind === 'scoreboard') { // the rink's scoreboard shows your score
+      const s = String(G.score).padStart(5, '0'), w = tinyW(s) + 6, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      if (!glow) { pr(sx - 1, sy - 1, w + 2, 9, '#5a6a7a'); pr(sx, sy, w, 7, '#0a0c10'); tinyText(fbx, s, sx + 3, sy + 1, '#6a4010'); addLightPx(x, sy + 4, T * 1.4, [1, 0.7, 0.3], 0.3); }
+      else tinyText(fbx, s, sx + 3, sy + 1, '#ffb030');
+    } else if (d.kind === 'crates') { // crates and tubs stacked against the wall, frosted on top
+      if (glow) continue;
+      const by = y1;
+      pr(x - 9, by - 7, 8, 7, '#6a4a2e'); pr(x - 9, by - 4, 8, 1, '#4a3220'); pr(x - 9, by - 7, 8, 1, '#d8eef8'); pr(x - 6, by - 7, 1, 7, '#4a3220');
+      pr(x, by - 5, 6, 5, '#e89ab8'); pr(x, by - 6, 6, 1, '#ffffff'); pr(x + 1, by - 3, 4, 1, '#c87898');
+      pr(x + 7, by - 9, 4, 9, '#7a5a3a'); pr(x + 7, by - 9, 4, 1, '#d8eef8');
+    } else if (d.kind === 'fportrait') { // an iced-over portrait: up close, a face wipes a peephole and watches you
+      const fw = 11, fh = F + 3, fx = x - 5, fy = y1 - 2 - fh, ix = fx + 2, iy = fy + 2, iw = fw - 4, ih = fh - 4;
+      const dx = (pac.x + 0.5) * T - d.x, lk = Math.abs(dx) < T * 0.8 ? 0 : Math.sign(dx);
+      const close = G.state === 'play' && Math.hypot(dx, (pac.y + 0.5) * T - d.y1) < T * 2.8;
+      if (!glow) {
+        pr(fx, fy, fw, fh, '#2a2a34'); pr(fx + 1, fy + 1, fw - 2, fh - 2, '#9ab0c4'); pr(fx + 1, fy + 1, fw - 2, 1, '#d8eaf4');
+        for (let j = 0; j < ih; j++) for (let i = 0; i < iw; i++) pr(ix + i, iy + j, 1, 1, hash2(i + d.c * 7, j) > 0.5 ? '#dceef8' : '#bcd6e6');
+        if (close) { pr(ix + 1, iy + 1, iw - 2, 4, '#1c1626'); pr(ix + 2 + lk, iy + 2, 1, 1, '#ff3030'); pr(ix + 4 + lk, iy + 2, 1, 1, '#ff3030'); addLightPx(ix + 3, iy + 2, T * 0.8, [1, 0.2, 0.2], 0.4); }
+      } else if (close) { pr(ix + 2 + lk, iy + 2, 1, 1, '#ff5050'); pr(ix + 4 + lk, iy + 2, 1, 1, '#ff5050'); }
+    }
+  }
+  if (glow) return;
+  // The ghost house is a chest freezer: a fogged lid over the frosted floor.
+  if (L.houseBox) {
+    const b = L.houseBox, x0 = b.c0 * T - camX, y0 = b.r0 * T - camY, w = (b.c1 - b.c0 + 1) * T, h = (b.r1 - b.r0 + 1) * T;
+    fbx.globalAlpha = 0.18 + 0.06 * Math.sin(G.t * 1.3);
+    pr(x0 + 2, y0 + 2, w - 4, h - 4, '#e8f6ff');
+    fbx.globalAlpha = 1;
+    pr(x0 + 2, y0 + h - 3, w - 4, 1, '#8eaabf');
+    addLightPx(x0 + w / 2, y0 + h / 2, 2.4 * T, [0.6, 0.85, 1], 0.25);
+  }
+  // Frost blooms where the Wraith has passed through a wall: they grow, glint, then fade.
+  for (const bl of frz.blooms) {
+    const grow = Math.min(1, bl.t / 0.5), fade = bl.t < 3.5 ? 1 : Math.max(0, 1 - (bl.t - 3.5) / 2.5);
+    fbx.globalAlpha = fade;
+    for (const p of FERN) {
+      if (p.k > grow) break;
+      const wx = Math.round(bl.x + p.dx), wy = Math.round(bl.y + p.dy);
+      if (wx < 0 || wy < 0 || wx >= L.PW || wy >= L.PH || !L.cls[wy * L.PW + wx]) continue;
+      pr(wx - camX, wy - camY, 1, 1, p.k < 0.25 ? '#ffffff' : p.k < 0.7 ? '#d4f2ff' : '#9fd4ee');
+    }
+  }
+  fbx.globalAlpha = 1;
+  // On the rink, everyone's reflected in the ice.
+  if (lv === 2 && enemiesShown()) {
+    const mirror = (e, draw) => {
+      const fy = Math.round((e.y + 0.5) * T + T * 0.42 - camY);
+      fbx.save(); fbx.globalAlpha = 0.16; fbx.translate(0, 2 * fy); fbx.scale(1, -1); draw(); fbx.restore();
+    };
+    if (G.state === 'play' || G.state === 'ready') mirror(pac, () => pxPac(pac.x, pac.y, pac.face, 0.4));
+    for (const g of G.ghosts) if (!g.eaten && g.mode !== 'house') mirror(g, () => pxGhost(g));
+    for (const w of G.wraiths) if (w.state === 'active' && tile(Math.round(w.x), Math.round(w.y)) !== '#') mirror(w, () => blit(wraithSprite(0, w.dir || D, iceOn() ? 'ice' : ''), w.x + 0.5, w.y + 0.42));
+  }
+}
+// The ghost house door is a walk-in freezer's plastic strip curtain; the strips part around ghosts.
+function frzDoor() {
+  const top = Math.round((house.exitY + 1.2) * T) - camY, x0 = house.doorC * T - camX, n = 7, sw = 2 * T / n, len = Math.round(T * 0.8);
+  pr(x0, top - 1, 2 * T, 1, '#5a6a7a');
+  const pushers = [...G.ghosts, ...G.wraiths].filter(e => Math.abs(e.y - (house.exitY + 1)) < 1.4 && Math.abs(e.x - house.doorX) < 1.6);
+  for (let i = 0; i < n; i++) {
+    const sx = x0 + (i + 0.5) * sw;
+    let push = Math.sin(G.t * 1.3 + i * 1.7) * 0.6;
+    for (const e of pushers) { const ex = (e.x + 0.5) * T - camX, dd = sx - ex; if (Math.abs(dd) < T * 0.9) push += Math.sign(dd || 1) * (T * 0.9 - Math.abs(dd)) * 0.7; }
+    for (let r = 0; r < len; r++) {
+      fbx.globalAlpha = 0.5;
+      pr(Math.round(sx + push * (r / len)), top + r, 1, 1, '#cfeeff');
+      fbx.globalAlpha = 0.25;
+      pr(Math.round(sx + push * (r / len)) + 1, top + r, 1, 1, '#ffffff');
+    }
+  }
+  fbx.globalAlpha = 1;
+  addLightPx(x0 + T, top + len / 2, 1.4 * T, [0.6, 0.85, 1], 0.2);
+}
+// Anyone waiting in the ghost house is frozen solid into a cube of ice, seen from above and to the left:
+// a frosted top, a cloudy deep-blue front with meltwater streaks hanging from its top edge, a darker
+// side face, and bright edges. Only a faint shape of the prisoner and its eyes shows through. When they
+// break out, cracks spread from an impact point near the top before the cube shatters.
+let iceDrawing = false; // set while the faint prisoner is drawn inside its cube
+function iceShape(seed) {
+  return spr(`ice|${T}|${seed}`, () => {
+    const m = 1, fw = Math.round(T * 1.6), fh = Math.round(T * 1.72), d = Math.round(T * 0.42), sw = Math.round(T * 0.42);
+    const SW = fw + sw + m * 2, SH = fh + d + m * 2, X0 = m, Y0 = m;
+    // Faces in sprite pixels: top (a slanted parallelogram), front (a rectangle), side (slanted on the right).
+    const face = (x, y) => {
+      const u = x - X0, v = y - Y0;
+      if (v < d) { const xl = sw * (d - v) / d; return u >= xl && u < xl + fw ? 'top' : null; }
+      if (u >= 0 && u < fw && v < d + fh) return 'front';
+      if (u >= fw && u < fw + sw) { const top = d - (u - fw) * d / sw; return v >= top && v < top + fh ? 'side' : null; }
+      return null;
+    };
+    const drip = u => { const h = hash2(u >> 1, seed + 5); return h > 0.55 ? 2 + Math.floor(hash2(u >> 1, seed + 6) * fh * 0.45) : h > 0.3 ? 1 + Math.floor(h * 3) : 0; };
+    const deep = hex('#1d4a84'), mid = hex('#2f6cae'), light = hex('#5aa4d8'), pale = hex('#9fd6f0'), frost = hex('#c8e8f6'), white = hex('#eefbff');
+    const canvas = pixSprite(SW, SH, (px_, py_) => {
+      const x = px_ - 0.5, y = py_ - 0.5, f = face(x, y);
+      if (!f) return null;
+      const u = x - X0, v = y - Y0, n = vnoise(x / 4 + seed * 3, y / 4), n2 = vnoise(x / 9 + seed, y / 7 + 3);
+      const edge = (dx, dy) => face(x + dx, y + dy) !== f;
+      if (f === 'top') {
+        if (!face(x, y - 1) || !face(x - 1, y)) return [...white, 255];
+        let c = mixc(frost, white, n > 0.62 ? 0.6 : 0);
+        if (n2 < 0.35) c = mixc(c, pale, 0.6);
+        return [...c, 255];
+      }
+      const k = (v - d) / fh; // 0 at the top of the face, 1 at the floor
+      let c = mixc(mixc(light, mid, Math.min(1, k * 1.4)), deep, Math.max(0, k - 0.45) * 1.4);
+      if (n > 0.64) c = mixc(c, light, 0.55); else if (n < 0.32) c = mixc(c, deep, 0.6); // cloudy inside
+      if (hash2((u / 3) | 0, seed + 2) > 0.78 && n2 > 0.4) c = mixc(c, pale, 0.35); // a light streak through the ice
+      if (v - d < drip(u)) c = mixc(pale, frost, (v - d) / Math.max(1, drip(u)) < 0.6 ? 0.7 : 0); // meltwater hanging from the top edge
+      if (hash2(x * 3 + seed, y * 5) > 0.986) c = white; // a bubble
+      if (fh + d - v <= 2) c = mixc(c, pale, 0.55); // frosted where it meets the floor
+      if (f === 'side') c = mulc(c, 0.7);
+      if (f === 'front' && u === fw - 1) c = mixc(c, white, 0.7); // the front corner catches the light
+      if (edge(-1, 0) && f === 'front') c = mixc(c, white, 0.6);
+      if (!face(x + 1, y) || !face(x, y + 1)) c = hex('#123660');
+      return [...c, 255];
+    }, 0);
+    const inside = (x, y) => face(x, y) === 'front' || face(x, y) === 'side';
+    // Cracks: from an impact point near the top of the front face, zigzags run out to the edges, with twigs.
+    const cracks = [], ix = X0 + fw * (0.35 + hash2(seed, 77) * 0.3), iy = Y0 + d + fh * 0.2;
+    const walk = (x, y, a, k0, span, depth) => {
+      for (let s = 0; s < 40; s++) {
+        a += (hash2(seed * 7 + depth, s + k0 * 100) - 0.5) * 0.9;
+        x += Math.cos(a); y += Math.sin(a);
+        if (!inside(x, y)) break;
+        cracks.push({ x: Math.round(x), y: Math.round(y), k: Math.min(1, k0 + s / 24 * span) });
+        if (depth < 1 && s === 5) walk(x, y, a + (hash2(seed, s) < 0.5 ? 0.9 : -0.9), k0 + s / 24 * span, span * 0.8, depth + 1);
+      }
+    };
+    for (let b = 0; b < 5; b++) walk(ix, iy, b / 5 * Math.PI * 2 + hash2(seed, b + 9), 0, 0.9, 0);
+    cracks.sort((a, b) => a.k - b.k);
+    // The outline of the front and side faces, for clipping the faint prisoner inside.
+    const clip = [[X0, Y0 + d], [X0 + fw, Y0 + d], [X0 + fw + sw, Y0], [X0 + fw + sw, Y0 + fh], [X0 + fw, Y0 + d + fh], [X0, Y0 + d + fh]];
+    return { canvas, cracks, clip, SW, SH, fx: X0 + fw / 2, fy: Y0 + d + fh / 2 };
+  });
+}
+function frzIceBlocks() {
+  for (const e of iceDwellers().sort((a, b) => a.x - b.x)) {
+    const seed = e.name ? e.name.charCodeAt(0) * 3 + e.name.length : 100 + Math.round(e.hx * 10);
+    const ice = iceShape(seed), p = e.crack > 0 ? Math.max(0, 1 - e.crack / ICE_CRACK) : 0;
+    const jit = p > 0.66 ? Math.round((hash2(Math.floor(G.t * 30), seed) - 0.5) * 2) : 0; // the ice shudders; its prisoner doesn't
+    const cx = (e.x + 0.5) * T - camX, cy = (e.y + 0.48) * T - camY;
+    const x0 = Math.round(cx - ice.fx) + jit, y0 = Math.round(cy - ice.fy);
+    fbx.drawImage(ice.canvas, x0, y0);
+    // The prisoner: a faint shape, and its eyes a little stronger.
+    fbx.save();
+    fbx.beginPath(); ice.clip.forEach(([x, y], i) => i ? fbx.lineTo(x0 - jit + x, y0 + y) : fbx.moveTo(x0 - jit + x, y0 + y)); fbx.closePath(); fbx.clip();
+    iceDrawing = true;
+    fbx.globalAlpha = 0.2;
+    if (e.name) pxGhost(e); else pxWraith(e);
+    fbx.globalAlpha = 0.6;
+    if (e.name) blit(ghostEyes(e.dir || U, false), e.x + 0.5, e.y + 0.5);
+    else blit(wraithSprite(0, e.dir || D, 'eyes'), e.x + 0.5, e.y + 0.42);
+    iceDrawing = false;
+    fbx.restore();
+    fbx.globalAlpha = 1;
+    for (const q of ice.cracks) {
+      if (q.k > p) break;
+      pr(x0 + q.x + 1, y0 + q.y + 1, 1, 1, '#0e2a4c');
+      pr(x0 + q.x, y0 + q.y, 1, 1, q.k < p - 0.2 ? '#ffffff' : '#d4f2ff');
+    }
+    for (let i = 0; i < 5; i++) { // frost sparkles in the air around it
+      const tw = Math.sin(G.t * 2.6 + i * 2.1 + seed);
+      if (tw < 0.55) continue;
+      pr(x0 + Math.round(hash2(seed, i + 60) * ice.SW), y0 - 2 + Math.round(hash2(seed, i + 70) * ice.SH * 0.7), 1, 1, tw > 0.85 ? '#ffffff' : '#bfe8ff');
+    }
+  }
+}
+// Fog pooling in corners and dead ends; it parts around anyone walking through, and rolls in with the compressor.
+function frzFog() {
+  const L = art, fs = fogSprite(), C = frz.comp, surge = C.t > 0 ? Math.sin(Math.min(1, (3.2 - C.t) / 3.2) * Math.PI) : 0;
+  const movers = [pac, ...G.ghosts, ...G.wraiths];
+  for (const f of L.fog || []) {
+    let part = 1;
+    for (const e of movers) { const d = Math.hypot(e.x + 0.5 - f.x, e.y + 0.5 - f.y); if (d < 1.6) part = Math.min(part, Math.max(0, (d - 0.4) / 1.2)); }
+    const a = (0.55 + 0.3 * Math.sin(G.t * 0.7 + f.s) + surge * 0.6) * part;
+    if (a <= 0.02) continue;
+    fbx.globalAlpha = Math.min(1, a);
+    blit(fs, f.x + Math.sin(G.t * 0.4 + f.s) * 0.25, f.y + 0.1);
+  }
+  if (surge > 0.05 && L.reach) { // a low mist rolls along every corridor
+    fbx.globalAlpha = surge * 0.45;
+    const drift = (3.2 - C.t) * 1.6;
+    for (let r = 1; r < L.h; r += 2) for (let c = (r >> 1) % 3; c < L.w; c += 3) if (L.reach[r * L.w + c]) blit(fs, c + 0.5 + drift % 3, r + 0.6);
+  }
+  fbx.globalAlpha = 1;
+}
+// After the light: snowflakes, the walls icing over, the berry's shockwave and the frost at the screen's edge.
+const snow = Array.from({ length: 64 }, (_, i) => ({ x: hash2(i, 21) * 400, y: hash2(i, 22) * 400, ph: hash2(i, 23) * 6.3, sp: 6 + hash2(i, 24) * 8 }));
+function frzPost(dt) {
+  const MW = VIEW_W + 16, MH = VIEW_H + 16;
+  for (const f of snow) {
+    f.y += f.sp * dt; f.x += Math.sin(G.t * 0.8 + f.ph) * 4 * dt;
+    const sx = ((Math.round(f.x - camX * 0.6) % MW) + MW) % MW - 8, sy = ((Math.round(f.y - camY * 0.6) % MH) + MH) % MH - 8;
+    const a = Math.max(0.14, Math.min(0.9, (lightAt(sx, sy) - 0.55) * 2));
+    fbx.globalAlpha = a; pr(sx, sy, 1, 1, '#f4fbff');
+  }
+  if (frz.ice > 0.02) { // the walls ice over, then crack and flicker as they thaw
+    const thaw = G.chill > 0 && G.chill < 1.5;
+    fbx.globalAlpha = frz.ice * (thaw ? (iceOn() ? 0.3 : 0.12) : 0.32);
+    fbx.drawImage(art.mask, -camX, -camY);
+  }
+  if (frz.wave) {
+    const w = frz.wave, r = (w.t / 0.7) * 12 * T, cx = w.x * T - camX, cy = w.y * T - camY, n = Math.ceil(r * 0.8);
+    fbx.globalAlpha = 1 - w.t / 0.7;
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; pr(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 2, 2, '#e8fbff'); }
+  }
+  if (frz.cold > 0.02) { fbx.globalAlpha = Math.min(0.75, frz.cold); fbx.drawImage(frostEdgeSprite(), 0, 0); }
+  fbx.globalAlpha = 1;
+}
+// A frozen Wraith shatters into glittering shards, with a split-second freeze frame.
+function frzShatter(x, y) {
+  fxBurst(x + 0.5, y + 0.5, '#ffffff', 14, 6, 0.6);
+  fxBurst(x + 0.5, y + 0.5, '#bfe8ff', 18, 4, 0.8);
+  fxBurst(x + 0.5, y + 0.5, '#c9b8ff', 8, 3, 0.6);
+  G.hitstop = 0.12;
+}
 
 // ---------- Light ----------
 // Light is summed per 2x2-pixel cell from the theme's ambient plus every source near the view, then
@@ -5370,6 +5916,7 @@ function drawFlame(x, y, seed, big) { // x: left column of a 2px wick; y: wick t
 }
 // Drawn twice: once before the light map, and again after it (glow) for the parts that give off light.
 function drawDecor(theme, dt, glow) {
+  if (theme.freezer) return frzDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -5587,10 +6134,10 @@ function moveCamera(dt) {
 }
 function renderWorld() {
   const now = performance.now(), rdt = Math.min(0.05, (now - lastDraw) / 1000 || 0); lastDraw = now;
-  const dt = G.paused ? 0 : rdt, theme = themeFor(G.cfg.stage);
+  const dt = G.paused ? 0 : rdt, theme = themeFor(G.cfg.stage, G.cfg.lv);
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -5598,10 +6145,11 @@ function renderWorld() {
   fbx.drawImage(art.canvas, -camX, -camY);
   if (G.state === 'clear' && G.timer > 1 && Math.floor((G.timer - 1) / 0.22) % 2 === 0) { fbx.globalAlpha = 0.85; fbx.drawImage(art.mask, -camX, -camY); fbx.globalAlpha = 1; }
   atmoUpdate(dt, theme);
+  if (theme.freezer) frzUpdate(dt, theme);
   drawDecor(theme, dt);
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
   worldTf();
   if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
@@ -5659,6 +6207,7 @@ function renderWorld() {
     if (showEnemies) for (const s of G.slimes) if (s.state === 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state === 'house') pxWraith(w);
     if (showEnemies) for (const g of G.ghosts) if (g !== G.eatenGhost) pxGhost(g);
+    if (showEnemies && theme.freezer) frzIceBlocks();
     if (showEnemies) for (const h of G.hounds) pxHound(h);
     if (showEnemies) for (const s of G.slimes) if (s.state !== 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state !== 'house') pxWraith(w);
@@ -5684,18 +6233,23 @@ function renderWorld() {
       worldTf(); for (const v of G.vents) drawSteam(v); idTf();
     }
   }
+  if (theme.freezer) frzFog();
   partsStep(dt, theme);
   fbx.restore(); idTf();
   entityLights(showEnemies, pacShown);
-  const fl = flashLevel(), amb = fl > 0 ? mixc(theme.ambient, [1.25, 1.3, 1.55], fl) : theme.ambient;
+  const fl = flashLevel();
+  let amb = fl > 0 ? mixc(theme.ambient, [1.25, 1.3, 1.55], fl) : theme.ambient;
+  if (theme.freezer) amb = mulc(mixc(amb, [0.8, 0.95, 1.1], frz.ice * 0.4), frzBrown());
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
   if (theme.dust) drawMotes(dt);
+  if (theme.freezer) frzPost(dt);
   if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); }
   if (fxOn) {
     bloom();
     if (theme.grade) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = theme.grade[1]; pr(0, 0, VIEW_W, VIEW_H, theme.grade[0]); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
+    if (theme.freezer && frz.ice > 0.02) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = frz.ice * 0.28; pr(0, 0, VIEW_W, VIEW_H, '#9ff0ff'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
   }
   if (!cast) drawMinimap();
   fbx.font = '8px "Press Start 2P", "Courier New", monospace'; fbx.textAlign = 'center'; fbx.textBaseline = 'middle';
