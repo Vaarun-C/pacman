@@ -970,6 +970,7 @@ const SFX = {
   klaxon() { [0, 0.32, 0.64].forEach(t => { beep(660, 660, 0.14, 'square', 0.05, t); beep(440, 440, 0.14, 'square', 0.05, t + 0.16); }); },
   thwip() { beep(900, 2400, 0.08, 'triangle', 0.08); beep(500, 200, 0.1, 'sine', 0.06, 0.04); },
   blorp() { beep(320, 110, 0.16, 'sine', 0.14); beep(180, 90, 0.12, 'triangle', 0.08, 0.05); },
+  fanfare() { [[523, 0], [659, 0.12], [784, 0.24], [1047, 0.36], [784, 0.56], [1047, 0.68]].forEach(([f, t], i) => beep(f, f, i > 3 ? 0.3 : 0.11, 'square', 0.06, t)); beep(131, 131, 0.9, 'triangle', 0.18, 0); },
   hum() { beep(55, 52, 2.4, 'sawtooth', 0.03); beep(110, 106, 2.2, 'triangle', 0.035, 0.05); beep(190, 80, 0.12, 'square', 0.04); },
   crack() { beep(1900, 700, 0.07, 'square', 0.035); beep(1200, 300, 0.1, 'sawtooth', 0.03, 0.04); },
   chip() { beep(2600, 1800, 0.04, 'square', 0.03); beep(3200, 2400, 0.03, 'triangle', 0.025, 0.02); },
@@ -1083,6 +1084,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
+  frzReset(); labReset(); thrReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -2120,6 +2122,7 @@ function hitBoss() {
   G.fright = 0; G.shake = 0.45;
   addScore(1000);
   popup('1000', b.x, b.y - 2, '#ffd86b', 1.5);
+  thrHit();
   if (b.hp <= 0) { bossDie(); return; }
   SFX.bossHit();
   b.state = 'recoil';
@@ -2740,7 +2743,7 @@ function play(dt) {
     if (!touching) continue;
     if (G.chill > 0) {
       w.state = 'eaten';
-      if (themeFor(G.cfg.stage, G.cfg.lv).freezer) frzShatter(w.x, w.y);
+      if (curTheme().freezer) frzShatter(w.x, w.y);
       addScore(500); SFX.shatter(); SFX.ghost();
       popup('500', w.x, w.y, '#bdf4ff');
       continue;
@@ -4576,7 +4579,11 @@ function pxKing(b) {
   const li = ((Math.round(Math.atan2(pac.y - b.y, pac.x - b.x) / (Math.PI / 4)) % 8) + 8) % 8;
   const sp = kingSprite(ph, body, G.chill > 0 ? 0 : Math.floor(G.t * 8) % 2, li, ice ? 'ice' : fr ? (flash ? 'flash' : 'fright') : '');
   const bob = G.chill > 0 ? 0 : Math.round(Math.sin(G.t * 2.6) * T * 0.12);
-  fbx.drawImage(sp, Math.round((b.x + 0.5) * T - camX - sp.width / 2), Math.round((b.y + 0.4) * T - camY) - sp.dcy + bob);
+  const x = Math.round((b.x + 0.5) * T - camX - sp.width / 2), y = Math.round((b.y + 0.4) * T - camY) - sp.dcy + bob;
+  if (!(b.tilt > 0)) { fbx.drawImage(sp, x, y); return; }
+  fbx.save(); // knocked crooked by a hit: he rocks and settles
+  fbx.translate(x + sp.width / 2, y + sp.height * 0.7); fbx.rotate(Math.sin(b.tilt * 14) * 0.25 * b.tilt);
+  fbx.drawImage(sp, -sp.width / 2, -sp.height * 0.7); fbx.restore();
 }
 
 // The Big Blob, a heap of red goo: a tall lumpy dome that slumps into a puddle, mottled with lighter
@@ -5318,7 +5325,13 @@ function genericTheme(stage) {
     },
   };
 }
-const themeFor = (stage, lv = 1) => stage === 2 || stage === 3 ? THEMES[`${stage}-${lv}`] || (THEMES[`${stage}-${lv}`] = (stage === 2 ? freezerTheme : labTheme)(lv)) : THEMES[stage] || (THEMES[stage] = genericTheme(stage));
+// lv is 0 for the roof's bonus rounds, which borrow stage numbers but keep the plain look.
+const themeFor = (stage, lv = 0) => {
+  if (lv && (stage === 2 || stage === 3)) return THEMES[`${stage}-${lv}`] || (THEMES[`${stage}-${lv}`] = (stage === 2 ? freezerTheme : labTheme)(lv));
+  if (lv && stage === 4) return THEMES['4-1'] || (THEMES['4-1'] = throneTheme());
+  return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
+};
+const curTheme = () => themeFor(G.cfg.stage, G.lvIndex >= ROOF ? 0 : G.cfg.lv);
 // ---------- The Freezer (stage 2) ----------
 // Walk-in freezer, ice rink and cold storage: steel panels under icicles, snow on the wall tops,
 // fluorescent tubes, a compressor that kicks in every so often, and the Wraith's cold, which follows
@@ -5969,9 +5982,9 @@ function labTheme(lv) {
 }
 
 // Per-floor state for the lab, reset whenever the level art is rebuilt.
-const lab = { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, dashing: false, miss: 0, near: new WeakMap(), house: new Set(), trailT: 0 };
-function labReset() { Object.assign(lab, { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, dashing: false, miss: 0, near: new WeakMap(), house: new Set(), trailT: 0 }); }
-const labActive = () => themeFor(G.cfg.stage, G.cfg.lv).lab;
+const lab = { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, house: new Set(), trailT: 0 };
+function labReset() { Object.assign(lab, { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, house: new Set(), trailT: 0 }); }
+const labActive = () => curTheme().lab;
 const gooBlob = r => spr(`goo|${r}`, () => pixSprite(r * 2 + 1, r * 2 + 1, (x, y) => {
   const d = Math.hypot(x - r - 0.5, y - r - 0.5) / (r + 0.5);
   return d > 1 ? null : d < 0.35 && x < r && y < r ? [190, 255, 170, 230] : d < 0.8 ? [72, 190, 70, 210] : [40, 120, 44, 200];
@@ -6028,20 +6041,8 @@ function labUpdate(dt, theme) {
     lab.house.delete(e);
     fxBurst(e.x + 0.5, e.y + 0.3, '#5cff6b', 14, 4, 0.55); fxBurst(e.x + 0.5, e.y + 0.3, '#c8ffb0', 6, 3, 0.4); SFX.blorp();
   }
-  // Dash: a kick of dust and goo, glints along the tiles, a splash through any puddle, a flash on a near miss.
-  const dashing = pac.dash > 0;
-  if (dashing && !lab.dashing) {
-    const d = pac.dir || pac.face;
-    for (let i = 0; i < 10; i++) { const t = 0.35 + Math.random() * 0.2; parts.push({ x: pac.x + 0.5 - d.x * 0.5, y: pac.y + 0.9, vx: -d.x * (1 + Math.random() * 2) + (Math.random() - 0.5), vy: -d.y * 2 - Math.random(), t, t0: t, col: i % 3 ? '#c8c8b8' : '#5cff6b', g: 3, drag: 3 }); }
-  }
-  lab.dashing = dashing;
-  if (dashing) {
-    if (Math.random() < dt * 30) parts.push({ x: pac.x + 0.5 + (Math.random() - 0.5) * 0.8, y: pac.y + 0.5 + (Math.random() - 0.5) * 0.8, vx: 0, vy: 0, t: 0.25, t0: 0.25, col: '#ffffff', g: 0 });
-    for (const q of art.puddles || []) if (q.size > 0.6 && Math.hypot(q.x - pac.x - 0.5, q.y - pac.y - 0.5) < 0.8) { q.size = 0.2; fxBurst(q.x, q.y, '#5cff6b', 16, 5, 0.5); SFX.blorp(); }
-    const foes = [...G.ghosts.filter(g => g.mode === 'active' && !g.eaten), ...G.slimes.filter(s => s.state === 'active'), ...G.wraiths.filter(w => w.state === 'active')];
-    for (const e of foes) if (Math.hypot(e.x - pac.x, e.y - pac.y) < 0.8 && !(lab.near.get(e) > G.t)) { lab.near.set(e, G.t + 0.6); lab.miss = 0.25; }
-  }
-  if (lab.miss > 0) lab.miss = Math.max(0, lab.miss - dt);
+  // Dashing through a goo puddle splashes it (the rest of the dash effects run on every floor).
+  if (pac.dash > 0) for (const q of art.puddles || []) if (q.size > 0.6 && Math.hypot(q.x - pac.x - 0.5, q.y - pac.y - 0.5) < 0.8) { q.size = 0.2; fxBurst(q.x, q.y, '#5cff6b', 16, 5, 0.5); SFX.blorp(); }
   // The lab bubbles.
   for (const d of art.decor) if ((d.kind === 'beaker' || d.kind === 'beakers') && Math.random() < dt * 0.6 && G.state === 'play') {
     const t = 0.7 + Math.random() * 0.4;
@@ -6174,7 +6175,7 @@ function labDecor(theme, dt, glow) {
 function labVat() {
   const b = art.houseBox; if (!b) return;
   const x0 = b.c0 * T - camX, y0 = b.r0 * T - camY, w = (b.c1 - b.c0 + 1) * T, h = (b.r1 - b.r0 + 1) * T, top = y0 + Math.round(h * 0.18);
-  const spa = themeFor(G.cfg.stage, G.cfg.lv).spa;
+  const spa = curTheme().spa;
   fbx.globalAlpha = 0.42;
   for (let i = 0; i < w; i++) { const sy = Math.round(top + Math.sin(G.t * 2 + i * 0.25) * 1.5); pr(x0 + i, sy, 1, y0 + h - sy, spa ? '#4ac08a' : '#3aa84a'); }
   fbx.globalAlpha = 0.9;
@@ -6271,7 +6272,369 @@ function labPost(dt) {
     for (const q of art.puddles || []) { const r = Math.max(1, Math.round(T * 0.32 * q.size)); fbx.drawImage(gooBlob(r), Math.round(q.x * T - camX - r * 1.6), Math.round(q.y * T - camY - r * 0.6), r * 3.2 + 1, r * 1.4 + 1); }
     fbx.globalCompositeOperation = 'source-over';
   }
-  if (pac.dash > 0) { // speed lines streaming off behind
+  fbx.globalAlpha = 1;
+}
+
+// ---------- The Throne Room (stage 4, the King Ghost) ----------
+// A marble hall: the pillar grid becomes gold-trimmed columns, some carrying candelabras, busts of the
+// King, ghost knights, a vanity mirror or a piece of stolen fruit on a velvet cushion. A red carpet runs
+// up to the throne, where the coronation fruit salad waits. The room changes with the fight: magenta
+// and torn banners in phase 2, red light, embers and swinging chandeliers in phase 3, and every hit
+// cracks the marble, until the floor caves in when he's beaten.
+TINY[':'] = TINY[':'] || '000010000010000';
+function throneTheme() {
+  const P = Object.fromEntries(Object.entries({
+    cream: '#8e8270', creamV: '#6e6454', black: '#1e1a22', blackV: '#2e2834', inlay: '#a8822a',
+    carpet: '#7a1424', carpetHi: '#9a2234', carpetTrim: '#c8a040',
+    marble: '#cfc6b4', marbleV: '#9a907e', marbleSh: '#8a8070', gold: '#d8a838', goldHi: '#f8d870', goldLo: '#8a6418',
+    velvet: '#3e1a4e', velvetHi: '#5e2a72', velvetLo: '#24102e', tassel: '#d8a838',
+    dais: '#b8ae9a', daisEdge: '#d8a838',
+  }).map(([k, v]) => [k, hex(v)]));
+  const border = (x, y) => y < T || y >= (H - 1) * T || x < T || x >= (W - 1) * T;
+  return {
+    id: 'throne', void: '#07040a', map: '#c8a040', runner: false, decor: true, throne: true,
+    ambient: [0.64, 0.54, 0.44], vignette: 0.5, grade: ['#ffb040', 0.12],
+    floor(x, y, t) {
+      const c = (x / T) | 0, r = (y / T) | 0, lx = x % T, ly = y % T;
+      const cx = 14 * T, top = 16 * T; // the carpet: from the dais down to the bottom wall, two tiles wide
+      if (y >= top && Math.abs(x - cx) < T - 1) {
+        const e = T - 1 - Math.abs(x - cx);
+        if (e <= 1) return P.carpetTrim;
+        return ((x + y) % 6 === 0 || (x - y) % 6 === 0) ? P.carpetHi : P.carpet;
+      }
+      if (lx === 0 || ly === 0) return P.inlay; // gold inlay between the squares
+      const dark = (c + r) & 1, base = dark ? P.black : P.cream, vein = dark ? P.blackV : P.creamV;
+      const v = Math.abs(vnoise(x / 7 + c * 3, y / 5 + r) - 0.5) < 0.04;
+      return mulc(v ? vein : base, 0.94 + vnoise(x / 3, y / 3) * 0.1);
+    },
+    face(x, y, v, F, edge) {
+      let col;
+      if (border(x, y)) { // velvet drapes over the outer walls, gold tassels at the hem
+        const fold = Math.sin(x * 0.9);
+        col = v === F - 1 ? (x % 3 === 0 ? P.tassel : P.velvetLo) : fold > 0.4 ? P.velvetHi : fold < -0.4 ? P.velvetLo : P.velvet;
+      } else { // a fluted marble column: a gold capital, a gold base
+        col = v <= 1 ? (v === 0 ? P.goldLo : P.gold) : v === F - 1 ? P.goldLo : v === F - 2 ? P.gold : (x % 3 === 0 ? P.marbleSh : x % 3 === 1 ? P.marble : P.marbleV);
+      }
+      return edge < 0 ? mulc(col, 0.82) : edge > 0 ? mulc(col, 0.64) : col;
+    },
+    cap(x, y, ring, side) {
+      if (border(x, y)) return ring === 1 ? P.goldHi : ring === 2 ? P.gold : (x + y) % 4 === 0 ? P.velvetHi : P.velvet;
+      if (ring === 1) return side === 'front' ? P.goldHi : side === 'right' ? P.goldLo : P.gold;
+      if (ring === 2) return P.goldLo;
+      const v = Math.abs(vnoise(x / 5, y / 4) - 0.5) < 0.05;
+      return v ? P.marbleV : P.marble;
+    },
+    pick() { return 'sconce'; }, // the only wall long enough for decorations is the top one: candle sconces
+    bake(L, g) {
+      // The dais under the throne, baked into the floor.
+      const dx0 = 11 * T + 4, dx1 = 17 * T - 4, dy0 = 12 * T + 2, dy1 = 16 * T + 2;
+      g.fillStyle = css(P.goldLo); g.fillRect(dx0 - 1, dy0 - 1, dx1 - dx0 + 2, dy1 - dy0 + 3);
+      g.fillStyle = css(P.dais); g.fillRect(dx0, dy0, dx1 - dx0, dy1 - dy0);
+      g.fillStyle = css(P.daisEdge); g.fillRect(dx0, dy1 - 2, dx1 - dx0, 1); g.fillRect(dx0, dy0, dx1 - dx0, 1);
+      g.fillStyle = css(mulc(P.dais, 0.8)); g.fillRect(dx0, dy1 - 1, dx1 - dx0, 1);
+      // What stands on each column: every free-standing 2x2 pillar gets a prop.
+      L.plinths = [];
+      for (let r = 1; r < L.h - 2; r++) for (let c = 1; c < L.w - 2; c++) {
+        if (!(L.solidT(c, r) && L.solidT(c + 1, r) && L.solidT(c, r + 1) && L.solidT(c + 1, r + 1))) continue;
+        if (L.solidT(c - 1, r) || L.solidT(c, r - 1)) continue;
+        const k = L.plinths.length, h = hash2(c * 3, r * 7);
+        const kind = h < 0.18 ? 'candelabra' : h < 0.27 ? 'bust' : h < 0.36 ? 'knight' : h < 0.45 ? 'exhibit' : h < 0.53 ? 'banner' : 'bare'; // about half stay plain marble
+        L.plinths.push({ c, r, x: (c + 1) * T, y: (r + 0.75) * T, kind, seed: h, fruit: FRUITS[k % 10] });
+      }
+      // One vanity mirror, on the column nearest the throne.
+      let best = null, bd = Infinity;
+      for (const p of L.plinths) { const d = Math.hypot(p.c + 1 - 14, p.r + 1 - 14); if (d < bd) { bd = d; best = p; } }
+      if (best) best.kind = 'mirror';
+      // Cracks, one per hit, then the dozens that open up as the floor gives way.
+      const floorPx = (x, y) => x > 0 && y > 0 && x < L.PW && y < L.PH && L.cls[(y | 0) * L.PW + (x | 0)] === 0;
+      const crack = (x, y, a, n, seed) => {
+        const pts = [];
+        for (let s = 0; s < n; s++) {
+          a += (hash2(seed, s) - 0.5) * 1.1; x += Math.cos(a); y += Math.sin(a);
+          if (!floorPx(x, y)) { a += Math.PI * 0.6; continue; }
+          pts.push([Math.round(x), Math.round(y)]);
+          if (s % 9 === 4) { let bx = x, by = y, ba = a + (hash2(seed, s + 50) < 0.5 ? 1 : -1); for (let q = 0; q < 6; q++) { bx += Math.cos(ba); by += Math.sin(ba); if (floorPx(bx, by)) pts.push([Math.round(bx), Math.round(by), 1]); } }
+        }
+        return pts;
+      };
+      L.cracks = [];
+      for (let i = 0; i < 12; i++) {
+        const a0 = hash2(i, 91) * Math.PI * 2, d0 = 2 + hash2(i, 92) * 9;
+        L.cracks.push(crack(14 * T + Math.cos(a0) * d0 * T, 14.5 * T + Math.sin(a0) * d0 * T, hash2(i, 93) * 6.3, 70, i + 7));
+      }
+      L.collapse = [];
+      for (let i = 0; i < 26; i++) L.collapse.push(crack(14 * T, 14.5 * T, i / 26 * Math.PI * 2, 150, i + 200));
+    },
+  };
+}
+
+// A fruit, in pixel art when it has some, otherwise its vector drawing.
+function thrFruit(kind, x, y) { if (!pxFruit(kind, x, y)) { vecBegin(); vec(drawFruit, kind, x, y); vecEnd(); } }
+// Per-fight state, reset at the start of every attempt.
+const thr = { tilt: 0, lastHit: -9, hitAt: -9, spot: null, flying: [], scorch: [], orbs: new Map(), minions: new Set(), ph: 1, ph3: 0, crown: null, recoil: false, rumble: 0, fanfare: false };
+function thrReset() { Object.assign(thr, { tilt: 0, lastHit: -9, hitAt: -9, spot: null, flying: [], scorch: [], orbs: new Map(), minions: new Set(), ph: 1, ph3: 0, crown: null, recoil: false, rumble: 0, fanfare: false }); }
+const throneOn = () => G.cfg.stage === 4 && G.boss && G.boss.kind === 'king';
+const kingHits = () => G.boss ? BOSSES.king.hp - Math.max(0, G.boss.hp) : 0;
+// A hit: the crown's knocked crooked, coins and jewels scatter, a freeze frame, a fruit flies out of the bowl.
+function thrHit() {
+  if (!throneOn()) return;
+  const b = G.boss;
+  b.tilt = 0.8; thr.lastHit = G.t; thr.hitAt = G.t;
+  G.hitstop = Math.max(G.hitstop || 0, 0.1);
+  fxBurst(b.x + 0.5, b.y - 0.3, '#ffd860', 18, 6, 0.7); fxBurst(b.x + 0.5, b.y - 0.3, '#ff4a6a', 5, 4, 0.6); fxBurst(b.x + 0.5, b.y - 0.3, '#5ab8ff', 5, 4, 0.6);
+  const a = (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.8);
+  thr.flying.push({ x: 16.8, y: 14.6, vx: Math.sin(a) * 6, vy: -7, t: 0, kind: FRUITS[(kingHits() + 3) % 10] });
+}
+function thrUpdate(dt, theme) {
+  if (!dt) return;
+  const b = G.boss;
+  if (!b) return;
+  if (b.tilt > 0) b.tilt = Math.max(0, b.tilt - dt);
+  const ph = bossPhase(b);
+  if (ph === 3 && b.state !== 'dead') thr.ph3 += dt;
+  // The fanfare: when the fight starts, and at each phase change.
+  if (G.state === 'play' && !thr.fanfare && b.state !== 'dead') { thr.fanfare = true; SFX.fanfare(); }
+  if (G.state === 'phase' && thr.ph !== G.phaseTo) { thr.ph = G.phaseTo; SFX.fanfare(); }
+  if (G.state === 'play' && b.state !== 'dead') thr.ph = ph;
+  // The spotlight follows the King; with a power pellet on, it swings round onto Pac-Man.
+  const tgt = G.fright > 0 ? [pac.x + 0.5, pac.y + 0.5] : [b.x + 0.5, b.y + 0.5];
+  if (!thr.spot) thr.spot = tgt.slice();
+  const k = 1 - Math.exp(-dt * 4); thr.spot[0] += (tgt[0] - thr.spot[0]) * k; thr.spot[1] += (tgt[1] - thr.spot[1]) * k;
+  // The throne flares as he limps back to it.
+  if (thr.recoil && b.state === 'chase') fxBurst(14, 13.4, '#ffd860', 14, 3, 0.6);
+  thr.recoil = b.state === 'recoil';
+  // Orbs leave sparkles, and scorch the marble where they hit.
+  const seen = new Set();
+  for (const o of G.orbs) {
+    seen.add(o); thr.orbs.set(o, [o.x, o.y]);
+    if (Math.random() < dt * 25) parts.push({ x: o.x + 0.5, y: o.y + 0.5, vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4, t: 0.3, t0: 0.3, col: Math.random() < 0.5 ? '#ff9ae8' : '#ffffff', g: 0 });
+  }
+  for (const [o, [x, y]] of thr.orbs) if (!seen.has(o)) { thr.orbs.delete(o); if (b.state !== 'dead') thr.scorch.push({ x: x + 0.5, y: y + 0.5, t: 0 }); }
+  for (const s of thr.scorch) s.t += dt;
+  thr.scorch = thr.scorch.filter(s => s.t < 6);
+  // Minions burst out in a flurry of velvet scraps.
+  for (const m of G.minions) if (!thr.minions.has(m)) { thr.minions.add(m); fxBurst(m.x + 0.5, m.y + 0.5, '#5e2a72', 14, 4, 0.6); fxBurst(m.x + 0.5, m.y + 0.5, '#d8a838', 5, 3, 0.4); }
+  // Fruit knocked out of the bowl arcs away and fades.
+  for (const f of thr.flying) { f.t += dt; f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 18 * dt; }
+  thr.flying = thr.flying.filter(f => f.t < 0.9);
+  // Phase 3: embers rise, dust trickles from the ceiling, a low rumble now and then.
+  if (ph === 3 && b.state !== 'dead' && G.state === 'play') {
+    if (Math.random() < dt * 14) { const t = 1 + Math.random(); parts.push({ x: 1 + Math.random() * (W - 2), y: H - 1, vx: (Math.random() - 0.5) * 0.4, vy: -2 - Math.random() * 2, t, t0: t, col: Math.random() < 0.5 ? '#ff7a2a' : '#ffc040', g: 0 }); }
+    if (Math.random() < dt * 10) { const t = 1.2; parts.push({ x: 1 + Math.random() * (W - 2), y: 0.5, vx: 0, vy: 2, t, t0: t, col: '#a89a88', g: 3 }); }
+    if ((thr.rumble -= dt) <= 0) { thr.rumble = 4 + Math.random() * 3; SFX.rumble(); G.shake = Math.max(G.shake, 0.15); }
+  }
+  // Beaten: the crown falls off and rolls away.
+  if (b.state === 'dead' && !thr.crown) thr.crown = { x: b.x + 0.5, y: b.y - 0.4, vx: 3.2, vy: -4, rot: 0, t: 0 };
+  if (thr.crown) {
+    const c = thr.crown; c.t += dt;
+    if (c.t < 0.5) { c.vy += 16 * dt; c.y += c.vy * dt; } // pops up and drops
+    c.x += c.vx * dt; c.rot += c.vx * dt * 1.4; c.vx *= Math.exp(-dt * 1.1);
+    if (c.x > W - 2) { c.x = W - 2; c.vx = -Math.abs(c.vx) * 0.5; }
+  }
+  // The floor gives way: cracks race outward, the shaking builds, then the middle caves in.
+  if (b.state === 'dead' && G.state === 'clear') {
+    const t = G.timer;
+    G.shake = Math.max(G.shake, Math.min(0.6, 0.1 + t * 0.12));
+    if (t > 3.2 && Math.random() < dt * 30) { const a = Math.random() * 6.3, d = Math.random() * thrHole() / T; parts.push({ x: 14 + Math.cos(a) * d, y: 14.5 + Math.sin(a) * d, vx: 0, vy: 1, t: 0.6, t0: 0.6, col: Math.random() < 0.5 ? '#cfc6b4' : '#8a8070', g: 10 }); }
+    if (t > 3.2 && !thr.caved) { thr.caved = true; SFX.rumble(); SFX.crumble(); }
+  }
+}
+// How far the hole in the middle has opened, in pixels (it stays open through the cutscene that follows).
+const thrHole = () => {
+  const b = G.boss;
+  if (!b || b.state !== 'dead') return 0;
+  if (G.state === 'dialog') return T * 7;
+  return G.state === 'clear' ? Math.max(0, Math.min(T * 7, (G.timer - 3.2) * T * 3.6)) : 0;
+};
+// The room's light by phase, with the blacklight-style dimming of a power pellet.
+function thrAmbient(amb) {
+  const b = G.boss;
+  if (!b) return amb;
+  const ph = b.state === 'dead' ? 1 : bossPhase(b);
+  if (ph === 2) amb = mixc(amb, [0.7, 0.42, 0.66], 0.55);
+  if (ph === 3) amb = mixc(amb, [0.8, 0.32, 0.26], 0.6);
+  if (G.fright > 0) amb = mulc(amb, 0.72);
+  return amb;
+}
+// The pillar props, the top wall's sconces and portraits, the throne and the fruit bowl, the cracks.
+function thrDecor(theme, dt, glow) {
+  const L = art, b = G.boss, ph = b && b.state !== 'dead' ? bossPhase(b) : 1, angry = G.t - thr.lastHit < 2;
+  const px_ = x => Math.round(x - camX), py_ = y => Math.round(y - camY);
+  const lookX = (wx) => Math.max(-1, Math.min(1, Math.round(((pac.x + 0.5) * T - wx) / (T * 3))));
+  for (const p of L.plinths || []) {
+    const x = px_(p.x), y = py_(p.y);
+    if (p.kind === 'candelabra') {
+      if (!glow) { pr(x - 4, y + 1, 9, 1, '#c89a40'); pr(x, y - 1, 1, 3, '#9a7a34'); for (const ox of [-4, 0, 4]) pr(x + ox, y - 3, 1, 3, '#e8dcc0'); }
+      else for (const ox of [-4, 0, 4]) { const f = Math.floor(G.t * 11 + p.seed * 50 + ox), on = hash2(f, p.c) > 0.3; pr(x + ox, y - 5, 1, 2, on ? '#ffcc60' : '#ff9a30'); pr(x + ox, y - 6, 1, 1, '#fff2b0'); }
+      if (!glow) addLightPx(x, y - 4, 3 * T, [1, 0.66, 0.32], 0.6);
+    } else if (p.kind === 'bust') { // a gold bust of the King; its eyes follow you, and it scowls when he's been hit
+      if (glow) continue;
+      const lk = lookX(p.x);
+      pr(x - 3, y - 1, 7, 2, '#8a6418'); pr(x - 2, y - 6, 5, 5, '#d8a838'); pr(x - 2, y - 6, 5, 1, '#f8d870');
+      pr(x - 2, y - 8, 1, 2, '#f8d870'); pr(x, y - 8, 1, 2, '#f8d870'); pr(x + 2, y - 8, 1, 2, '#f8d870'); // the crown
+      pr(x - 1 + lk, y - 4, 1, 1, angry ? '#c02020' : '#2a1808'); pr(x + 1 + lk, y - 4, 1, 1, angry ? '#c02020' : '#2a1808');
+      if (angry) { pr(x - 2, y - 5, 2, 1, '#6a4410'); pr(x + 1, y - 5, 2, 1, '#6a4410'); }
+      else if (ph >= 2) { pr(x - 1 + lk, y - 5, 1, 1, '#f8f0d0'); pr(x + 1 + lk, y - 5, 1, 1, '#f8f0d0'); } // worried: eyes wide
+    } else if (p.kind === 'knight') { // an empty suit of ghost armour; the helmet turns to watch you
+      if (glow) continue;
+      const lk = lookX(p.x);
+      pr(x - 2, y - 5, 5, 6, '#8a929c'); pr(x - 2, y - 5, 5, 1, '#c8d0d8');
+      pr(x - 2, y - 9, 5, 4, '#a8b0ba'); pr(x - 1 + lk, y - 7, 3, 1, '#14161a'); pr(x, y - 11, 1, 2, ph >= 3 ? '#ff4a3a' : '#c83a3a');
+      pr(x + 3, y - 9, 1, 10, '#6a6a72'); pr(x + 2, y - 10, 3, 1, '#c8d0d8'); // the halberd
+    } else if (p.kind === 'exhibit') { // a piece of the stolen fruit on a velvet cushion
+      if (glow) continue;
+      pr(x - 4, y - 2, 9, 3, '#7a1424'); pr(x - 4, y - 2, 9, 1, '#9a2234'); pr(x - 3, y + 1, 7, 1, '#c8a040');
+      thrFruit(p.fruit, p.x / T - 0.5, p.y / T - 1.0);
+    } else if (p.kind === 'banner') { // a crown banner; it tears in phase 2
+      if (glow) continue;
+      const sway = Math.round(Math.sin(G.t * 1.6 + p.seed * 9) * (ph >= 3 ? 1.5 : 0.6)), torn = ph >= 2;
+      pr(x - 1, y - 11, 1, 12, '#6a5a40'); pr(x - 4, y - 11, 9, 1, '#c8a040');
+      const h = torn ? 5 : 8;
+      for (let j = 0; j < h; j++) pr(x - 3 + Math.round(sway * j / h), y - 10 + j, 7 - (torn && j > 2 ? (j & 1) * 3 : 0), 1, j === 0 ? '#9a2a4a' : '#7a1a3a');
+      pr(x - 1 + sway, y - 8, 3, 2, '#d8a838');
+    } else if (p.kind === 'mirror') { // the vanity mirror: it always shows the King, wherever he is
+      const mx = x - 4, my = y - 10;
+      if (!glow) {
+        pr(mx, my, 9, 11, '#c8a040'); pr(mx + 1, my + 1, 7, 9, '#2a3a4a'); pr(mx + 1, my + 1, 1, 9, '#4a6a7a');
+        if (b && b.state !== 'dead') { const col = BOSS_COLORS[ph]; pr(mx + 3, my + 4, 3, 4, col); pr(mx + 3, my + 3, 1, 1, '#ffd860'); pr(mx + 5, my + 3, 1, 1, '#ffd860'); pr(mx + 4, my + 5, 1, 1, '#ffffff'); }
+      } else pr(mx + 2, my + 2, 1, 2, '#ffffff');
+    }
+  }
+  // The top wall: sconces and portraits of the King in heroic poses, and the coronation banner.
+  const wallY = py_(0);
+  for (let i = 0; i < 8; i++) {
+    const wx = px_((2 + i * 3.4 + (i > 3 ? 3 : 0)) * T);
+    if (i % 2 === 0) {
+      if (!glow) { pr(wx - 1, wallY + 4, 3, 2, '#c89a40'); addLightPx(wx, wallY + 6, 2.4 * T, [1, 0.66, 0.32], 0.45); }
+      else { const f = Math.floor(G.t * 11 + i * 7); pr(wx, wallY + 1, 1, 3, hash2(f, i) > 0.4 ? '#ffcc60' : '#ff9a30'); pr(wx, wallY, 1, 1, '#fff2b0'); }
+    } else {
+      const fx = wx - 4, fy = wallY - 6, lk = lookX(wx + camX);
+      if (!glow) {
+        pr(fx, fy, 9, 11, '#c8a040'); pr(fx + 1, fy + 1, 7, 9, '#2a1838');
+        const pose = i % 4; // heroic poses: arms up, a cape, holding the crown aloft, a wink
+        pr(fx + 2, fy + 4, 5, 5, BOSS_COLORS[1]); pr(fx + 3, fy + 2, 3, 2, '#d8a838');
+        if (pose === 1) { pr(fx + 1, fy + 3, 1, 3, BOSS_COLORS[1]); pr(fx + 7, fy + 3, 1, 3, BOSS_COLORS[1]); }
+        if (pose === 3) pr(fx + 2, fy + 8, 5, 1, '#c02040');
+      }
+      const eye = angry ? '#ff3030' : '#ffffff';
+      if (!glow || angry) { pr(fx + 3 + (lk > 0 ? 1 : 0), fy + 5, 1, 1, eye); pr(fx + 5 + (lk > 0 ? 1 : 0) - (lk < 0 ? 1 : 0), fy + 5, 1, 1, eye); }
+    }
+  }
+  if (!glow) {
+    const s = 'CORONATION: COMING SOON', w = tinyW(s) + 6, bx = px_(14 * T) - (w >> 1), by = wallY + 1;
+    pr(bx, by, w, 7, '#7a1424'); pr(bx, by + 6, w, 1, '#c8a040'); pr(bx, by, w, 1, '#c8a040'); tinyText(fbx, s, bx + 3, by + 1, '#f8d870');
+    pr(bx - 2, by + 7, 2, 2, '#c8a040'); pr(bx + w, by + 7, 2, 2, '#c8a040');
+  }
+  if (glow) return;
+  // Chandeliers: warm pools of light that sway, harder as he gets angrier, and flicker now and then.
+  for (let i = 0; i < 4; i++) {
+    const swing = [0.25, 0.5, 1.3][ph - 1], cx = [7, 21, 7, 21][i] * T + Math.sin(G.t * (1.2 + i * 0.1) + i) * T * swing, cy = [7, 7, 21, 21][i] * T;
+    const fl = hash2(Math.floor(G.t * 8), i + 40) > 0.96 ? 0.4 : 1;
+    addLightPx(cx - camX, cy - camY, 5 * T, [1, 0.78, 0.5], 0.45 * fl);
+  }
+  // The spotlight on the King (or on Pac-Man, while he's powered up).
+  if (thr.spot && b && b.state !== 'dead') addLightPx(thr.spot[0] * T - camX, thr.spot[1] * T - camY, 3.6 * T, G.fright > 0 ? [1, 1, 0.85] : [0.85, 0.9, 1], 0.55);
+  // Faint reflections in the polished marble.
+  if (b && b.state !== 'dead' && enemiesShown()) {
+    const mirror = (e, draw) => { const fy = Math.round((e.y + 0.5) * T + T * 0.45 - camY); fbx.save(); fbx.globalAlpha = 0.12; fbx.translate(0, 2 * fy); fbx.scale(1, -1); draw(); fbx.restore(); };
+    mirror(b, () => pxKing(b));
+    if (G.state === 'play' || G.state === 'ready') mirror(pac, () => pxPac(pac.x, pac.y, pac.face, 0.4));
+  }
+  // The throne, and the fruit salad heaped beside it (it empties a little with every hit).
+  const tx = px_(14 * T), ty = py_(13.2 * T), flare = thr.recoil ? 0.5 + 0.5 * Math.sin(G.t * 12) : 0;
+  pr(tx - 9, ty - 9, 18, 4, '#c8a040'); pr(tx - 9, ty - 9, 18, 1, '#f8d870'); pr(tx - 8, ty - 5, 16, 9, '#a8822a');
+  pr(tx - 6, ty - 4, 12, 7, '#7a1424'); pr(tx - 6, ty - 4, 12, 1, '#9a2234');
+  for (const ox of [-8, -3, 2, 7]) pr(tx + ox, ty - 12, 2, 3, '#f8d870');
+  addLightPx(tx, ty - 3, 2.6 * T, [1, 0.8, 0.4], 0.35 + flare * 0.8);
+  const bx = px_(16.8 * T), by = py_(15 * T), left = Math.max(0, 9 - Math.ceil(kingHits() * 0.75));
+  if (thrHole() < Math.hypot(bx + camX - 14 * T, by + camY - 14.5 * T)) {
+    for (let i = 0; i < left; i++) { const fx = (16.8 - 0.75 + (i % 3) * 0.75) - 0.5, fy = 14.4 - Math.floor(i / 3) * 0.5 - 0.5; thrFruit(FRUITS[i % 10], fx, fy); }
+    pr(bx - 9, by - 1, 18, 4, '#c8a040'); pr(bx - 9, by - 1, 18, 1, '#f8d870'); pr(bx - 6, by + 3, 12, 1, '#8a6418');
+  }
+  // Velvet ropes in front of the dais.
+  const ry = py_(16.5 * T);
+  for (const [ax, bx2] of [[11.4, 12.6], [15.4, 16.6]]) {
+    const x0 = px_(ax * T), x1 = px_(bx2 * T);
+    pr(x0 - 1, ry - 5, 2, 6, '#c8a040'); pr(x1 - 1, ry - 5, 2, 6, '#c8a040');
+    for (let x = x0; x <= x1; x++) pr(x, ry - 4 + Math.round(Math.sin((x - x0) / (x1 - x0) * Math.PI) * 2), 1, 1, '#a81a2a');
+  }
+  // Scorch marks where his orbs hit.
+  for (const s of thr.scorch) {
+    fbx.globalAlpha = s.t < 4 ? 0.7 : Math.max(0, 0.7 * (1 - (s.t - 4) / 2));
+    const cx = px_(s.x * T), cy = py_(s.y * T);
+    pr(cx - 2, cy - 1, 5, 3, '#1a0a14'); pr(cx - 1, cy - 2, 3, 5, '#1a0a14'); pr(cx, cy, 1, 1, '#ff6ac8');
+  }
+  fbx.globalAlpha = 1;
+  // Cracks: one per hit, the newest still running out; in phase 3 they all keep creeping.
+  const hits = kingHits(), dead = b && b.state === 'dead';
+  const grow = Math.min(1.6, 0.65 + thr.ph3 * 0.025);
+  const drawCrack = (pts, frac) => {
+    const n = Math.floor(pts.length * Math.min(1, frac));
+    for (let i = 0; i < n; i++) { const [x, y, twig] = pts[i]; pr(x - camX, y - camY, 1, 1, twig ? '#3a3040' : '#0e0a10'); if (!twig) pr(x - camX + 1, y - camY + 1, 1, 1, '#d8ccb4'); }
+  };
+  L.cracks.forEach((pts, i) => {
+    if (i >= hits) return;
+    const fresh = i === hits - 1 ? Math.min(1, (G.t - thr.hitAt) / 0.4) : 1;
+    drawCrack(pts, (dead ? 1 : grow / 1.6) * fresh);
+  });
+  if (dead && (G.state === 'clear' || G.state === 'dialog')) {
+    const t = G.state === 'dialog' ? 9 : G.timer;
+    L.collapse.forEach(pts => drawCrack(pts, Math.min(1, t / 3)));
+    const r = thrHole();
+    if (r > 0) { // the middle caves in to the dark below: a jagged hole with a broken rim
+      const cx = px_(14 * T), cy = py_(14.5 * T), n = 40;
+      const edge = k => r * (0.8 + 0.2 * hash2(k % n, 3));
+      fbx.beginPath();
+      for (let k = 0; k <= n; k++) { const a = k / n * Math.PI * 2, e = edge(k); k ? fbx.lineTo(cx + Math.cos(a) * e, cy + Math.sin(a) * e) : fbx.moveTo(cx + e, cy); }
+      fbx.fillStyle = '#3a3040'; fbx.fill();
+      fbx.beginPath();
+      for (let k = 0; k <= n; k++) { const a = k / n * Math.PI * 2, e = edge(k) - 2; k ? fbx.lineTo(cx + Math.cos(a) * e, cy + Math.sin(a) * e) : fbx.moveTo(cx + e, cy); }
+      fbx.fillStyle = '#020103'; fbx.fill();
+    }
+  }
+  // The crown, rolling across the marble (until it falls into the hole).
+  if (thr.crown && Math.hypot(thr.crown.x - 14, thr.crown.y - 14.5) * T > thrHole()) {
+    worldTf(); fbx.save(); fbx.translate(thr.crown.x, thr.crown.y); fbx.rotate(thr.crown.rot * 0.15); drawCrown(0, 0, 0.55, '#ffd23f'); fbx.restore(); idTf();
+  }
+  // Fruit knocked out of the bowl.
+  for (const f of thr.flying) { fbx.globalAlpha = Math.max(0, 1 - f.t / 0.9); thrFruit(f.kind, f.x - 0.5, f.y - 0.5); }
+  fbx.globalAlpha = 1;
+}
+const goldDust = Array.from({ length: 50 }, (_, i) => ({ x: hash2(i, 41) * 300, y: hash2(i, 42) * 320, ph: hash2(i, 43) * 6.3, sp: 1 + hash2(i, 44) * 2 }));
+function thrPost(dt) {
+  for (const f of goldDust) {
+    f.y += Math.sin(G.t * 0.5 + f.ph) * f.sp * dt; f.x += Math.cos(G.t * 0.4 + f.ph) * f.sp * dt;
+    const sx = ((Math.round(f.x) % VIEW_W) + VIEW_W) % VIEW_W, sy = ((Math.round(f.y) % VIEW_H) + VIEW_H) % VIEW_H;
+    const tw = 0.5 + 0.5 * Math.sin(G.t * 3 + f.ph * 5);
+    fbx.globalAlpha = Math.max(0.1, Math.min(0.9, (lightAt(sx, sy) - 0.55) * 2)) * tw;
+    pr(sx, sy, 1, 1, '#ffe08a');
+  }
+  fbx.globalAlpha = 1;
+}
+
+// ---------- Dash effects (every floor with dash) ----------
+// A kick of dust as the dash starts, glints along the floor, speed lines streaming off behind, and a
+// white ring on a near miss through an enemy. In the lab the kick-off throws up goo as well.
+const dashFx = { on: false, miss: 0, near: new WeakMap() };
+function dashUpdate(dt, theme) {
+  if (!dt) return;
+  const dashing = pac.dash > 0;
+  if (dashing && !dashFx.on) {
+    const d = pac.dir || pac.face;
+    for (let i = 0; i < 10; i++) { const t = 0.35 + Math.random() * 0.2; parts.push({ x: pac.x + 0.5 - d.x * 0.5, y: pac.y + 0.9, vx: -d.x * (1 + Math.random() * 2) + (Math.random() - 0.5), vy: -d.y * 2 - Math.random(), t, t0: t, col: i % 3 || !theme.lab ? '#c8c8b8' : '#5cff6b', g: 3, drag: 3 }); }
+  }
+  dashFx.on = dashing;
+  if (dashing) {
+    if (Math.random() < dt * 30) parts.push({ x: pac.x + 0.5 + (Math.random() - 0.5) * 0.8, y: pac.y + 0.5 + (Math.random() - 0.5) * 0.8, vx: 0, vy: 0, t: 0.25, t0: 0.25, col: '#ffffff', g: 0 });
+    const foes = [...G.ghosts.filter(g => g.mode === 'active' && !g.eaten), ...G.slimes.filter(s => s.state === 'active'), ...G.wraiths.filter(w => w.state === 'active'),
+      ...G.hounds.filter(h => h.state === 'hunt'), ...G.spiders.filter(s => s.state === 'active'), ...G.gargoyles.filter(g => g.state === 'active'), ...G.minions];
+    if (G.boss && G.boss.state !== 'dead') foes.push(G.boss);
+    for (const e of foes) if (Math.hypot(e.x - pac.x, e.y - pac.y) < (e === G.boss ? 1.6 : 0.8) && !(dashFx.near.get(e) > G.t)) { dashFx.near.set(e, G.t + 0.6); dashFx.miss = 0.25; }
+  }
+  if (dashFx.miss > 0) dashFx.miss = Math.max(0, dashFx.miss - dt);
+}
+function dashPost() {
+  if (pac.dash > 0 && G.state === 'play') { // speed lines streaming off behind
     const d = pac.dir || pac.face, cx = (pac.x + 0.5) * T - camX, cy = (pac.y + 0.5) * T - camY;
     fbx.globalAlpha = 0.7;
     for (let i = 0; i < 4; i++) {
@@ -6280,8 +6643,8 @@ function labPost(dt) {
       else pr(Math.round(cx + off), Math.round(cy - d.y * (st + (d.y > 0 ? len : 0))), 1, Math.round(len), '#ffffff');
     }
   }
-  if (lab.miss > 0) { // a near miss: a white flash ring
-    const k = 1 - lab.miss / 0.25, r = T * (0.6 + k * 1.2), cx = (pac.x + 0.5) * T - camX, cy = (pac.y + 0.5) * T - camY;
+  if (dashFx.miss > 0) { // a near miss: a white flash ring
+    const k = 1 - dashFx.miss / 0.25, r = T * (0.6 + k * 1.2), cx = (pac.x + 0.5) * T - camX, cy = (pac.y + 0.5) * T - camY;
     fbx.globalAlpha = 1 - k;
     for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; pr(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1, '#ffffff'); }
   }
@@ -6378,6 +6741,7 @@ function drawFlame(x, y, seed, big) { // x: left column of a 2px wick; y: wick t
 function drawDecor(theme, dt, glow) {
   if (theme.freezer) return frzDecor(theme, dt, glow);
   if (theme.lab) return labDecor(theme, dt, glow);
+  if (theme.throne) return thrDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -6595,10 +6959,10 @@ function moveCamera(dt) {
 }
 function renderWorld() {
   const now = performance.now(), rdt = Math.min(0.05, (now - lastDraw) / 1000 || 0); lastDraw = now;
-  const dt = G.paused ? 0 : rdt, theme = themeFor(G.cfg.stage, G.cfg.lv);
+  const dt = G.paused ? 0 : rdt, theme = curTheme();
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -6608,6 +6972,8 @@ function renderWorld() {
   atmoUpdate(dt, theme);
   if (theme.freezer) frzUpdate(dt, theme);
   if (theme.lab) labUpdate(dt, theme);
+  if (theme.throne) thrUpdate(dt, theme);
+  if (G.cfg.dash) dashUpdate(dt, theme);
   drawDecor(theme, dt);
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
@@ -6705,16 +7071,20 @@ function renderWorld() {
   let amb = fl > 0 ? mixc(theme.ambient, [1.25, 1.3, 1.55], fl) : theme.ambient;
   if (theme.freezer) amb = mulc(mixc(amb, [0.8, 0.95, 1.1], frz.ice * 0.4), frzBrown());
   if (theme.lab) amb = labAmbient(amb, theme);
+  if (theme.throne) amb = thrAmbient(amb);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
   if (theme.dust) drawMotes(dt);
   if (theme.freezer) frzPost(dt);
   if (theme.lab) labPost(dt);
+  if (theme.throne) thrPost(dt);
+  if (G.cfg.dash) dashPost();
   if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); }
   if (fxOn) {
     bloom();
     if (theme.grade) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = theme.grade[1]; pr(0, 0, VIEW_W, VIEW_H, theme.grade[0]); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
+    if (theme.throne && G.boss && G.boss.state !== 'dead' && bossPhase(G.boss) > 1) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = 0.14; pr(0, 0, VIEW_W, VIEW_H, bossPhase(G.boss) === 2 ? '#e02cae' : '#ff2a2a'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
     if (theme.lab && G.fright > 0) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = 0.2; pr(0, 0, VIEW_W, VIEW_H, '#8a4aff'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
     if (theme.freezer && frz.ice > 0.02) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = frz.ice * 0.28; pr(0, 0, VIEW_W, VIEW_H, '#9ff0ff'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
   }
