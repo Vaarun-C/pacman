@@ -4506,6 +4506,58 @@ function pxWraith(w) {
   fbx.globalAlpha = 1;
 }
 
+// Slimes: a lumpy mound of goo that spreads into a puddle, drips down its sides and bubbles inside.
+// It sits on the floor and squashes wide / stretches tall on alternate frames.
+const SLIME_BODY = { '': '#5cff6b', fright: '#2121ff', flash: '#ffffff', ice: '#bdf4ff' };
+function slimeSprite(frame, d, mode, small, scared) { // mode: body colour; scared: the frightened face
+  return spr(`sl|${T}|${frame}|${d.x}|${d.y}|${mode}|${small}|${scared}`, () => {
+    const R0 = (small ? 0.55 : 0.85) * T, rw = R0 * (frame ? 1.12 : 0.94), rh = R0 * 1.55 * (frame ? 0.86 : 1.06);
+    const S = Math.ceil(R0 * 2.24) + 6, SH = Math.ceil(R0 * 1.65) + 6, c = S / 2, base = SH - 2, ramp = makeRamp(SLIME_BODY[mode]);
+    const white = hex('#ffffff'), pupil = hex(mode === 'ice' ? '#4a7f99' : '#10301a'), mouth = hex('#10301a'), tooth = hex('#eaffe0');
+    const fcol = hex(mode === 'flash' ? '#ff2a2a' : '#ffb8ae'), bumps = [[-0.45, 0.16], [0.1, 0.22], [0.55, 0.12]];
+    const spr_ = pixSprite(S, SH, (x, y) => {
+      const u = (x - c) / rw;
+      let top = Math.sqrt(Math.max(0, 1 - u * u)) * 0.82;
+      for (const [bx, bh] of bumps) top += bh * Math.exp(-((u - bx - (frame ? 0.05 : -0.05)) ** 2) / 0.05);
+      const yTop = base - top * rh * 0.85, puddle = y > base - 2.5 && Math.abs(u) < 1.22 - (base - y) * 0.06;
+      if (!((Math.abs(u) <= 1 && y >= yTop) || puddle) || y > base + 0.5) return null;
+      const ey = yTop + rh * 0.22 + d.y, cx = c + d.x * rw * 0.1;
+      if (scared) { // two square eyes and a wobbly mouth, as on the ghosts
+        const w = rw * 2, sq = Math.max(2, Math.round(w * 0.14));
+        for (const k of [-1, 1]) { const ex = Math.round(cx + k * w * 0.2 - sq / 2); if (x >= ex && x < ex + sq && y >= ey && y < ey + sq) return fcol; }
+        const mw = w * 0.56, mx0 = cx - mw / 2, my = ey + sq + Math.max(2, w * 0.12);
+        if (x >= mx0 && x <= mx0 + mw) { const zig = Math.abs(((x - mx0) / mw * 4) % 2 - 1); if (Math.abs(y - (my + (1 - zig) * 1.5)) < 0.8) return fcol; }
+      } else {
+        for (const k of [-1, 1]) {
+          const ex = cx + k * rw * 0.32, er = Math.max(1.8, rw * 0.2), q = ((x - ex) / er) ** 2 + ((y - ey) / (er * 1.15)) ** 2;
+          if (q <= 1) return Math.abs(x - ex - d.x * er * 0.4) < er * 0.45 && Math.abs(y - ey - d.y * er * 0.3) < er * 0.5 ? pupil : white;
+        }
+        const my = ey + rh * 0.28, mw = rw * 0.5;
+        if (Math.abs(x - cx) < mw && y > my && y < my + Math.max(2, rh * 0.1)) return !small && Math.abs(Math.abs(x - cx) - mw * 0.45) < 0.9 && y < my + 1.5 ? tooth : mouth;
+      }
+      const ny = (y - yTop) / (rh * 0.5) - 1;
+      let l = lightOf(u, Math.max(-1, Math.min(1, ny)) * -0.6, Math.sqrt(Math.max(0, 1 - u * u * 0.8))) - Math.max(0, (y - yTop) / rh) * 0.4;
+      for (const k of [-0.62, 0.05, 0.7]) if (Math.abs(u - k) < 0.07 && y > yTop + rh * 0.62 + hash2(k * 10 | 0, frame) * 4) l += 0.4; // drips
+      for (let i = 0; i < 3; i++) { // bubbles
+        const bx = c + (hash2(i, 1) - 0.5) * rw * 1.2, by = base - rh * (0.2 + ((hash2(i, 2) + frame * 0.18) % 0.5)), q = Math.hypot(x - bx, y - by);
+        if (q < 1.6 && q > 0.6) l += 0.5;
+      }
+      if (puddle) l -= 0.25;
+      return pickRamp(ramp, l);
+    });
+    spr_.base = base;
+    return spr_;
+  });
+}
+function pxSlime(s) {
+  const small = s.kind !== 'big', fr = (G.fright > 0 && s.state === 'active') || s.blue;
+  const flash = fr && !s.blue && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0, ice = iceOn();
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 6 + (s.group || 0)) % 2;
+  const sp = slimeSprite(frame, s.dir || D, ice ? 'ice' : fr ? (flash ? 'flash' : 'fright') : '', small, !!fr);
+  const r = small ? 0.55 : 0.85; // stands where the old drawing did: its base r * 0.75 below the tile centre
+  fbx.drawImage(sp, Math.round((s.x + 0.5) * T - camX - sp.width / 2), Math.round((s.y + 0.5 + r * 0.75) * T - camY) - sp.base);
+}
+
 const DOT_RAMP = makeRamp('#ffb8ae');
 function dotSprite() {
   return spr(`dot|${T}`, () => {
@@ -5218,20 +5270,21 @@ function renderWorld() {
       fbx.globalAlpha = 1;
       pxPac(pac.x, pac.y, pac.face, G.state === 'clear' ? 0 : open);
     }
+    if (showEnemies) for (const s of G.slimes) if (s.state === 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state === 'house') pxWraith(w);
     if (showEnemies) for (const g of G.ghosts) if (g !== G.eatenGhost) pxGhost(g);
+    if (showEnemies) for (const s of G.slimes) if (s.state !== 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state !== 'house') pxWraith(w);
+    if (showEnemies) for (const s of G.blobules) pxSlime({ ...s, state: 'bit', blue: true });
     if (showEnemies || (G.boss && G.state === 'clear')) {
       vecBegin();
       if (showEnemies) {
-        for (const s of G.slimes) vec(drawSlime, s);
         for (const h of G.hounds) vec(drawHound, h);
         for (const s of G.spiders) vec(drawSpider, s);
         for (const d of G.drops) vec(drawDrop, d);
         for (const cp of G.centipedes) vec(drawCentipede, cp);
         for (const g of G.gargoyles) vec(drawGargoyle, g);
         for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
-        for (const s of G.blobules) vec(drawSlime, { ...s, state: 'bit', blue: true });
       }
       if (G.boss) vec(drawBoss, G.boss);
       if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
