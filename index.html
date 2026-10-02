@@ -8377,7 +8377,7 @@ function renderWorld() {
     if (theme.lab && G.fright > 0) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = 0.2; pr(0, 0, VIEW_W, VIEW_H, '#8a4aff'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
     if (theme.freezer && frz.ice > 0.02) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = frz.ice * 0.28; pr(0, 0, VIEW_W, VIEW_H, '#9ff0ff'); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
   }
-  if (!cast) drawMinimap();
+  if (!cast && !G.cfg.dark) drawMinimap(); // no map in the dark: it'd give the whole maze away
   fbx.font = '8px "Press Start 2P", "Courier New", monospace'; fbx.textAlign = 'center'; fbx.textBaseline = 'middle';
   for (const p of G.popups) {
     const x = Math.round((p.x + 0.5) * T - camX), y = Math.round((p.y + 0.5) * T - camY);
