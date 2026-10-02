@@ -981,6 +981,8 @@ const SFX = {
   gurgle() { for (let i = 0; i < 7; i++) beep(220 + (i % 3) * 90, 120, 0.12, 'sine', 0.08, i * 0.11); beep(70, 45, 1.6, 'triangle', 0.1); },
   shake() { for (let i = 0; i < 6; i++) beep(900 + (i % 2) * 300, 600, 0.04, 'triangle', 0.035, i * 0.04); },
   wind() { beep(180, 420, 1.2, 'triangle', 0.05); beep(240, 160, 1.6, 'sine', 0.06, 0.4); beep(320, 520, 0.9, 'triangle', 0.03, 0.9); },
+  growl() { beep(70, 50, 0.8, 'sawtooth', 0.09); beep(95, 60, 0.6, 'square', 0.04, 0.25); beep(60, 45, 0.7, 'sawtooth', 0.07, 0.6); },
+  squeak() { beep(2400, 3200, 0.05, 'square', 0.03); beep(2800, 2200, 0.05, 'square', 0.025, 0.07); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
@@ -1089,7 +1091,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -2200,7 +2202,7 @@ function blobUpdate(dt, sp) {
     for (let c = Math.round(b.x - half); c <= Math.round(b.x + half); c++) {
       const i = r * W + c;
       if (c < 0 || c >= W || r < 0 || r >= H || G.dots[i] !== 1) continue;
-      G.dots[i] = 0; G.dotsLeft--;
+      G.dots[i] = 0; G.dotsLeft--; sewSlurp(c, r);
       blobFeed(BLOB_SLURP);
       if ((G.slurpT -= 1) <= 0) { SFX.slurp(); G.slurpT = 4; }
     }
@@ -2220,7 +2222,7 @@ function biteBlob() {
   G.fright = 0; G.shake = 0.45;
   b.inv = 1.8; b.hitT = 1.2; b.state = 'recoil'; b.rt = 0.8;
   b.tgt = { x: Math.round(b.x - 0.5 + Math.sign(b.x - pac.x || 1) * 5), y: Math.round(b.y + Math.sign(b.y - pac.y || 1) * 4) };
-  addScore(1000); SFX.bossHit();
+  addScore(1000); SFX.bossHit(); sewBite();
   popup('1000', b.x, b.y - blobR(b) - 0.5, '#ffd86b', 1.5);
   if (ph === 3) { // chunks fly off and try to crawl back
     const spots = reachTiles({ x: Math.round(b.x), y: b.y + 0.5 }) || [{ x: Math.round(b.x), y: Math.round(b.y) }];
@@ -2281,7 +2283,7 @@ function blobCrewUpdate(dt) {
       s.state = 'eaten';
       b.eaten = [...(b.eaten || []), s.color].slice(-4);
       b.flash = 0.5; b.flashColor = s.color;
-      blobFeed(BLOB_GHOST); SFX.burp();
+      blobFeed(BLOB_GHOST); SFX.burp(); sewBurp(s);
       popup('BURP!', s.x, s.y, s.color);
       bossLine(BLOB_LINES.absorb);
     }
@@ -5329,6 +5331,7 @@ const themeFor = (stage, lv = 0) => {
   if (lv && stage === 5) return THEMES[`5-${lv}`] || (THEMES[`5-${lv}`] = boilerTheme(lv));
   if (lv && stage === 6) return THEMES[`6-${lv}`] || (THEMES[`6-${lv}`] = floodTheme(lv));
   if (lv && stage === 7) return THEMES[`7-${lv}`] || (THEMES[`7-${lv}`] = cryptTheme(lv));
+  if (lv && stage === 8) return THEMES['8-1'] || (THEMES['8-1'] = sewerTheme());
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 };
 const curTheme = () => themeFor(G.cfg.stage, G.lvIndex >= ROOF ? 0 : G.cfg.lv);
@@ -7707,6 +7710,287 @@ function cryDark(theme) {
   fbx.globalAlpha = 1;
 }
 
+// ---------- The Sewer (stage 8, the Big Blob) ----------
+// B11, the Blob's lair: brick pavers slick with grime, mossy brick pillars tagged with graffiti, murky
+// water round the edge, four big pipes in the walls, and in the middle the fruit salad bowl, licked clean.
+// The room follows the fight: sickly green while it gorges on dots, jaundiced yellow and rumbling while it
+// hunts ghosts (the pipes gush as they pour in), pulsing red with goo welling up through the drains at the
+// end. The Blob leaves a trail and a cloud of flies, slurps dots into its mouth, burps, and splatters when
+// bitten. When it bursts the water runs clean, the lights come up and the bowl fills again.
+const SEWER_TAGS = ['BLOB', 'YUM', 'MINE', 'NOM', 'BURP', 'SNAX', 'EAT', 'LOL', 'MOM', 'HI', 'GOO', 'ARF'];
+const SEWER_INK = ['#ff5ab8', '#a8ff3a', '#ff9a2a', '#3ad8ff', '#ffe03a'];
+function sewerTheme() {
+  const P = Object.fromEntries(Object.entries({
+    paveA: '#2c302a', paveB: '#34382f', mortar: '#151812', grime: '#26301e', moss: '#2e4a24', goo: '#2a5a1a', gooHi: '#5a9a2a',
+    brick: '#3a2e28', brick2: '#32281f', bMortar: '#14100c', slime: '#3a6a2a', slimeHi: '#5a9a3a', lip: '#080806', base: '#121a0e',
+    cap: '#2e3a28', capLine: '#1a2216', capMoss: '#3e5a2e', rim: '#6a8a5a', rimF: '#8aaa6a', rimR: '#3e5a32', ring2: '#2a3a22', ring3: '#202c1a',
+  }).map(([k, v]) => [k, hex(v)]));
+  return {
+    id: 'sewer', void: '#020402', map: '#58b82e', runner: false, decor: true, sewer: true,
+    ambient: [0.5, 0.58, 0.5], vignette: 0.45, grade: ['#7ab84a', 0.1],
+    floor(x, y, t) {
+      const row = (y / 4) | 0, bx = x + (row & 1) * 4;
+      let col = y % 4 === 0 || bx % 8 === 0 ? P.mortar : mulc(mixc(P.paveA, P.paveB, hash2(bx >> 3, row)), 0.88 + vnoise(x / 3, y / 3) * 0.2);
+      const g = vnoise(x / 9, y / 9) - 0.55;
+      if (g > 0) col = mixc(col, g > 0.15 ? P.moss : P.grime, Math.min(0.7, g * 4));
+      const lx = x / T - 14, ly = y / T - 14.5, d = Math.hypot(lx, ly * 1.2); // the lair: goo soaked into the floor
+      const goo = (3.4 - d) / 1.6 + (vnoise(x / 6 + 40, y / 6) - 0.5) * 0.9;
+      if (goo > 0) col = mixc(col, goo > 0.6 && hash2(x, y) > 0.7 ? P.gooHi : P.goo, Math.min(0.85, goo));
+      return col;
+    },
+    face(x, y, v, F, edge) { // sewer brick, green slime streaking down it
+      let col;
+      if (v === 0) col = P.lip;
+      else if (v === F - 1) col = P.base;
+      else {
+        const br = ((v - 1) / 2) | 0, bx = x + (br & 1) * 3;
+        col = (v - 1) % 2 === 1 && bx % 6 === 0 ? P.bMortar : bx % 6 === 0 ? P.bMortar : mixc(P.brick, P.brick2, hash2(bx / 6 | 0, br));
+        const s = hash2(x, 77);
+        if (s > 0.8 && v <= 1 + Math.floor(hash2(x, 78) * F)) col = s > 0.92 ? P.slimeHi : P.slime;
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // mossy brick tops
+      if (ring === 1) return side === 'front' ? P.rimF : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2) return P.ring2;
+      if (ring === 3) return P.ring3;
+      let col = x % 5 === 0 || y % 4 === 0 ? P.capLine : P.cap;
+      if (vnoise(x / 4, y / 4) > 0.6) col = P.capMoss;
+      return col;
+    },
+    pick(big, r, roll) { return roll < 0.4 ? 'grate' : roll < 0.7 ? 'drip' : 'ladder'; },
+    bake(L, g) {
+      // Graffiti on the pillar tops.
+      let n = 0;
+      for (let r = 1; r < L.h - 2; r++) for (let c = 1; c < L.w - 2; c++) {
+        if (!(L.solidT(c, r) && L.solidT(c + 1, r) && L.solidT(c, r + 1) && L.solidT(c + 1, r + 1)) || L.solidT(c - 1, r) || L.solidT(c, r - 1)) continue;
+        if (hash2(c, r * 7) > 0.55) continue;
+        const word = SEWER_TAGS[n % SEWER_TAGS.length], ink = SEWER_INK[n % SEWER_INK.length], w = tinyW(word);
+        n++;
+        const x = (c + 1) * L.T - (w >> 1), y = r * L.T + 2;
+        tinyText(g, word, x, y, ink);
+        g.fillStyle = ink; g.fillRect(x + 1, y + 5, 1, 2); g.fillRect(x + w - 2, y + 5, 1, 1); // a drip of paint
+      }
+      L.drains = []; // floor drains, where the goo wells up at the end
+      for (const [c, r] of [[5, 5], [22, 5], [5, 23], [22, 23], [9, 14], [18, 14], [13, 9], [14, 19]]) if (L.reach[r * L.w + c]) L.drains.push({ x: c + 0.5, y: r + 0.5 });
+    },
+  };
+}
+
+// Per-fight state, reset at the start of every attempt.
+const sew = { trail: [], stains: [], flies: [], rats: [], ratT: 3, growl: 6, ph: 1, buds: 0, gush: 0, clean: 0, splat: false, orbs: new Map(), trailT: 0 };
+function sewReset() { Object.assign(sew, { trail: [], stains: [], flies: [], rats: [], ratT: 3, growl: 6, ph: 1, buds: 0, gush: 0, clean: 0, splat: false, orbs: new Map(), trailT: 0 }); }
+const sewerOn = () => curTheme().sewer && G.boss && G.boss.kind === 'blob';
+const blobStain = r => spr(`bst|${r}`, () => pixSprite(r * 2 + 1, r * 2 + 1, (x, y) => {
+  const d = Math.hypot(x - r - 0.5, y - r - 0.5) / (r + 0.5);
+  return d > 1 ? null : d < 0.4 && x < r && y < r ? [200, 255, 150, 220] : d < 0.8 ? [80, 170, 50, 205] : [40, 100, 30, 195];
+}, 0));
+function sewSplat(x, y, n, reach) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, d = Math.random() * reach;
+    sew.stains.push({ x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, r: 1 + Math.floor(Math.random() * 3), t: 0 });
+  }
+  if (sew.stains.length > 140) sew.stains.splice(0, sew.stains.length - 140);
+}
+// A bite: a freeze frame and the Blob splatters across the floor.
+function sewBite() {
+  if (!sewerOn()) return;
+  const b = G.boss;
+  G.hitstop = Math.max(G.hitstop || 0, 0.08);
+  sewSplat(b.x + 0.5, b.y + 0.5, 22, blobR(b) + 2);
+  fxBurst(b.x + 0.5, b.y + 0.3, '#5cd83a', 24, 6, 0.7); fxBurst(b.x + 0.5, b.y + 0.3, '#c8ffa0', 10, 4, 0.5);
+}
+// Dots it slurps fly into its mouth.
+function sewSlurp(c, r) {
+  if (!sewerOn()) return;
+  const b = G.boss, t = 0.25;
+  parts.push({ x: c + 0.5, y: r + 0.5, vx: (b.x + 0.5 - c - 0.5) / t, vy: (b.y + 0.3 - r - 0.5) / t, t, t0: t, col: '#ffd8d0', g: 0 });
+}
+// A ghost swallowed: a green cloud and a bubble of burp.
+function sewBurp(s) {
+  if (!sewerOn()) return;
+  for (let i = 0; i < 12; i++) { const t = 0.9 + Math.random() * 0.5; parts.push({ x: s.x + 0.5 + (Math.random() - 0.5), y: s.y + 0.2, vx: (Math.random() - 0.5) * 1.5, vy: -0.8 - Math.random(), t, t0: t, col: Math.random() < 0.5 ? '#9ad84a' : '#c8e87a', g: 0, drag: 1.5 }); }
+  fldRing(s.x + 0.5, s.y + 0.5, true);
+}
+function sewUpdate(dt, theme) {
+  if (!dt) return;
+  const b = G.boss; if (!b) return;
+  const ph = b.state === 'dead' ? 0 : bossPhase(b);
+  // Phase changes: the pipes gush, the ceiling showers drips.
+  if (G.state === 'phase' && sew.ph !== G.phaseTo) { sew.ph = G.phaseTo; sew.gush = 2.5; }
+  if (G.state === 'play' && ph) sew.ph = ph;
+  // Ghosts pouring out of the pipes in phase 2.
+  const nb = G.buddies.filter(s => s.state === 'active').length;
+  if (nb > sew.buds) sew.gush = Math.max(sew.gush, 1.6);
+  sew.buds = nb;
+  sew.gush = Math.max(0, sew.gush - dt);
+  for (const [c, r] of meta.pipes) {
+    const dir = r < H / 2 ? 1 : -1, rate = sew.gush > 0 ? 40 : 4;
+    if (Math.random() < dt * rate) parts.push({ x: c + 0.5 + (Math.random() - 0.5) * 0.6, y: r + 0.5 - dir * 0.4, vx: (Math.random() - 0.5) * 1.5, vy: dir * (2 + Math.random() * (sew.gush > 0 ? 4 : 1)), t: 0.5, t0: 0.5, col: Math.random() < 0.5 ? '#8ab86a' : '#c8e8a8', g: 0, drag: 2 });
+  }
+  // The Blob's trail of green goo, and the flies that follow it around.
+  if (b.state !== 'dead' && (sew.trailT -= dt) <= 0) {
+    sew.trailT = 0.15;
+    sew.trail.push({ x: b.x + 0.5, y: b.y + 0.5 + blobR(b) * 0.55, r: blobR(b), t: 0 });
+    for (const s of G.blobules) if (s.state === 'active') sew.trail.push({ x: s.x + 0.5, y: s.y + 0.8, r: 0.3, t: 0 });
+    if (sew.trail.length > 120) sew.trail.splice(0, sew.trail.length - 120);
+  }
+  for (const p of sew.trail) p.t += dt;
+  sew.trail = sew.trail.filter(p => p.t < 5);
+  for (const s of sew.stains) s.t += dt;
+  sew.stains = sew.stains.filter(s => s.t < 9 || sew.clean > 0);
+  if (!sew.flies.length) sew.flies = Array.from({ length: 7 }, (_, i) => ({ a: i * 0.9, sp: 3 + Math.random() * 3, r: 0.6 + Math.random() * 0.6, ph: Math.random() * 6 }));
+  for (const f of sew.flies) f.a += f.sp * dt * (G.fright > 0 ? 2 : 1);
+  // Goo orbs leave splats where they land.
+  const seen = new Set();
+  for (const o of G.orbs) { seen.add(o); sew.orbs.set(o, [o.x, o.y]); }
+  for (const [o, [x, y]] of sew.orbs) if (!seen.has(o)) { sew.orbs.delete(o); if (b.state !== 'dead') sewSplat(x + 0.5, y + 0.5, 5, 0.6); }
+  // Rats: one scurries along the foot of a wall every so often, and bolts from the Blob.
+  if ((sew.ratT -= dt) <= 0 && G.state === 'play') {
+    sew.ratT = 4 + Math.random() * 5;
+    const left = Math.random() < 0.5, row = [5, 9, 19, 23][Math.floor(Math.random() * 4)];
+    sew.rats.push({ x: left ? 0.5 : W - 1.5, y: row + 0.1, vx: (left ? 1 : -1) * (4 + Math.random() * 2), t: 0, scared: false });
+    SFX.squeak();
+  }
+  for (const r of sew.rats) { // dry corridors only; they bolt (and squeak) when the Blob's close
+    const near = b.state !== 'dead' && Math.abs(r.x - b.x) < blobR(b) + 2 && Math.abs(r.y - b.y) < blobR(b) + 2;
+    if (near && !r.scared) { r.scared = true; SFX.squeak(); }
+    r.t += dt; r.x += r.vx * dt * (near ? 2 : 1);
+  }
+  sew.rats = sew.rats.filter(r => r.x > -1 && r.x < W && r.t < 8);
+  // Phase 2: its stomach growls. Phase 3: goo wells up through the drains.
+  if (ph === 2 && G.state === 'play' && (sew.growl -= dt) <= 0) { sew.growl = 5 + Math.random() * 3; SFX.growl(); G.shake = Math.max(G.shake, 0.1); }
+  if (ph === 3 && G.state === 'play') for (const d of art.drains || []) if (Math.random() < dt * 3) {
+    const t = 0.6 + Math.random() * 0.4;
+    parts.push({ x: d.x + (Math.random() - 0.5) * 0.5, y: d.y, vx: (Math.random() - 0.5) * 0.4, vy: -1 - Math.random(), t, t0: t, col: Math.random() < 0.6 ? '#4ac83a' : '#a8f080', g: 4 });
+  }
+  // Ceiling drips that ring the water.
+  if (Math.random() < dt * (sew.gush > 0 ? 12 : 3)) {
+    const c = 1 + Math.floor(Math.random() * (W - 2)), r = 1 + Math.floor(Math.random() * (H - 2));
+    if (flowAt(c, r)) fldRing(c + 0.5, r + 0.5, false);
+  }
+  // Beaten: it bursts all over the room, then the water runs clean and the lights come up.
+  if (b.state === 'dead') {
+    if (!sew.splat) { sew.splat = true; sewSplat(b.x + 0.5, b.y + 0.5, 90, 9); SFX.gurgle(); }
+    sew.clean = Math.min(1, sew.clean + dt / 3);
+  }
+}
+// The light by phase.
+function sewAmbient(amb) {
+  const b = G.boss; if (!b) return amb;
+  if (b.state === 'dead') return mixc(amb, [0.95, 0.95, 0.9], sew.clean);
+  const ph = G.state === 'phase' ? G.phaseTo : bossPhase(b);
+  if (ph === 2) amb = mixc(amb, [0.72, 0.66, 0.34], 0.6);
+  if (ph === 3) amb = mixc(amb, [0.78, 0.3, 0.28], 0.45 + 0.2 * Math.sin(G.t * 4));
+  if (G.fright > 0) amb = mulc(amb, 0.8);
+  return amb;
+}
+function sewDecor(theme, dt, glow) {
+  for (const d of art.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (d.kind === 'grate') { // a little grate low in the wall, with a rat behind it now and then
+      const gx = x - 3, gy = y1 - 4;
+      if (!glow) { pr(gx, gy, 6, 4, '#0a0a08'); for (let i = 1; i < 6; i += 2) pr(gx + i, gy, 1, 4, '#4a4a3e'); }
+      else if (Math.floor(G.t * 0.7 + d.seed * 9) % 4 === 0) { pr(gx + 1, gy + 1, 1, 1, '#ff3030'); pr(gx + 3, gy + 1, 1, 1, '#ff3030'); }
+    } else if (d.kind === 'drip') { // slime oozing down the wall
+      if (glow) continue;
+      const len = 1 + Math.floor(((G.t * 0.8 + d.seed * 5) % 1) * (F + 2));
+      pr(x, y0 + 1, 1, len, '#5a9a3a'); pr(x, y0 + len, 2, 1, '#7aba4a');
+    } else if (d.kind === 'ladder') { // rungs up to a manhole
+      if (glow) continue;
+      pr(x - 2, y0, 1, F, '#6a5a4a'); pr(x + 2, y0, 1, F, '#6a5a4a');
+      for (let j = 1; j < F; j += 2) pr(x - 2, y0 + j, 5, 1, '#8a7a62');
+    }
+  }
+  if (glow) return;
+  // The big pipes the ghosts pour out of.
+  for (const [c, r] of meta.pipes) {
+    const top = r < H / 2, cx = Math.round((c + 0.5) * T - camX), cy = Math.round((top ? r - 0.35 : r + 0.75) * T - camY);
+    pr(cx - 5, cy - 3, 10, 6, '#1a1a14'); pr(cx - 4, cy - 2, 8, 4, '#060604'); pr(cx - 5, cy - 3, 10, 1, '#6a7a5a');
+    pr(cx - 5, cy + 2, 10, 1, '#3a4a2e');
+    if (sew.gush > 0 || Math.floor(G.t * 6 + c) % 3) pr(cx - 1, cy + (top ? 2 : -3), 2, 2, sew.gush > 0 ? '#c8e8a8' : '#6a9a4a');
+    addLightPx(cx, cy, 1.5 * T, [0.5, 0.8, 0.4], 0.15);
+  }
+  sewBowl();
+  // On the floor: the trail and the splatter.
+  for (const p of sew.trail) {
+    const r = Math.max(1, Math.round(p.r * T * 0.35));
+    fbx.globalAlpha = Math.max(0, 0.45 * (1 - p.t / 5)) * (1 - sew.clean);
+    pr(Math.round(p.x * T - camX - r), Math.round(p.y * T - camY) - 1, r * 2 + 1, 2, p.t < 1 ? '#4a9a2a' : '#2e6a1e');
+  }
+  for (const s of sew.stains) {
+    fbx.globalAlpha = (sew.clean > 0 ? 0.85 : s.t < 6 ? 0.85 : Math.max(0, 0.85 * (1 - (s.t - 6) / 3)));
+    const b = blobStain(s.r);
+    fbx.drawImage(b, Math.round(s.x * T - camX - s.r), Math.round(s.y * T - camY - s.r));
+  }
+  fbx.globalAlpha = 1;
+  fbx.globalAlpha = 1;
+}
+// The fruit salad bowl in the lair: a grimy tin bowl licked clean, a peel and a core beside it, flies on
+// the core. Once the Blob's gone it's heaped with fruit again.
+function sewBowl() {
+  const cx = Math.round(14 * T - camX), cy = Math.round(13.05 * T - camY), full = G.boss && G.boss.state === 'dead' && G.boss.dead > 1.5;
+  const half = j => Math.round(10 - (j * j) / 4); // the bowl's half-width, row by row down from the rim
+  for (let j = 0; j <= 5; j++) {
+    const w = half(j);
+    pr(cx - w, cy + j, w * 2 + 1, 1, j === 0 ? '#8a9484' : '#5a6656');
+    if (j > 0) { pr(cx - w, cy + j, 1, 1, '#727e6c'); pr(cx + w, cy + j, 1, 1, '#3a4436'); }
+    if (j > 1 && hash2(j, 3) > 0.3) pr(cx - 3 + j * 2, cy + j, 2, 1, '#4a5a3e'); // grime
+  }
+  pr(cx - 9, cy + 1, 19, 1, '#262e22'); // the inside, over the rim
+  pr(cx - 3, cy + 6, 7, 1, '#3a4436');
+  if (full) {
+    const F_ = ['#e84a3a', '#e8c83a', '#5ab83a', '#e88a3a', '#a84ab8', '#e86a8a', '#e84a3a'];
+    for (let i = 0; i < 7; i++) pr(cx - 8 + i * 2 + (i % 2), cy - 2 - (i % 2), 2, 2, F_[i]);
+  } else {
+    for (const ox of [-6, -1, 4]) pr(cx + ox, cy, 2, 1, '#4a8a2a'); // goo where it licked the rim
+    const bx = cx - 16, by = cy + 1; // a banana peel, gone brown
+    pr(bx, by - 1, 1, 1, '#3a2a14'); pr(bx - 1, by, 3, 2, '#a8903a');
+    for (let k = 1; k <= 3; k++) { pr(bx - 1 - k, by + 1 + k, 1, 1, '#8a7430'); pr(bx + 1 + k, by + 1 + k, 1, 1, '#8a7430'); pr(bx, by + 1 + k, 1, 1, k % 2 ? '#6a5a24' : '#8a7430'); }
+    const ax = cx + 14, ay = cy + 1; // an apple core, browning
+    pr(ax, ay - 1, 1, 1, '#3a2a14'); pr(ax - 1, ay, 3, 1, '#8a3a2a'); pr(ax, ay + 1, 1, 2, '#b8a878'); pr(ax - 1, ay + 3, 3, 1, '#7a3226');
+    for (let i = 0; i < 2; i++) { const a = G.t * 6 + i * 3; pr(Math.round(ax + Math.cos(a) * 3), Math.round(ay - 2 + Math.sin(a * 1.3) * 1.5), 1, 1, '#141414'); }
+  }
+}
+// Rats running along the dry corridors: a fat grey body, pink ears, nose and tail, a red eye.
+const ratSprite = f => spr(`rat|${f}`, () => pixSprite(16, 8, (x, y) => {
+  if (y > 6 && ((f ? [5, 10] : [6, 9]).some(lx => Math.abs(x - lx) < 1))) return hex('#2a2420'); // feet
+  const bx = (x - 7) / 5, by = (y - 4.2) / 2.7;
+  if (Math.hypot(x - 13.5, y - 4.3) < 0.8) return hex('#ff3030'); // eye
+  if (Math.hypot(x - 15.3, y - 5) < 0.9) return hex('#e8a0a0'); // nose
+  if (Math.hypot(x - 12, y - 1.6) < 1.1) return hex('#e8a0a0'); // ear
+  if (bx * bx + by * by < 1 || (x > 11 && x < 15.5 && Math.abs(y - 4.8) < 1.8 - (x - 11) * 0.3)) return hex(y < 3.4 ? '#a8988a' : y > 5.6 ? '#5a4c42' : '#867668');
+  if (x < 3 && Math.abs(y - (5 + Math.sin(x * 1.3 + f * 2) * 1.1)) < 0.6) return hex('#d89090'); // tail
+  return null;
+}, 0.3));
+function sewRats() {
+  for (const r of sew.rats) {
+    const sp = ratSprite(Math.floor(G.t * 16) % 2), rx = Math.round((r.x + 0.5) * T - camX), ry = Math.round((r.y + 0.5) * T - camY);
+    fbx.save();
+    if (r.vx < 0) { fbx.translate(rx * 2, 0); fbx.scale(-1, 1); }
+    fbx.drawImage(sp, rx - 8, ry - 5);
+    fbx.restore();
+  }
+}
+// Over the water: murk that clears once the Blob's gone.
+function sewWater() {
+  const k = 0.4 * (1 - sew.clean);
+  if (k <= 0.01) return;
+  fbx.globalAlpha = k;
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (M[r][c] !== '#' && flowAt(c, r)) pr(Math.round(c * T - camX), Math.round(r * T - camY), T, T, '#4a5a1e');
+  fbx.globalAlpha = 1;
+}
+// After the light: the flies round the Blob.
+function sewPost() {
+  const b = G.boss; if (!b || b.state === 'dead' || !enemiesShown()) return;
+  const R = blobR(b);
+  for (const f of sew.flies) {
+    const x = Math.round((b.x + 0.5 + Math.cos(f.a) * (R * 0.7 + f.r)) * T - camX), y = Math.round((b.y + 0.5 - R * 0.3 + Math.sin(f.a * 1.7 + f.ph) * (R * 0.4 + f.r * 0.5)) * T - camY);
+    pr(x, y, 1, 1, '#141414');
+    if (Math.floor(G.t * 30 + f.ph * 5) % 2) pr(x, y - 1, 1, 1, '#a8b0b8');
+  }
+}
+
 // ---------- Frost (every floor) ----------
 // A frost berry sends a shockwave of ice out from Pac-Man and brings frost in at the screen's edge, and
 // the Wraith leaves frost on any wall he drifts through. The Freezer adds its own: walls that ice over
@@ -8039,6 +8323,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.boiler) return blrDecor(theme, dt, glow);
   if (theme.flood) return fldDecor(theme, dt, glow);
   if (theme.crypt) return cryDecor(theme, dt, glow);
+  if (theme.sewer) return sewDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -8259,7 +8544,7 @@ function renderWorld() {
   const dt = G.paused ? 0 : rdt, theme = curTheme();
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -8273,6 +8558,7 @@ function renderWorld() {
   if (theme.boiler) blrUpdate(dt, theme);
   if (theme.flood) fldUpdate(dt, theme);
   if (theme.crypt) cryUpdate(dt, theme);
+  if (theme.sewer) sewUpdate(dt, theme);
   if (G.cfg.dash) dashUpdate(dt, theme);
   frostUpdate(dt, theme);
   if (hasFlow) waterUpdate(dt);
@@ -8284,6 +8570,7 @@ function renderWorld() {
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
   if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
+  if (theme.sewer && G.state !== 'cast') { sewWater(); sewRats(); }
   if ((theme.flood || hasFlow) && G.state !== 'cast') fldFloor(theme);
   slimeFloor();
   worldTf();
@@ -8386,6 +8673,7 @@ function renderWorld() {
   if (theme.boiler) amb = blrAmbient(amb, theme);
   if (theme.flood) amb = fldAmbient(amb, theme);
   if (theme.crypt) amb = cryAmbient(amb);
+  if (theme.sewer) amb = sewAmbient(amb);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
@@ -8396,6 +8684,7 @@ function renderWorld() {
   if (theme.boiler) blrPost(dt, theme);
   if (theme.flood) fldPost(dt, theme);
   if (theme.crypt) cryPost(dt, theme);
+  if (theme.sewer) sewPost();
   if (G.cfg.dash) dashPost();
   if (enemiesShown()) labTaffy(); // after the light, so the goo glows even under the blacklight
   frostPost();
