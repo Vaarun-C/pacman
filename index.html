@@ -980,6 +980,7 @@ const SFX = {
   whistle() { beep(1800, 2600, 0.25, 'sine', 0.07); beep(2600, 1200, 0.2, 'triangle', 0.05, 0.22); },
   gurgle() { for (let i = 0; i < 7; i++) beep(220 + (i % 3) * 90, 120, 0.12, 'sine', 0.08, i * 0.11); beep(70, 45, 1.6, 'triangle', 0.1); },
   shake() { for (let i = 0; i < 6; i++) beep(900 + (i % 2) * 300, 600, 0.04, 'triangle', 0.035, i * 0.04); },
+  wind() { beep(180, 420, 1.2, 'triangle', 0.05); beep(240, 160, 1.6, 'sine', 0.06, 0.4); beep(320, 520, 0.9, 'triangle', 0.03, 0.9); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
@@ -1088,7 +1089,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -3570,6 +3571,7 @@ function darkMask(cx, cy, r) {
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
     const t = (Math.hypot(x * 2 + 1 - px0, y * 2 + 1 - py0) / T - r) / DARK_FALL, k = (y * cw + x) * 4 + 3;
     d[k] = t <= 0 ? 0 : t >= 1 ? 250 : bayer(x, y) < t ? 250 : t * 150;
+    d[k - 3] = t > 0 && t < 1 ? 20 * (1 - t) : 0; d[k - 2] = t > 0 && t < 1 ? 8 * (1 - t) : 0; // a faint warm edge to the light
   }
   darkCv.g.putImageData(darkImg, 0, 0);
   fbx.imageSmoothingEnabled = false;
@@ -3588,27 +3590,23 @@ function drawDark() {
     ctx.globalAlpha = 0.3; drawPac(pac.x, pac.y, pac.face, 0.3); ctx.globalAlpha = 1;
   }
   else { idTf(); darkMask(cx, cy, r); worldTf(); }
+  cry.r = r;
   const dim = e => Math.hypot(e.x - pac.x, e.y - pac.y) > r - 0.5;
+  idTf(); // glowing things show through the dark: pellets, and everyone's eyes
+  const sq = (x, y, s, col) => pr(Math.round(x * T - camX - s / 2), Math.round(y * T - camY - s / 2), s, s, col);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const v = G.dots[y * W + x];
-    if ((v === 2 || v === 3) && dim({ x, y })) { ctx.fillStyle = v === 2 ? '#8a5f58' : '#3b7f99'; ctx.beginPath(); ctx.arc(x + 0.5, y + 0.5, 0.3, 0, Math.PI * 2); ctx.fill(); }
+    if ((v === 2 || v === 3) && dim({ x, y })) sq(x + 0.5, y + 0.5, Math.max(3, Math.round(T * 0.3)), v === 2 ? '#8a5f58' : '#3b7f99');
   }
   for (const g of G.ghosts) {
     if (!dim(g) || g === G.eatenGhost) continue;
-    const fr = g.frightened && G.fright > 0 && !g.eaten, ex = g.x + 0.5, ey = g.y + 0.35, d = g.dir || L;
-    for (const s of [-1, 1]) {
-      if (fr) { ctx.fillStyle = '#ffb8ae'; ctx.fillRect(ex + s * 0.27 - 0.09, ey - 0.09, 0.18, 0.18); continue; }
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(ex + s * 0.3 + d.x * 0.1, ey + d.y * 0.1, 0.2, 0.26, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = g.color; ctx.beginPath(); ctx.arc(ex + s * 0.3 + d.x * 0.2, ey + d.y * 0.22, 0.12, 0, Math.PI * 2); ctx.fill();
-    }
+    if (g.frightened && G.fright > 0 && !g.eaten) { for (const s of [-1, 1]) sq(g.x + 0.5 + s * 0.27, g.y + 0.35, 2, '#ffb8ae'); continue; }
+    blit(ghostEyes(g.dir || L, !!g.eaten), g.x + 0.5, g.y + 0.5);
   }
-  for (const w of G.wraiths) if (dim(w)) drawWraithEyes(w.x + 0.5, w.y + 0.3, w.dir || D, '#1a0b3a', '#ff3b6b');
-  for (const s of G.slimes) if (dim(s) && s.state !== 'house') {
-    ctx.fillStyle = '#8dff9a'; ctx.fillRect(s.x + 0.25, s.y + 0.3, 0.16, 0.16); ctx.fillRect(s.x + 0.6, s.y + 0.3, 0.16, 0.16);
-  }
-  for (const h of G.hounds) if (dim(h) && h.state !== 'house') {
-    ctx.fillStyle = '#ffe066'; ctx.fillRect(h.x + 0.18, h.y + 0.14, 0.2, 0.2); ctx.fillRect(h.x + 0.62, h.y + 0.14, 0.2, 0.2);
-  }
+  for (const w of G.wraiths) if (dim(w)) blit(wraithSprite(0, w.dir || D, 'eyes'), w.x + 0.5, w.y + 0.42);
+  for (const s of G.slimes) if (dim(s) && s.state !== 'house') { sq(s.x + 0.33, s.y + 0.38, 2, '#8dff9a'); sq(s.x + 0.68, s.y + 0.38, 2, '#8dff9a'); }
+  for (const h of G.hounds) if (dim(h) && h.state !== 'house') { sq(h.x + 0.28, h.y + 0.24, 2, '#ffe066'); sq(h.x + 0.72, h.y + 0.24, 2, '#ffe066'); }
+  worldTf();
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (G.dots[y * W + x] === 5 && dim({ x, y })) drawMagnet(x + 0.5, y + 0.55, 0.9);
 }
 function drawFrostBerry(cx, cy, s = 1) {
@@ -5351,6 +5349,7 @@ const themeFor = (stage, lv = 0) => {
   if (lv && stage === 4) return THEMES['4-1'] || (THEMES['4-1'] = throneTheme());
   if (lv && stage === 5) return THEMES[`5-${lv}`] || (THEMES[`5-${lv}`] = boilerTheme(lv));
   if (lv && stage === 6) return THEMES[`6-${lv}`] || (THEMES[`6-${lv}`] = floodTheme(lv));
+  if (lv && stage === 7) return THEMES[`7-${lv}`] || (THEMES[`7-${lv}`] = cryptTheme(lv));
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 };
 const curTheme = () => themeFor(G.cfg.stage, G.lvIndex >= ROOF ? 0 : G.cfg.lv);
@@ -7578,6 +7577,312 @@ function fldPost(dt, theme) {
   fbx.globalAlpha = 1;
 }
 
+// ---------- The Catacombs (stage 7) ----------
+// B8-B10, where somebody forgot to pay the light bill: walls stacked with skulls and femurs, stone slabs
+// engraved with epitaphs, bones on the floor. The light you carry is all there is, but candles in their
+// niches, torches and glowing fungus show through the dark as pinpoints. Every so often a draft blows
+// through and the flames gutter; on B10 they stutter just before every blackout, and a power pellet makes
+// them all flare. The ghost house is a crypt with a candle at each corner and a portcullis for a door.
+// B8 is the ossuary, B9 the Bone Hall (femur walls, torches), B10 Pitch Black (cracked stone, fungus).
+const CRYPT_EPITAPHS = {
+  1: ['HERE LIES THE LIGHT BILL', "R.I.P. CLYDE'S COURAGE", 'UNPAID SINCE 1980'],
+  2: ['HALL OF BONES', 'R.I.P. SIR WAKKA', 'NO RUNNING'],
+  3: ['WHO TURNED OFF THE LIGHTS', 'IS THAT YOU, PINKY?', "IT'S A SKELETON, INKY"],
+};
+function cryptTheme(lv) {
+  const hall = lv === 2, black = lv === 3;
+  const P = Object.fromEntries(Object.entries({
+    flagA: '#2e2a26', flagB: '#38332e', joint: '#141210', dust: '#4a443c', damp: '#1a1c1e', chip: '#8a806c',
+    bone: '#b8ac90', boneHi: '#d8ccb0', boneLo: '#8a7e66', boneDk: '#5a5040', socket: '#0e0a08', gap: '#120e0c',
+    stone: '#3a3632', stoneHi: '#4a4540', stoneLo: '#24211e', crack: '#0e0c0a', fungus: '#2a6a5a', fungusHi: '#5ad8b0',
+    lip: '#080606', base: '#100c0a',
+    slab: '#3e3a34', slabLine: '#24211e', slabHi: '#4e4942', rim: '#a89c84', rimF: '#c8bca0', rimR: '#6a6050', ring2: '#4a453e', ring3: '#34302a',
+    house: '#1c1a18', houseLine: '#0e0c0a',
+  }).map(([k, v]) => [k, hex(v)]));
+  const boneCol = (h, l) => mulc(l > 1 ? P.boneHi : l < 0 ? P.boneLo : P.bone, 0.85 + h * 0.25);
+  return {
+    id: 'crypt' + lv, void: '#020101', map: '#8a8070', runner: false, decor: true, crypt: true, dust: true, lv, hall, black,
+    ambient: black ? [0.34, 0.32, 0.34] : hall ? [0.44, 0.4, 0.38] : [0.4, 0.38, 0.4], vignette: 0.55,
+    grade: black ? ['#3a6a8a', 0.1] : ['#c8a060', 0.1],
+    floor(x, y, t) {
+      if (t.house) return x % 10 === 0 || y % 10 === 0 ? P.houseLine : mulc(P.house, 0.85 + vnoise(x / 4, y / 4) * 0.3); // the crypt's floor
+      const row = (y / 12) | 0, xs = x + (row & 1) * 6 + ((hash2(row, 4) * 12) | 0), cell = (xs / 12) | 0;
+      let col = xs % 12 === 0 || y % 12 === 0 ? P.joint : mulc(mixc(P.flagA, P.flagB, hash2(cell, row)), 0.88 + vnoise(x / 4, y / 4) * 0.2);
+      if (hall && hash2(x, y * 3) > 0.94 && xs % 12 && y % 12) col = P.chip; // bone chips set in the floor
+      const d = vnoise(x / 10 + 2, y / 10) - 0.62;
+      if (d > 0) col = mixc(col, black ? P.damp : P.dust, Math.min(0.6, d * 3));
+      if (black && Math.abs(vnoise(x / 6 + 30, y / 6) - 0.5) < 0.02) col = P.crack;
+      return col;
+    },
+    face(x, y, v, F, edge) {
+      let col;
+      if (v === 0) col = P.lip;
+      else if (v === F - 1) col = P.base;
+      else if (F < 7 || black) { // rough stone blocks, cracked, fungus creeping up from the floor
+        const br = ((v - 1) / 4) | 0, bx = x + (br & 1) * 5;
+        col = (v - 1) % 4 === 3 || bx % 10 === 0 ? P.crack : mulc(mixc(P.stone, P.stoneHi, hash2(bx / 10 | 0, br)), 0.85 + vnoise(x / 3, y / 3) * 0.25);
+        if (black && v > F * 0.55 && vnoise(x / 4 + 9, y / 3) > 0.62) col = vnoise(x / 2, y / 2) > 0.6 ? P.fungusHi : P.fungus;
+      } else if (hall) { // femurs stacked on end, knobs top and bottom, a skull every so often
+        const sk = x % 14 >= 9, lx = x % 14;
+        if (sk) { // a column of skulls
+          const r = (v - 1) % 4, sx = lx - 9, h = hash2((x / 14) | 0, ((v - 1) / 4) | 0);
+          if (r === 3 || (r === 0 && (sx === 0 || sx === 4))) col = P.gap;
+          else if (r === 1 && (sx === 1 || sx === 3)) col = P.socket;
+          else if (r === 2 && sx === 2) col = P.socket;
+          else col = boneCol(h, r === 0 ? 2 : sx === 4 ? -1 : 1);
+        } else {
+          const bx = lx % 3, knob = v <= 2 || v >= F - 3;
+          col = bx === 2 && !knob ? P.gap : boneCol(hash2((x / 3) | 0, 9), bx === 0 ? 2 : bx === 2 ? -1 : 1);
+          if (knob && bx === 2 && (v === 1 || v === F - 2)) col = P.gap;
+        }
+      } else { // the ossuary: a row of skulls, a row of femurs, the tops of another row of skulls
+        if (v <= 4) {
+          const r = v - 1, lx = (x + 600) % 6, h = hash2(((x + 600) / 6) | 0, 3);
+          if (lx === 5 || (r === 0 && (lx === 0 || lx === 4)) || (r === 3 && (lx === 0 || lx === 4))) col = P.gap;
+          else if (r === 1 && (lx === 1 || lx === 3)) col = P.socket;
+          else if (r === 3 && lx === 2) col = P.boneDk; // teeth
+          else col = boneCol(h, r === 0 ? 2 : lx === 4 ? -1 : 1);
+        } else if (v <= 6) {
+          const lx = (x + 3) % 8, h = hash2(((x + 3) / 8) | 0, 5);
+          col = lx === 0 || lx === 7 ? (v === 5 ? boneCol(h, 2) : boneCol(h, 0)) : lx === 1 && v === 6 ? P.gap : v === 5 ? boneCol(h, 1) : boneCol(h, -1);
+        } else {
+          const lx = (x + 2) % 6, h = hash2(((x + 2) / 6) | 0, 7);
+          col = lx === 5 || (v === 7 && (lx === 0 || lx === 4)) ? P.gap : v === 8 && (lx === 1 || lx === 3) ? P.socket : boneCol(h, v === 7 ? 2 : 0);
+        }
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // stone slabs, worn bone-pale at the edge
+      if (ring === 1) return side === 'front' ? P.rimF : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2) return P.ring2;
+      if (ring === 3) return P.ring3;
+      if (ring === 7) return P.slabHi;
+      let col = x % 16 === 0 || y % 16 === 0 ? P.slabLine : mulc(P.slab, 0.88 + vnoise(x / 5, y / 5) * 0.22);
+      if (Math.abs(vnoise(x / 8 + 50, y / 8) - 0.5) < 0.015) col = P.crack;
+      if (black && vnoise(x / 5 + 20, y / 5) > 0.74) col = P.fungus;
+      return col;
+    },
+    pick(big, r, roll) {
+      if (!big) return roll < 0.5 ? 'cobweb' : 'skullglow';
+      if (hall) return roll < 0.26 ? 'torch' : roll < 0.42 ? 'niche' : roll < 0.56 ? 'chains' : roll < 0.7 ? 'skullglow' : roll < 0.82 ? 'tomb' : roll < 0.92 ? 'urn' : 'cobweb';
+      if (black) return roll < 0.28 ? 'fungus' : roll < 0.44 ? 'niche' : roll < 0.58 ? 'cobweb' : roll < 0.7 ? 'chains' : roll < 0.82 ? 'skullglow' : 'tomb';
+      return roll < 0.3 ? 'niche' : roll < 0.44 ? 'skullglow' : roll < 0.56 ? 'cobweb' : roll < 0.68 ? 'tomb' : roll < 0.8 ? 'urn' : roll < 0.9 ? 'chains' : 'torch';
+    },
+    bake(L, g) {
+      // Epitaphs chiselled into the widest slabs.
+      const lines = CRYPT_EPITAPHS[lv], picked = [];
+      for (const s of wideTops(L)) {
+        if (picked.length >= lines.length) break;
+        const txt = lines[picked.length], w = tinyW(txt);
+        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        picked.push(s);
+        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        tinyText(g, txt, tx, ty + 1, '#5a544a'); tinyText(g, txt, tx, ty, '#14110e');
+      }
+      // Bones lying about the floor.
+      for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
+        if (!L.reach[r * L.w + c] || hash2(c * 5 + lv, r * 9) > 0.16 || Math.hypot(c - meta.pac.x, r - meta.pac.y) < 2) continue;
+        const x = c * L.T + 3 + ((hash2(c, r + 1) * (L.T - 8)) | 0), y = r * L.T + 3 + ((hash2(c + 1, r) * (L.T - 8)) | 0), k = hash2(c, r + 7);
+        if (k < 0.6) { // a femur
+          const v = k < 0.3;
+          g.fillStyle = '#7a705c'; g.fillRect(x, y, v ? 1 : 5, v ? 5 : 1);
+          g.fillStyle = '#a89c82'; g.fillRect(x - (v ? 1 : 0), y - (v ? 0 : 1), v ? 3 : 1, v ? 1 : 3); g.fillRect(x + (v ? -1 : 4), y + (v ? 4 : -1), v ? 3 : 1, v ? 1 : 3);
+        } else { // a skull
+          g.fillStyle = '#a89c82'; g.fillRect(x, y, 3, 3); g.fillRect(x + 1, y - 1, 1, 1);
+          g.fillStyle = '#100c0a'; g.fillRect(x, y + 1, 1, 1); g.fillRect(x + 2, y + 1, 1, 1);
+        }
+      }
+    },
+  };
+}
+
+// Per-attempt state for the catacombs, reset with the level.
+const cry = { gust: { next: 9, t: 0 }, bats: [], batT: 4, r: 3, flare: 0, wasOut: false };
+function cryReset() { Object.assign(cry, { gust: { next: 9, t: 0 }, bats: [], batT: 4, r: 3, flare: 0, wasOut: false }); }
+const GUST = 2.4;
+const gustK = () => cry.gust.t > 0 ? Math.sin((1 - cry.gust.t / GUST) * Math.PI) : 0;
+// How a flame is doing right now: 0 out, 1 normal, more when a pellet's lit the room.
+function cryFlameK(seed) {
+  if (G.blackout > 0) return 0;
+  if (G.cfg.flicker && G.fright === 0 && G.blackT < 0.9 && hash2(Math.floor(G.t * 16), seed * 997 | 0) > 0.45) return 0; // stuttering: a blackout's coming
+  if (gustK() > 0.5 && hash2(seed * 991 | 0, 3) > 0.55) return 0; // blown out by the draft
+  return 1 + (G.fright > 0 ? 0.6 : 0) + cry.flare;
+}
+function cryFlame(x, y, seed, big, k) { // a candle flame, leaning in a draft; returns nothing if it's out
+  if (k <= 0) { if (Math.random() < 0.08) parts.push({ x: (x + camX) / T, y: (y + camY) / T, vx: 0, vy: -0.4, t: 0.6, t0: 0.6, col: '#6a645c', g: 0 }); return; }
+  const f = Math.floor(G.t * 11 + seed * 50), nz = hash2(f, seed * 1000 | 0), lean = Math.round(gustK() * 2) + (nz < 0.2 ? -1 : nz > 0.85 ? 1 : 0);
+  const fh = (big ? 4 : 3) + (nz > 0.5 ? 1 : 0) + (k > 1.2 ? 1 : 0);
+  pr(x, y - fh + 1, 2, fh - 1, '#ff9a30');
+  pr(x + (lean > 0 ? 1 : 0), y - fh + 2, 1, fh - 2, '#fff2b0');
+  pr(x + lean, y - fh, 1, 1, '#ffcc60');
+}
+function cryUpdate(dt, theme) {
+  if (!dt) return;
+  const Gu = cry.gust;
+  if (Gu.t > 0) Gu.t = Math.max(0, Gu.t - dt);
+  if ((Gu.next -= dt) <= 0) { Gu.next = 14 + Math.random() * 6; Gu.t = GUST; if (G.state === 'play') SFX.wind(); }
+  if (gustK() > 0.3 && Math.random() < dt * 20) parts.push({ x: pac.x + 0.5 + (Math.random() - 0.5) * 6, y: pac.y - 2 + Math.random() * 2, vx: 0.6, vy: 1.2, t: 1, t0: 1, col: '#6a6050', g: 1 }); // grit off the ceiling
+  // Coming out of a blackout, every flame flares back up.
+  const out = G.blackout > 0;
+  if (cry.wasOut && !out) cry.flare = 0.6;
+  cry.wasOut = out;
+  cry.flare = Math.max(0, cry.flare - dt);
+  // Now and then a bat flits through the light.
+  if ((cry.batT -= dt) <= 0 && G.state === 'play') {
+    cry.batT = 5 + Math.random() * 6;
+    const left = Math.random() < 0.5;
+    cry.bats.push({ x: pac.x + (left ? -8 : 8), y: pac.y - 1 + (Math.random() - 0.5) * 4, vx: left ? 5 : -5, ph: Math.random() * 6, t: 0 });
+  }
+  for (const b of cry.bats) { b.t += dt; b.x += b.vx * dt; b.y += Math.sin(b.t * 7 + b.ph) * 2.2 * dt; }
+  cry.bats = cry.bats.filter(b => b.t < 4);
+  // The skulls rattle when a ghost goes by.
+  if (G.state === 'play') for (const g of G.ghosts) if (g.mode === 'active' && !g.eaten && Math.random() < dt * 0.6) {
+    const d = art.decor.find(d => d.kind === 'skullglow' && Math.hypot(d.x / T - g.x - 0.5, d.y1 / T - g.y - 0.5) < 1.5);
+    if (d) d.rattle = 0.4;
+  }
+}
+function cryAmbient(amb) {
+  const k = gustK();
+  return k > 0 ? mulc(amb, 1 - k * 0.2) : amb;
+}
+function cryDecor(theme, dt, glow) {
+  const L = art;
+  for (const d of L.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    if (d.kind === 'niche') { // an arched niche with a candle in it
+      const k = cryFlameK(d.seed), nx = x - 4, ny = y0 + 1;
+      if (!glow) {
+        pr(nx, ny + 2, 8, F - 3, '#0a0806'); pr(nx + 1, ny + 1, 6, 1, '#0a0806'); pr(nx + 2, ny, 4, 1, '#0a0806');
+        pr(nx - 1, ny + F - 2, 10, 1, '#6a6050');
+        pr(x - 1, y1 - 5, 2, 3, '#e8dcc0'); pr(x - 2, y1 - 3, 4, 1, '#8a7a5a');
+        if (k > 0) addLightPx(x, y1 + T * 0.3, 2.8 * T * Math.min(1.4, k), [1, 0.62, 0.3], 0.75);
+      } else cryFlame(x - 1, y1 - 6, d.seed, false, k);
+    } else if (d.kind === 'torch') { // a torch in an iron sconce: the brightest thing down here
+      const k = cryFlameK(d.seed + 0.5), tx = x - 1, ty = y0 + 3;
+      if (!glow) {
+        pr(tx - 1, ty + 3, 4, 1, '#3a3430'); pr(tx, ty, 2, F - 4, '#5a3a20'); pr(tx - 1, ty - 1, 4, 2, '#2a2420');
+        if (k > 0) addLightPx(x, y1 + T * 0.4, 3.8 * T * Math.min(1.4, k), [1, 0.58, 0.25], 0.9);
+        if (k > 0 && G.state === 'play' && Math.random() < dt * 2) parts.push({ x: d.x / T, y: (d.y0 + 1) / T, vx: (Math.random() - 0.5) * 0.3, vy: -0.7, t: 0.9, t0: 0.9, col: '#ffa040', g: 0 });
+      } else cryFlame(tx, ty - 1, d.seed + 0.5, true, k);
+    } else if (d.kind === 'skullglow') { // a skull on a ledge: its sockets light up when you're close, and it chatters as ghosts pass
+      const near = G.state === 'play' && Math.hypot((pac.x + 0.5) * T - d.x, (pac.y + 0.5) * T - d.y1) < T * 2.4;
+      d.rattle = Math.max(0, (d.rattle || 0) - dt);
+      const jit = d.rattle > 0 ? Math.round(Math.sin(G.t * 60)) : 0, sx = x - 3 + jit, sy = y0 + ((F - 6) >> 1);
+      if (!glow) {
+        pr(sx - 1, sy + 6, 8, 1, '#4a443c');
+        pr(sx, sy, 6, 4, '#c8bca0'); pr(sx + 1, sy - 1, 4, 1, '#d8ccb0'); pr(sx + 1, sy + 4, 4, 2, '#a89c82');
+        pr(sx + 1, sy + 1, 2, 2, '#0e0a08'); pr(sx + 4, sy + 1, 1, 2, '#0e0a08'); pr(sx + 3, sy + 1, 1, 2, '#0e0a08');
+        pr(sx + 2, sy + 5, 1, 1, '#4a443c'); pr(sx + 4, sy + 5 - (d.rattle > 0 ? 1 : 0), 1, 1, '#4a443c');
+        if (near) addLightPx(sx + 3, sy + 2, T, [1, 0.2, 0.15], 0.5);
+      } else if (near || G.fright > 0) { pr(sx + 1, sy + 2, 1, 1, '#ff4030'); pr(sx + 4, sy + 2, 1, 1, '#ff4030'); }
+    } else if (d.kind === 'fungus') { // B10: glowing fungus at the foot of the wall
+      const pulse = 0.6 + 0.4 * Math.sin(G.t * 1.5 + d.seed * 9);
+      for (const [ox, h] of [[-4, 3], [-1, 5], [2, 4], [5, 2]]) {
+        if (!glow) { pr(x + ox, y1 - h, 1, h, '#3a5a50'); pr(x + ox - 1, y1 - h - 1, 3, 1, '#2a8a70'); }
+        else { fbx.globalAlpha = pulse; pr(x + ox - 1, y1 - h - 1, 3, 1, '#7affd8'); fbx.globalAlpha = 1; }
+      }
+      if (!glow && G.blackout <= 0) addLightPx(x, y1, 1.6 * T, [0.3, 1, 0.8], 0.25 * pulse);
+    } else if (d.kind === 'chains') { // chains hanging off the wall, swinging in the draft
+      if (glow) continue;
+      const sw = Math.sin(G.t * 1.6 + d.seed * 7) * (0.12 + gustK() * 0.5);
+      for (const ox of [-3, 3]) for (let j = 0; j < F - 2; j++) pr(Math.round(x + ox + Math.sin(sw) * j), y0 + 1 + j, 1, 1, j % 2 ? '#6a6460' : '#3a3634');
+    } else if (d.kind === 'tomb') { // a plaque: R.I.P.
+      if (glow) continue;
+      const w = tinyW('R.I.P.') + 4, tx = x - (w >> 1), ty = y0 + ((F - 7) >> 1);
+      pr(tx, ty, w, 7, '#5a564e'); pr(tx, ty, w, 1, '#7a766c'); tinyText(fbx, 'R.I.P.', tx + 2, ty + 1, '#1a1814');
+    } else if (d.kind === 'urn') {
+      if (glow) continue;
+      const ux = x - 3, uy = y1 - 7;
+      pr(ux + 1, uy, 4, 1, '#6a5a3a'); pr(ux, uy + 1, 6, 4, '#8a7448'); pr(ux, uy + 1, 1, 4, '#a89058'); pr(ux + 1, uy + 5, 4, 1, '#5a4a2a'); pr(ux + 1, uy + 2, 4, 1, '#5a4a2a');
+    } else if (d.kind === 'cobweb') { // a web strung across the corner of the wall
+      if (glow) continue;
+      fbx.globalAlpha = 0.6;
+      const side = d.seed < 0.5 ? -1 : 1, cx = x + side * 6;
+      for (let i = 0; i < 6; i++) { pr(cx - side * i, y0 + 1, 1, 1, '#c8c8c0'); pr(cx, y0 + 1 + i, 1, 1, '#c8c8c0'); pr(cx - side * i, y0 + 1 + i, 1, 1, '#a8a8a0'); }
+      for (let i = 1; i < 4; i++) pr(cx - side * i * 1.5, y0 + 1 + Math.round(i * 1.5), 1, 1, '#a8a8a0');
+      fbx.globalAlpha = 1;
+    }
+  }
+}
+// The ghost house is a crypt: a candle burning in each corner, a low mist.
+function cryCrypt() {
+  const b = art.houseBox; if (!b) return;
+  const x0 = b.c0 * T - camX, y0 = b.r0 * T - camY, w = (b.c1 - b.c0 + 1) * T, h = (b.r1 - b.r0 + 1) * T;
+  if (x0 > VIEW_W || y0 > VIEW_H || x0 + w < 0 || y0 + h < 0) return;
+  const fs = mistBlue();
+  fbx.globalAlpha = 0.5; blit(fs, (x0 + camX + w / 2) / T, (y0 + camY + h * 0.7) / T); fbx.globalAlpha = 1;
+  cryCandles(x0, y0, w, h, false);
+}
+function cryCandles(x0, y0, w, h, glow) {
+  for (const [cx, cy, i] of [[x0 + 3, y0 + 6, 1], [x0 + w - 5, y0 + 6, 2], [x0 + 3, y0 + h - 2, 3], [x0 + w - 5, y0 + h - 2, 4]]) {
+    const k = cryFlameK(i * 0.17);
+    if (!glow) { pr(cx, cy - 4, 2, 4, '#e8dcc0'); pr(cx + 1, cy - 4, 1, 4, '#b4a482'); if (k > 0) addLightPx(cx + 1, cy - 5, 2.2 * T, [1, 0.6, 0.3], 0.45); }
+    else cryFlame(cx, cy - 5, i * 0.17, false, k);
+  }
+}
+// The house door is a portcullis: it grinds up when someone's coming through.
+function cryDoor() {
+  const y = Math.round((house.exitY + 1.3) * T) - camY, x0 = house.doorC * T - camX, hh = Math.max(4, Math.round(T * 0.3));
+  const busy = [...G.ghosts, ...G.hounds, ...G.wraiths].some(e => Math.abs(e.y - (house.exitY + 1)) < 1.4 && Math.abs(e.x - house.doorX) < 1.4);
+  const lift = busy ? hh - 1 : 0;
+  pr(x0, y - lift, 2 * T, 1, '#4a4440');
+  for (let i = 1; i < 2 * T; i += 3) { pr(x0 + i, y - lift, 1, hh, '#5a5450'); pr(x0 + i, y - lift + hh, 1, 1, '#8a847c'); }
+  pr(x0, y - lift + (hh >> 1), 2 * T, 1, '#3a3430');
+}
+// After the light: bats, and the candles' glow.
+const batSprite = f => spr(`bat|${f}`, () => pixSprite(9, 5, (x, y) => {
+  const dx = Math.abs(x - 4.5);
+  if (dx < 1 && y > 1 && y < 4) return hex('#1a1418');
+  if (f ? (y > 1.5 + dx * 0.3 && y < 3 + dx * 0.15 && dx < 4.5) : (y > 2.5 - dx * 0.4 && y < 3.6 - dx * 0.2 && dx < 4.5)) return hex('#2a2228');
+  return null;
+}, 0));
+function cryPost(dt, theme) {
+  for (const b of cry.bats) {
+    const sx = Math.round((b.x + 0.5) * T - camX), sy = Math.round((b.y + 0.5) * T - camY);
+    fbx.drawImage(batSprite(Math.floor(G.t * 12 + b.ph) % 2), sx - 4, sy - 2);
+    pr(sx - 1, sy, 1, 1, '#ff3030'); pr(sx + 1, sy, 1, 1, '#ff3030');
+  }
+  if (theme.decor) cryCandlesGlow();
+}
+function cryCandlesGlow() {
+  const b = art.houseBox; if (!b) return;
+  cryCandles(b.c0 * T - camX, b.r0 * T - camY, (b.c1 - b.c0 + 1) * T, (b.r1 - b.r0 + 1) * T, true);
+}
+// Over the dark: every flame out of reach of your light still shows, as a pinpoint with a faint halo.
+function cryDark(theme) {
+  if (cry.r <= 0) return;
+  const pin = (sx, sy, wx, wy, k, col, halo) => {
+    if (Math.hypot(wx - pac.x - 0.5, wy - pac.y - 0.5) < cry.r - 0.2 || sx < -4 || sy < -4 || sx > VIEW_W + 4 || sy > VIEW_H + 4) return;
+    const fl = 0.75 + hash2(Math.floor(G.t * 10), sx * 7 + sy) * 0.25;
+    for (let i = -halo; i <= halo; i++) for (let j = -halo; j <= halo; j++) {
+      const m = Math.abs(i) + Math.abs(j);
+      if (m > halo || m <= 1) continue;
+      fbx.globalAlpha = 0.3 * (1 - (m - 1) / halo) * Math.min(1.6, k) * fl; pr(sx + i, sy + j, 1, 1, col);
+    }
+    fbx.globalAlpha = Math.min(1, fl * k);
+    pr(sx - 1, sy, 2, 2, col); pr(sx, sy - 2, 1, 2, '#ffe0a0'); pr(sx - 1, sy - 1, 1, 1, '#ffb050');
+  };
+  for (const d of art.decor) {
+    if (d.kind === 'niche' || d.kind === 'torch') {
+      const k = cryFlameK(d.kind === 'torch' ? d.seed + 0.5 : d.seed);
+      if (k > 0) pin(Math.round(d.x - camX), Math.round((d.kind === 'torch' ? d.y0 + 2 : d.y1 - 7) - camY), d.x / T, d.y1 / T, k, '#ff9a30', d.kind === 'torch' ? 5 : 4);
+    } else if (d.kind === 'fungus' && G.blackout <= 0) {
+      const sx = Math.round(d.x - camX), sy = Math.round(d.y1 - 4 - camY);
+      if (Math.hypot(d.x / T - pac.x - 0.5, d.y1 / T - pac.y - 0.5) > cry.r - 0.2 && sx > -4 && sx < VIEW_W + 4 && sy > -4 && sy < VIEW_H + 4) {
+        fbx.globalAlpha = 0.45 + 0.25 * Math.sin(G.t * 1.5 + d.seed * 9);
+        for (const ox of [-4, -1, 2, 5]) pr(sx + ox, sy + (ox & 1), 1, 1, '#5ad8b0');
+      }
+    }
+  }
+  const b = art.houseBox;
+  if (b) for (const [cx, cy, i] of [[b.c0 + 0.2, b.r0 + 0.3, 1], [b.c1 + 0.8, b.r0 + 0.3, 2], [b.c0 + 0.2, b.r1 + 0.85, 3], [b.c1 + 0.8, b.r1 + 0.85, 4]]) {
+    const k = cryFlameK(i * 0.17);
+    if (k > 0) pin(Math.round(cx * T - camX), Math.round(cy * T - camY), cx, cy, k, '#ff9a30', 3);
+  }
+  fbx.globalAlpha = 1;
+}
+
 // ---------- Dash effects (every floor with dash) ----------
 // A kick of dust as the dash starts, glints along the floor, speed lines streaming off behind, and a
 // white ring on a near miss through an enemy. In the lab the kick-off throws up goo as well.
@@ -7710,6 +8015,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.throne) return thrDecor(theme, dt, glow);
   if (theme.boiler) return blrDecor(theme, dt, glow);
   if (theme.flood) return fldDecor(theme, dt, glow);
+  if (theme.crypt) return cryDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -7930,7 +8236,7 @@ function renderWorld() {
   const dt = G.paused ? 0 : rdt, theme = curTheme();
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -7943,11 +8249,12 @@ function renderWorld() {
   if (theme.throne) thrUpdate(dt, theme);
   if (theme.boiler) blrUpdate(dt, theme);
   if (theme.flood) fldUpdate(dt, theme);
+  if (theme.crypt) cryUpdate(dt, theme);
   if (G.cfg.dash) dashUpdate(dt, theme);
   drawDecor(theme, dt);
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
   if (theme.flood && G.state !== 'cast') fldFloor(theme);
   worldTf();
@@ -8012,6 +8319,7 @@ function renderWorld() {
     if (theme.boiler) blrFurnace();
     if (showEnemies) for (const h of G.hounds) pxHound(h);
     if (theme.flood) fldHouse(theme);
+    if (theme.crypt) cryCrypt();
     if (showEnemies) for (const s of G.slimes) if (s.state !== 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state !== 'house') pxWraith(w);
     if (showEnemies) for (const s of G.blobules) pxSlime({ ...s, state: 'bit', blue: true });
@@ -8049,6 +8357,7 @@ function renderWorld() {
   if (theme.throne) amb = thrAmbient(amb);
   if (theme.boiler) amb = blrAmbient(amb, theme);
   if (theme.flood) amb = fldAmbient(amb, theme);
+  if (theme.crypt) amb = cryAmbient(amb);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
@@ -8058,8 +8367,9 @@ function renderWorld() {
   if (theme.throne) thrPost(dt);
   if (theme.boiler) blrPost(dt, theme);
   if (theme.flood) fldPost(dt, theme);
+  if (theme.crypt) cryPost(dt, theme);
   if (G.cfg.dash) dashPost();
-  if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); }
+  if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); if (theme.crypt) cryDark(theme); }
   if (fxOn) {
     bloom();
     if (theme.grade) { fbx.globalCompositeOperation = 'soft-light'; fbx.globalAlpha = theme.grade[1]; pr(0, 0, VIEW_W, VIEW_H, theme.grade[0]); fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1; }
