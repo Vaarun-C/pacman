@@ -1550,10 +1550,10 @@ function eatSlime(s) {
     G.slimes.splice(i, 1, ...kids);
     labSplit(s, kids);
     addScore(400); SFX.split();
-    popup('400', s.x, s.y - (labActive() ? 1.4 : 0), '#8dff9a'); // in the lab, up out of the way of the goo string
+    popup('400', s.x, s.y - 1.4, '#8dff9a'); // up out of the way of the goo string
   } else {
     G.slimes.splice(i, 1);
-    if (labActive()) labSplat(s.x, s.y, 6, 1.2);
+    labSplat(s.x, s.y, 6, 1.2);
     addScore(300); SFX.ghost();
     popup('300', s.x, s.y, '#8dff9a');
     if (!G.slimes.some(o => o.group === s.group)) G.slimes.push(makeSlime(s.group, 10));
@@ -3400,29 +3400,8 @@ function drawWebs() {
   ctx.restore();
 }
 // ---------- Basement sprites ----------
-// Your freshest scent: paw prints on the last few tiles of the trail, fading as they age.
+// Your freshest scent: paw prints on the last few tiles of the trail, fading as they age (see pxScent).
 const SCENT_PRINTS = 5;
-function drawScent(h) {
-  if (h.state !== 'hunt' || h.lost || G.fright > 0 || !h.trail.length) return;
-  ctx.save();
-  ctx.fillStyle = '#ffb46b';
-  const n = h.trail.length, from = Math.max(0, n - SCENT_PRINTS);
-  let prev = from ? h.trail[from - 1] : { x: h.x, y: h.y };
-  h.trail.slice(from).forEach((t, k) => {
-    const i = from + k, dx = t.x - prev.x, dy = t.y - prev.y;
-    prev = t;
-    if (Math.abs(dx) > 2) return; // wrapped through a tunnel
-    const len = Math.hypot(dx, dy) || 1, fx = dx / len, fy = dy / len, side = i % 2 ? 1 : -1;
-    const cx = t.x + 0.5 - fy * side * 0.16, cy = t.y + 0.5 + fx * side * 0.16;
-    ctx.globalAlpha = 0.7 * (k + 1) / (n - from);
-    ctx.beginPath(); ctx.ellipse(cx - fx * 0.03, cy - fy * 0.03, 0.15, 0.15, 0, 0, Math.PI * 2); ctx.fill();
-    for (const k of [-1, 0, 1]) { // three toes, pointing along the trail
-      const a = Math.atan2(fy, fx) + k * 0.6;
-      ctx.beginPath(); ctx.arc(cx + Math.cos(a) * 0.24, cy + Math.sin(a) * 0.24, 0.07, 0, Math.PI * 2); ctx.fill();
-    }
-  });
-  ctx.restore();
-}
 // Dust kicked up while a hound skids round a corner.
 function drawSkid(h) {
   const k = 1 - h.skid / HOUND_SKID, cx = h.x + 0.5 - h.dir.x * 0.6, cy = h.y + 0.5 - h.dir.y * 0.6;
@@ -5545,31 +5524,6 @@ function frzUpdate(dt, theme) {
   const C = frz.comp;
   if (C.t > 0) C.t = Math.max(0, C.t - dt);
   if ((C.next -= dt) <= 0) { C.next = 12 + Math.random() * 8; C.t = 3.2; if (G.state === 'play') SFX.hum(); }
-  // The Wraith leaves frost on any wall he drifts through.
-  for (const w of G.wraiths) {
-    if (w.state !== 'active' && w.state !== 'leave') continue;
-    if (tile(Math.round(w.x), Math.round(w.y)) !== '#') continue;
-    const x = (w.x + 0.5) * T, y = (w.y + 0.5) * T;
-    if (frz.blooms.some(b => b.t < 0.3 && Math.hypot(b.x - x, b.y - y) < T * 0.8)) continue;
-    frz.blooms.push({ x, y, t: 0 });
-    if (frz.blooms.length > 40) frz.blooms.shift();
-  }
-  for (const b of frz.blooms) b.t += dt;
-  frz.blooms = frz.blooms.filter(b => b.t < 6);
-  // A frost berry: a shockwave of ice, then the thaw.
-  if (G.chill > 0 && frz.chill === 0) frz.wave = { x: pac.x + 0.5, y: pac.y + 0.5, t: 0 };
-  frz.chill = G.chill;
-  if (frz.wave && (frz.wave.t += dt) > 0.7) frz.wave = null;
-  frz.ice += ((G.chill > 0 ? 1 : 0) - frz.ice) * Math.min(1, dt * (G.chill > 0 ? 10 : 2.5));
-  if (G.chill > 0 && G.chill < 1.6 && art) for (let k = 0; k < 30 && Math.random() < dt * 40; k++) { // the walls drip as it thaws
-    const x = (camX + Math.random() * VIEW_W) | 0, y = (camY + Math.random() * VIEW_H) | 0;
-    if (x < 0 || y < 0 || x >= art.PW || y + 1 >= art.PH || art.cls[y * art.PW + x] !== 2 || art.cls[(y + 1) * art.PW + x] !== 0) continue;
-    parts.push({ x: x / T, y: y / T, vx: 0, vy: 0.2, t: 0.5, t0: 0.5, col: '#9fe0ff', g: 14 });
-  }
-  // The cold follows the Wraith: the closer he is, the more the screen frosts over.
-  let near = 0;
-  for (const w of G.wraiths) if (w.state === 'active' || w.state === 'leave') near = Math.max(near, Math.min(1, (7 - Math.hypot(w.x - pac.x, w.y - pac.y)) / 5));
-  frz.cold += (Math.max(near, frz.ice * 0.55) - frz.cold) * Math.min(1, dt * 3);
   // Ice blocks: cracks spread in three stages, then the block shatters as its prisoner breaks out.
   const inside = new Set(iceDwellers());
   for (const e of inside) {
@@ -5685,18 +5639,6 @@ function frzDecor(theme, dt, glow) {
     pr(x0 + 2, y0 + h - 3, w - 4, 1, '#8eaabf');
     addLightPx(x0 + w / 2, y0 + h / 2, 2.4 * T, [0.6, 0.85, 1], 0.25);
   }
-  // Frost blooms where the Wraith has passed through a wall: they grow, glint, then fade.
-  for (const bl of frz.blooms) {
-    const grow = Math.min(1, bl.t / 0.5), fade = bl.t < 3.5 ? 1 : Math.max(0, 1 - (bl.t - 3.5) / 2.5);
-    fbx.globalAlpha = fade;
-    for (const p of FERN) {
-      if (p.k > grow) break;
-      const wx = Math.round(bl.x + p.dx), wy = Math.round(bl.y + p.dy);
-      if (wx < 0 || wy < 0 || wx >= L.PW || wy >= L.PH || !L.cls[wy * L.PW + wx]) continue;
-      pr(wx - camX, wy - camY, 1, 1, p.k < 0.25 ? '#ffffff' : p.k < 0.7 ? '#d4f2ff' : '#9fd4ee');
-    }
-  }
-  fbx.globalAlpha = 1;
   // On the rink, everyone's reflected in the ice.
   if (lv === 2 && enemiesShown()) {
     const mirror = (e, draw) => {
@@ -5840,7 +5782,7 @@ function frzFog() {
   }
   fbx.globalAlpha = 1;
 }
-// After the light: snowflakes, the walls icing over, the berry's shockwave and the frost at the screen's edge.
+// After the light: snowflakes, and the walls icing over.
 const snow = Array.from({ length: 64 }, (_, i) => ({ x: hash2(i, 21) * 400, y: hash2(i, 22) * 400, ph: hash2(i, 23) * 6.3, sp: 6 + hash2(i, 24) * 8 }));
 function frzPost(dt) {
   const MW = VIEW_W + 16, MH = VIEW_H + 16;
@@ -5855,12 +5797,6 @@ function frzPost(dt) {
     fbx.globalAlpha = frz.ice * (thaw ? (iceOn() ? 0.3 : 0.12) : 0.32);
     fbx.drawImage(art.mask, -camX, -camY);
   }
-  if (frz.wave) {
-    const w = frz.wave, r = (w.t / 0.7) * 12 * T, cx = w.x * T - camX, cy = w.y * T - camY, n = Math.ceil(r * 0.8);
-    fbx.globalAlpha = 1 - w.t / 0.7;
-    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; pr(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 2, 2, '#e8fbff'); }
-  }
-  if (frz.cold > 0.02) { fbx.globalAlpha = Math.min(0.75, frz.cold); fbx.drawImage(frostEdgeSprite(), 0, 0); }
   fbx.globalAlpha = 1;
 }
 // A frozen Wraith shatters into glittering shards, with a split-second freeze frame.
@@ -6005,7 +5941,6 @@ function labTheme(lv) {
 // Per-floor state for the lab, reset whenever the level art is rebuilt.
 const lab = { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, house: new Set(), trailT: 0 };
 function labReset() { Object.assign(lab, { trail: [], stains: [], taffy: [], alarm: { next: 12, t: 0 }, house: new Set(), trailT: 0 }); }
-const labActive = () => curTheme().lab;
 const gooBlob = r => spr(`goo|${r}`, () => pixSprite(r * 2 + 1, r * 2 + 1, (x, y) => {
   const d = Math.hypot(x - r - 0.5, y - r - 0.5) / (r + 0.5);
   return d > 1 ? null : d < 0.35 && x < r && y < r ? [190, 255, 170, 230] : d < 0.8 ? [72, 190, 70, 210] : [40, 120, 44, 200];
@@ -6023,7 +5958,6 @@ function labSplat(x, y, n, reach) {
 // The string holds for exactly as long as the halves are 'fresh' (untouchable anyway), so it costs no time.
 const TETHER_SLOW = 0.6;
 function labSplit(s, kids) {
-  if (!labActive()) return;
   labSplat(s.x, s.y, 14, 2.4);
   if (kids && kids.length === 2) {
     for (const k of kids) k.tether = k.fresh;
@@ -6035,26 +5969,8 @@ function labUpdate(dt, theme) {
   // The containment alarm: a klaxon, red light sweeping the room. More often on the breached floor.
   const A = lab.alarm;
   if (A.t > 0) A.t = Math.max(0, A.t - dt);
-  if ((A.next -= dt) <= 0) { A.next = theme.breach ? 8 + Math.random() * 6 : 15 + Math.random() * 10; A.t = 2.2; if (G.state === 'play') SFX.klaxon(); }
-  for (const s of lab.stains) s.t += dt;
-  lab.stains = lab.stains.filter(s => s.t < 7);
-  for (const p of lab.trail) p.t += dt;
-  lab.trail = lab.trail.filter(p => p.t < 3.5);
   for (const q of art.puddles || []) if (q.size < 1) q.size = Math.min(1, q.size + dt * 0.3);
-  // Slimes: a glistening trail, a squash as they turn, a wobble when Pac-Man is close.
-  if ((lab.trailT -= dt) <= 0) {
-    lab.trailT = 0.12;
-    for (const s of G.slimes) if (s.state === 'active') lab.trail.push({ x: s.x + 0.5, y: s.y + 0.5 + (s.kind === 'big' ? 0.4 : 0.25), big: s.kind === 'big', t: 0 });
-    if (lab.trail.length > 200) lab.trail.splice(0, lab.trail.length - 200);
-  }
-  for (const s of G.slimes) {
-    if (s._d && s._d !== s.dir && s.state === 'active') s.squash = 0.22;
-    s._d = s.dir;
-    s.squash = Math.max(0, (s.squash || 0) - dt * 1.2);
-    const near = Math.hypot(s.x - pac.x, s.y - pac.y);
-    s.wob = s.state === 'active' && near < 2.5 ? Math.sin(G.t * 16) * 0.07 * (1 - near / 2.5) : 0;
-  }
-  for (const q of lab.taffy) q.t += dt;
+  if ((A.next -= dt) <= 0) { A.next = theme.breach ? 8 + Math.random() * 6 : 15 + Math.random() * 10; A.t = 2.2; if (G.state === 'play') SFX.klaxon(); }
   // Anyone leaving the vat slops out with a splash.
   const inside = new Set([...G.slimes.filter(s => s.state === 'house'), ...G.ghosts.filter(g => g.mode === 'house'), ...G.wraiths.filter(w => w.state === 'house')]);
   for (const e of inside) lab.house.add(e);
@@ -6179,17 +6095,6 @@ function labDecor(theme, dt, glow) {
     const ph = (G.t * 0.5 + q.s * 7) % 3; // now and then a bubble pops
     if (ph < 0.3) { fbx.globalAlpha = 1 - ph / 0.3; pr(Math.round(q.x * T - camX + (q.s - 0.5) * r * 2), Math.round(q.y * T - camY - ph * 6), 1, 1, '#c8ffb0'); }
   }
-  for (const p of lab.trail) {
-    fbx.globalAlpha = Math.max(0, 0.55 * (1 - p.t / 3.5));
-    const r = p.big ? 2 : 1;
-    pr(Math.round(p.x * T - camX) - r, Math.round(p.y * T - camY) - 1, r * 2 + 1, 2, '#4ac04a');
-    if (p.t < 0.6) pr(Math.round(p.x * T - camX) - r + 1, Math.round(p.y * T - camY) - 1, 1, 1, '#c8ffb0');
-  }
-  for (const s of lab.stains) {
-    fbx.globalAlpha = s.t < 4 ? 0.9 : Math.max(0, 0.9 * (1 - (s.t - 4) / 3));
-    const b = gooBlob(s.r);
-    fbx.drawImage(b, Math.round(s.x * T - camX - s.r), Math.round(s.y * T - camY - s.r));
-  }
   fbx.globalAlpha = 1;
 }
 // The ghost house is a containment vat: whoever's waiting in it floats in green goo behind glass.
@@ -6279,7 +6184,6 @@ function labMist(theme) {
 const spores = Array.from({ length: 48 }, (_, i) => ({ x: hash2(i, 31) * 400, y: hash2(i, 32) * 400, ph: hash2(i, 33) * 6.3, sp: 2 + hash2(i, 34) * 4 }));
 function labPost(dt) {
   const MW = VIEW_W + 16, MH = VIEW_H + 16, uv = G.fright > 0;
-  if (enemiesShown()) labTaffy(); // after the light, so the goo glows even under the blacklight
   for (const f of spores) {
     f.y -= f.sp * dt; f.x += Math.sin(G.t * 0.6 + f.ph) * 3 * dt;
     const sx = ((Math.round(f.x - camX * 0.7) % MW) + MW) % MW - 8, sy = ((Math.round(f.y - camY * 0.7) % MH) + MH) % MH - 8;
@@ -6804,10 +6708,9 @@ const blr = { surge: { next: 10, t: 0 }, scalds: [], trail: [], house: new Set()
 function blrReset() { Object.assign(blr, { surge: { next: 10, t: 0 }, scalds: [], trail: [], house: new Set(), trailT: 0, cooked: 0 }); }
 const SURGE = 1.6;
 const surgeK = () => blr.surge.t > 0 ? Math.sin((1 - blr.surge.t / SURGE) * Math.PI) : 0;
-// A ghost (or hound) caught in steam: a red, scalded flash of it rises off as it goes back to eyes.
+// A ghost (or hound) caught in steam, on any floor: a red, scalded flash of it rises off as it goes back to eyes.
 function blrCook(e, col) {
   blr.cooked++;
-  if (!curTheme().boiler) return;
   blr.scalds.push({ x: e.x, y: e.y, col, t: 0 });
   fxBurst(e.x + 0.5, e.y + 0.5, '#ff5a2a', 12, 4, 0.5); fxBurst(e.x + 0.5, e.y + 0.4, '#f4f0ea', 14, 3, 0.7);
   SFX.whistle();
@@ -6831,8 +6734,6 @@ function blrUpdate(dt, theme) {
       parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.6, y: d.y0 / T + 0.3, vx: (Math.random() - 0.5) * 1.6, vy: -0.6 - Math.random(), t, t0: t, col: '#ece6e0', g: 0, drag: 2 });
     }
   }
-  for (const s of blr.scalds) s.t += dt;
-  blr.scalds = blr.scalds.filter(s => s.t < 0.7);
   if (G.state !== 'play' && G.state !== 'ready') return;
   // Everyone sweats down here. Whoever's waiting in the furnace sweats buckets.
   for (const g of G.ghosts) {
@@ -7079,22 +6980,10 @@ const heatEdgeSprite = () => spr('heatEdge', () => {
   c.g.putImageData(im, 0, 0);
   return c;
 });
-// After the light: embers and ash in the air, scalded ghosts, the heat over the vents, the magnet's sparks.
+// After the light: embers and ash in the air.
 const embers = Array.from({ length: 40 }, (_, i) => ({ x: hash2(i, 41) * 400, y: hash2(i, 42) * 400, ph: hash2(i, 43) * 6.3, sp: 5 + hash2(i, 44) * 7, ash: i % 3 === 0 }));
 function blrPost(dt, theme) {
   const MW = VIEW_W + 16, MH = VIEW_H + 16;
-  // Heat over every vent that's about to blow or blowing, and haze off the bottom of the screen.
-  let heat = theme.tunnels ? 0.4 : 0.15;
-  for (const v of G.vents) {
-    const st = ventState(v); if (st === 'idle') continue;
-    const cx = (v.c + 0.5) * T - camX, cy = (v.r + 0.5) * T - camY;
-    if (cx > -T * 2 && cx < VIEW_W + T * 2 && cy > -T * 3 && cy < VIEW_H + T) heatShimmer(cx - T * 1.2, cy - T * 2.4, T * 2.4, T * 2.6, st === 'blast' ? 1.5 : theme.tunnels ? 1.2 : 1);
-    heat = Math.max(heat, Math.min(1, (6 - Math.hypot(v.c - pac.x, v.r - pac.y)) / 5) * (st === 'blast' ? 0.85 : 0.6));
-  }
-  if (fxOn && heat > 0.05) {
-    heatShimmer(0, VIEW_H - 26, VIEW_W, 26, 1);
-    fbx.globalAlpha = Math.min(0.8, heat); fbx.drawImage(heatEdgeSprite(), 0, VIEW_H - 40); fbx.globalAlpha = 1;
-  }
   for (const e of embers) { // embers drift up, glowing; ash drifts down, seen only in the light
     if (e.ash) { e.y += e.sp * 0.4 * dt; e.x += Math.sin(G.t * 0.5 + e.ph) * 3 * dt; } else { e.y -= e.sp * dt; e.x += Math.sin(G.t * 0.9 + e.ph) * 5 * dt; }
     const sx = ((Math.round(e.x - camX * 0.8) % MW) + MW) % MW - 8, sy = ((Math.round(e.y - camY * 0.8) % MH) + MH) % MH - 8;
@@ -7102,39 +6991,7 @@ function blrPost(dt, theme) {
     else { fbx.globalAlpha = 0.35 + 0.45 * Math.max(0, Math.sin(G.t * 5 + e.ph)); pr(sx, sy, 1, 1, e.ph > 3 ? '#ffb050' : '#ff7020'); }
   }
   fbx.globalAlpha = 1;
-  for (const s of blr.scalds) { // the scalded ghost rises off in red, then fades
-    const k = s.t / 0.7;
-    fbx.globalAlpha = 1 - k;
-    blit(ghostBody(s.t < 0.08 ? '#ffffff' : '#ff3a1a', 0, ''), s.x + 0.5, s.y + 0.5 - k * 0.8);
-  }
   fbx.globalAlpha = 1;
-  // The dot magnet crackles: little arcs off the horseshoe, and off Pac-Man to every dot he's pulling in.
-  const arc = (ax, ay, bx, by, seed) => {
-    const n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / 3));
-    let px = ax, py = ay;
-    for (let i = 1; i <= n; i++) {
-      const t = i / n, j = i < n ? (hash2(seed * 13 + i, Math.floor(G.t * 18)) - 0.5) * 4 : 0;
-      const qx = ax + (bx - ax) * t + j, qy = ay + (by - ay) * t + j * 0.6, m = Math.max(Math.abs(qx - px), Math.abs(qy - py));
-      for (let s = 0; s <= m; s++) pr(Math.round(px + (qx - px) * s / (m || 1)), Math.round(py + (qy - py) * s / (m || 1)), 1, 1, i === 1 ? '#ffffff' : '#9fd8ff');
-      px = qx; py = qy;
-    }
-  };
-  for (const [c, r] of G.cfg.magnets || []) {
-    if (G.dots[r * W + c] !== 5 || Math.floor(G.t * 9 + c) % 3 === 0) continue;
-    const cx = (c + 0.5) * T - camX, cy = (r + 0.3) * T - camY, a = hash2(c * 7 + r, Math.floor(G.t * 9)) * Math.PI * 2;
-    if (cx > -T && cx < VIEW_W + T && cy > -T && cy < VIEW_H + T) arc(cx, cy, cx + Math.cos(a) * T * 0.7, cy + Math.sin(a) * T * 0.5, c + r);
-  }
-  if (G.magnet > 0 && G.state === 'play') {
-    const px = (pac.x + 0.5) * T - camX, py = (pac.y + 0.5) * T - camY;
-    G.flyDots.forEach((f, i) => {
-      const k = f.t / MAGNET_FLY, fx = (f.x + (pac.x - f.x) * k + 0.5) * T - camX, fy = (f.y + (pac.y - f.y) * k + 0.5) * T - camY;
-      if (i < 3) arc(px, py, fx, fy, i + 5);
-      const dl = Math.hypot(pac.x - f.x, pac.y - f.y) || 1, ux = (pac.x - f.x) / dl, uy = (pac.y - f.y) / dl;
-      fbx.globalAlpha = 0.5; // a streak behind each dot
-      for (let s = 1; s <= 3; s++) pr(Math.round(fx - ux * s * 2), Math.round(fy - uy * s * 2), 1, 1, '#ffd8d0');
-      fbx.globalAlpha = 1;
-    });
-  }
 }
 
 // ---------- Flooded Pipes (stage 6) ----------
@@ -7297,8 +7154,6 @@ function fldUpdate(dt, theme) {
   const F = fld.flush, k = flushK();
   if (F.t > 0) F.t = Math.max(0, F.t - dt);
   if ((F.next -= dt) <= 0) { F.next = 16 + Math.random() * 6; F.t = FLUSH; if (G.state === 'play') SFX.gurgle(); }
-  for (const q of fld.rings) q.t += dt;
-  fld.rings = fld.rings.filter(q => q.t < (q.big ? 0.8 : 0.55));
   fld.lens += ((theme.flume ? 0.35 : 0) + k * 0.6 - fld.lens) * Math.min(1, dt * 2);
   // Drips off the ceiling: a drop falls into view and rings the floor where it lands.
   if (Math.random() < dt * (3 + k * 14) && fld.drops.length < 30) {
@@ -7307,38 +7162,7 @@ function fldUpdate(dt, theme) {
   }
   for (const d of fld.drops) if ((d.t += dt) >= 0.28) { d.done = true; fldRing(d.x / T, d.y / T, false); }
   fld.drops = fld.drops.filter(d => !d.done);
-  // Things riding the currents: a rubber duck, a leaf or two, a bottle.
-  if (hasFlow) {
-    if (!fld.wetTiles) {
-      fld.wetTiles = [];
-      for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (M[r][c] !== '#' && flowAt(c, r)) fld.wetTiles.push([c, r]);
-      fld.floaters = ['duck', 'leaf', 'leaf', 'bottle'].map(kind => { const f = { kind, seed: Math.random() * 6 }; fldSpawnFloater(f); return f; });
-    }
-    for (const f of fld.floaters) {
-      f.fade = Math.min(1, (f.fade || 0) + dt * 2);
-      const c = Math.round(f.x), r = Math.round(f.y), d = flowAt(c, r);
-      if (!d) { fldSpawnFloater(f); continue; }
-      const sp = (f.kind === 'duck' ? 1.3 : 1.7) * (1 + k * 0.6) * dt, side = d.x ? 'y' : 'x';
-      f[side] += (Math.round(f[side]) - f[side]) * Math.min(1, dt * 4);
-      f.x += d.x * sp; f.y += d.y * sp;
-      const nc = Math.round(f.x + d.x * 0.5), nr = Math.round(f.y + d.y * 0.5);
-      if (!flowAt(nc, nr) || M[nr]?.[nc] === '#') { fldRing(f.x + 0.5, f.y + 0.5, true); fldSpawnFloater(f); }
-    }
-  }
   if (G.state !== 'play' && G.state !== 'ready') return;
-  // Splashing: anyone wading through a current throws up spray; the hound shakes himself off as he climbs out.
-  const wade = (e, rate, key) => {
-    const wet = !!flowAt(e.x, e.y), was = fld.seen.get(key);
-    fld.seen.set(key, wet);
-    if (wet && Math.random() < dt * rate) parts.push({ x: e.x + 0.5 + (Math.random() - 0.5) * 0.6, y: e.y + 0.8, vx: (Math.random() - 0.5) * 1.6, vy: -1.2 - Math.random(), t: 0.4, t0: 0.4, col: Math.random() < 0.5 ? '#bfe8f4' : '#6ac0d8', g: 9 });
-    if (wet && Math.random() < dt * 2.5) fldRing(e.x + 0.5, e.y + 0.6, false);
-    return was && !wet;
-  };
-  if (G.state === 'play') wade(pac, pac.dash > 0 ? 50 : 10, pac);
-  for (const g of G.ghosts) if (g.mode === 'active' && !g.eaten) wade(g, 3, g);
-  for (const h of G.hounds) if (h.state === 'hunt' && wade(h, 14, h)) {
-    fxBurst(h.x + 0.5, h.y + 0.4, '#bfe8f4', 18, 4.5, 0.5); fxBurst(h.x + 0.5, h.y + 0.4, '#6ac0d8', 10, 3, 0.45); SFX.shake();
-  }
   // The crate or the sump: anyone coming out drips (or splashes) on the way.
   const inside = new Set([...G.ghosts.filter(g => g.mode === 'house'), ...G.hounds.filter(h => h.state === 'house')]);
   for (const e of inside) fld.house.add(e);
@@ -7474,7 +7298,7 @@ function fldFloor(theme) {
   fbx.globalAlpha = 1;
 }
 // The hound's scent in pixels: paw prints, a pad and three toes, freshest last.
-function fldScent(h) {
+function pxScent(h) {
   if (h.state !== 'hunt' || h.lost || G.fright > 0 || !h.trail.length) return;
   const n = h.trail.length, from = Math.max(0, n - SCENT_PRINTS);
   let prev = from ? h.trail[from - 1] : { x: h.x, y: h.y };
@@ -7883,6 +7707,205 @@ function cryDark(theme) {
   fbx.globalAlpha = 1;
 }
 
+// ---------- Frost (every floor) ----------
+// A frost berry sends a shockwave of ice out from Pac-Man and brings frost in at the screen's edge, and
+// the Wraith leaves frost on any wall he drifts through. The Freezer adds its own: walls that ice over
+// and drip as they thaw, and the cold that follows the Wraith.
+function frostUpdate(dt, theme) {
+  if (!dt) return;
+  // The Wraith leaves frost on any wall he drifts through.
+  for (const w of G.wraiths) {
+    if (w.state !== 'active' && w.state !== 'leave') continue;
+    if (tile(Math.round(w.x), Math.round(w.y)) !== '#') continue;
+    const x = (w.x + 0.5) * T, y = (w.y + 0.5) * T;
+    if (frz.blooms.some(b => b.t < 0.3 && Math.hypot(b.x - x, b.y - y) < T * 0.8)) continue;
+    frz.blooms.push({ x, y, t: 0 });
+    if (frz.blooms.length > 40) frz.blooms.shift();
+  }
+  for (const b of frz.blooms) b.t += dt;
+  frz.blooms = frz.blooms.filter(b => b.t < 6);
+  // A frost berry: a shockwave of ice, then the thaw.
+  if (G.chill > 0 && frz.chill === 0) frz.wave = { x: pac.x + 0.5, y: pac.y + 0.5, t: 0 };
+  frz.chill = G.chill;
+  if (frz.wave && (frz.wave.t += dt) > 0.7) frz.wave = null;
+  frz.ice += ((G.chill > 0 ? 1 : 0) - frz.ice) * Math.min(1, dt * (G.chill > 0 ? 10 : 2.5));
+  if (theme.freezer && G.chill > 0 && G.chill < 1.6 && art) for (let k = 0; k < 30 && Math.random() < dt * 40; k++) { // the walls drip as it thaws
+    const x = (camX + Math.random() * VIEW_W) | 0, y = (camY + Math.random() * VIEW_H) | 0;
+    if (x < 0 || y < 0 || x >= art.PW || y + 1 >= art.PH || art.cls[y * art.PW + x] !== 2 || art.cls[(y + 1) * art.PW + x] !== 0) continue;
+    parts.push({ x: x / T, y: y / T, vx: 0, vy: 0.2, t: 0.5, t0: 0.5, col: '#9fe0ff', g: 14 });
+  }
+  // In the Freezer the cold follows the Wraith: the closer he is, the more the screen frosts over.
+  let near = 0;
+  if (theme.freezer) for (const w of G.wraiths) if (w.state === 'active' || w.state === 'leave') near = Math.max(near, Math.min(1, (7 - Math.hypot(w.x - pac.x, w.y - pac.y)) / 5));
+  frz.cold += (Math.max(near, frz.ice * 0.55) - frz.cold) * Math.min(1, dt * 3);
+}
+function frostBlooms() { // on the walls, before the light
+  // Frost blooms where the Wraith has passed through a wall: they grow, glint, then fade.
+  for (const bl of frz.blooms) {
+    const grow = Math.min(1, bl.t / 0.5), fade = bl.t < 3.5 ? 1 : Math.max(0, 1 - (bl.t - 3.5) / 2.5);
+    fbx.globalAlpha = fade;
+    for (const p of FERN) {
+      if (p.k > grow) break;
+      const wx = Math.round(bl.x + p.dx), wy = Math.round(bl.y + p.dy);
+      if (wx < 0 || wy < 0 || wx >= art.PW || wy >= art.PH || !art.cls[wy * art.PW + wx]) continue;
+      pr(wx - camX, wy - camY, 1, 1, p.k < 0.25 ? '#ffffff' : p.k < 0.7 ? '#d4f2ff' : '#9fd4ee');
+    }
+  }
+  fbx.globalAlpha = 1;
+}
+function frostPost() { // the berry's shockwave and the frost at the screen's edge, after the light
+  if (frz.wave) {
+    const w = frz.wave, r = (w.t / 0.7) * 12 * T, cx = w.x * T - camX, cy = w.y * T - camY, n = Math.ceil(r * 0.8);
+    fbx.globalAlpha = 1 - w.t / 0.7;
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; pr(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 2, 2, '#e8fbff'); }
+  }
+  if (frz.cold > 0.02) { fbx.globalAlpha = Math.min(0.75, frz.cold); fbx.drawImage(frostEdgeSprite(), 0, 0); }
+  fbx.globalAlpha = 1;
+}
+// ---------- Dot magnet sparks (every floor) ----------
+function magnetPost() {
+  // The dot magnet crackles: little arcs off the horseshoe, and off Pac-Man to every dot he's pulling in.
+  const arc = (ax, ay, bx, by, seed) => {
+    const n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / 3));
+    let px = ax, py = ay;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, j = i < n ? (hash2(seed * 13 + i, Math.floor(G.t * 18)) - 0.5) * 4 : 0;
+      const qx = ax + (bx - ax) * t + j, qy = ay + (by - ay) * t + j * 0.6, m = Math.max(Math.abs(qx - px), Math.abs(qy - py));
+      for (let s = 0; s <= m; s++) pr(Math.round(px + (qx - px) * s / (m || 1)), Math.round(py + (qy - py) * s / (m || 1)), 1, 1, i === 1 ? '#ffffff' : '#9fd8ff');
+      px = qx; py = qy;
+    }
+  };
+  for (const [c, r] of G.cfg.magnets || []) {
+    if (G.dots[r * W + c] !== 5 || Math.floor(G.t * 9 + c) % 3 === 0) continue;
+    const cx = (c + 0.5) * T - camX, cy = (r + 0.3) * T - camY, a = hash2(c * 7 + r, Math.floor(G.t * 9)) * Math.PI * 2;
+    if (cx > -T && cx < VIEW_W + T && cy > -T && cy < VIEW_H + T) arc(cx, cy, cx + Math.cos(a) * T * 0.7, cy + Math.sin(a) * T * 0.5, c + r);
+  }
+  if (G.magnet > 0 && G.state === 'play') {
+    const px = (pac.x + 0.5) * T - camX, py = (pac.y + 0.5) * T - camY;
+    G.flyDots.forEach((f, i) => {
+      const k = f.t / MAGNET_FLY, fx = (f.x + (pac.x - f.x) * k + 0.5) * T - camX, fy = (f.y + (pac.y - f.y) * k + 0.5) * T - camY;
+      if (i < 3) arc(px, py, fx, fy, i + 5);
+      const dl = Math.hypot(pac.x - f.x, pac.y - f.y) || 1, ux = (pac.x - f.x) / dl, uy = (pac.y - f.y) / dl;
+      fbx.globalAlpha = 0.5; // a streak behind each dot
+      for (let s = 1; s <= 3; s++) pr(Math.round(fx - ux * s * 2), Math.round(fy - uy * s * 2), 1, 1, '#ffd8d0');
+      fbx.globalAlpha = 1;
+    });
+  }
+}
+// ---------- Steam vent heat (every floor with vents) ----------
+// Hot air shimmers over every vent that's about to blow, haze rises off the bottom of the screen when
+// one's close, a cooked ghost goes up in a red flash, and a board on the wall counts them.
+function ventPost(dt, theme) {
+  for (const s of blr.scalds) s.t += dt;
+  blr.scalds = blr.scalds.filter(s => s.t < 0.7);
+  // Heat over every vent that's about to blow or blowing, and haze off the bottom of the screen.
+  let heat = theme.boiler ? (theme.tunnels ? 0.4 : 0.15) : 0;
+  for (const v of G.vents) {
+    const st = ventState(v); if (st === 'idle') continue;
+    const cx = (v.c + 0.5) * T - camX, cy = (v.r + 0.5) * T - camY;
+    if (cx > -T * 2 && cx < VIEW_W + T * 2 && cy > -T * 3 && cy < VIEW_H + T) heatShimmer(cx - T * 1.2, cy - T * 2.4, T * 2.4, T * 2.6, st === 'blast' ? 1.5 : theme.tunnels ? 1.2 : 1);
+    heat = Math.max(heat, Math.min(1, (6 - Math.hypot(v.c - pac.x, v.r - pac.y)) / 5) * (st === 'blast' ? 0.85 : 0.6));
+  }
+  if (fxOn && heat > 0.05) {
+    heatShimmer(0, VIEW_H - 26, VIEW_W, 26, 1);
+    fbx.globalAlpha = Math.min(0.8, heat); fbx.drawImage(heatEdgeSprite(), 0, VIEW_H - 40); fbx.globalAlpha = 1;
+  }
+  for (const s of blr.scalds) { // the scalded ghost rises off in red, then fades
+    const k = s.t / 0.7;
+    fbx.globalAlpha = 1 - k;
+    blit(ghostBody(s.t < 0.08 ? '#ffffff' : '#ff3a1a', 0, ''), s.x + 0.5, s.y + 0.5 - k * 0.8);
+  }
+  fbx.globalAlpha = 1;
+}
+// The COOKED board on floors without one of their own: painted onto the widest wall top, live.
+function ventBoard() {
+  if (art.cookSpot === undefined) art.cookSpot = wideTops(art).find(s => s.yBot - s.yTop >= 10) || null;
+  const s = art.cookSpot; if (!s) return;
+  const txt = `COOKED:${blr.cooked}`, mw = tinyW(txt) + 6, mx = s.xm - (mw >> 1) - camX, my = s.yTop + ((s.yBot - s.yTop - 9) >> 1) - camY;
+  if (mx > VIEW_W || my > VIEW_H || mx + mw < 0 || my + 9 < 0) return;
+  pr(mx - 1, my - 1, mw + 2, 9, '#5a4a40'); pr(mx, my, mw, 7, '#140806');
+  tinyText(fbx, txt, mx + 3, my + 1, '#ff9a50');
+  addLightPx(mx + mw / 2, my + 4, 1.4 * T, [1, 0.45, 0.2], 0.3);
+}
+// ---------- Water (every floor with currents) ----------
+// Things ride the currents (a rubber duck, leaves, a bottle); anyone wading throws up spray and ripples,
+// and the Bloodhound shakes himself off as he climbs out. Flooded Pipes adds the rest of the wet.
+function waterUpdate(dt) {
+  if (!dt) return;
+  for (const q of fld.rings) q.t += dt;
+  fld.rings = fld.rings.filter(q => q.t < (q.big ? 0.8 : 0.55));
+  const k = flushK();
+  // Things riding the currents: a rubber duck, a leaf or two, a bottle.
+  if (hasFlow) {
+    if (!fld.wetTiles) {
+      fld.wetTiles = [];
+      for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (M[r][c] !== '#' && flowAt(c, r)) fld.wetTiles.push([c, r]);
+      fld.floaters = ['duck', 'leaf', 'leaf', 'bottle'].map(kind => { const f = { kind, seed: Math.random() * 6 }; fldSpawnFloater(f); return f; });
+    }
+    for (const f of fld.floaters) {
+      f.fade = Math.min(1, (f.fade || 0) + dt * 2);
+      const c = Math.round(f.x), r = Math.round(f.y), d = flowAt(c, r);
+      if (!d) { fldSpawnFloater(f); continue; }
+      const sp = (f.kind === 'duck' ? 1.3 : 1.7) * (1 + k * 0.6) * dt, side = d.x ? 'y' : 'x';
+      f[side] += (Math.round(f[side]) - f[side]) * Math.min(1, dt * 4);
+      f.x += d.x * sp; f.y += d.y * sp;
+      const nc = Math.round(f.x + d.x * 0.5), nr = Math.round(f.y + d.y * 0.5);
+      if (!flowAt(nc, nr) || M[nr]?.[nc] === '#') { fldRing(f.x + 0.5, f.y + 0.5, true); fldSpawnFloater(f); }
+    }
+  }
+  if (G.state !== 'play' && G.state !== 'ready') return;
+  // Splashing: anyone wading through a current throws up spray; the hound shakes himself off as he climbs out.
+  const wade = (e, rate, key) => {
+    const wet = !!flowAt(e.x, e.y), was = fld.seen.get(key);
+    fld.seen.set(key, wet);
+    if (wet && Math.random() < dt * rate) parts.push({ x: e.x + 0.5 + (Math.random() - 0.5) * 0.6, y: e.y + 0.8, vx: (Math.random() - 0.5) * 1.6, vy: -1.2 - Math.random(), t: 0.4, t0: 0.4, col: Math.random() < 0.5 ? '#bfe8f4' : '#6ac0d8', g: 9 });
+    if (wet && Math.random() < dt * 2.5) fldRing(e.x + 0.5, e.y + 0.6, false);
+    return was && !wet;
+  };
+  if (G.state === 'play') wade(pac, pac.dash > 0 ? 50 : 10, pac);
+  for (const g of G.ghosts) if (g.mode === 'active' && !g.eaten) wade(g, 3, g);
+  for (const h of G.hounds) if (h.state === 'hunt' && wade(h, 14, h)) {
+    fxBurst(h.x + 0.5, h.y + 0.4, '#bfe8f4', 18, 4.5, 0.5); fxBurst(h.x + 0.5, h.y + 0.4, '#6ac0d8', 10, 3, 0.45); SFX.shake();
+  }
+}
+// ---------- Slime goo (every floor with slimes) ----------
+// Slimes leave a glistening trail (in the Boiler Room it dries instead), squash as they turn and wobble
+// when Pac-Man is close; a split splatters goo and the halves stay joined by a string of taffy.
+function slimeUpdate(dt, theme) {
+  if (!dt) return;
+  for (const s of lab.stains) s.t += dt;
+  lab.stains = lab.stains.filter(s => s.t < 7);
+  for (const p of lab.trail) p.t += dt;
+  lab.trail = lab.trail.filter(p => p.t < 3.5);
+  // Slimes: a glistening trail, a squash as they turn, a wobble when Pac-Man is close.
+  if ((lab.trailT -= dt) <= 0) {
+    lab.trailT = 0.12;
+    if (!theme.boiler) for (const s of G.slimes) if (s.state === 'active') lab.trail.push({ x: s.x + 0.5, y: s.y + 0.5 + (s.kind === 'big' ? 0.4 : 0.25), big: s.kind === 'big', t: 0 });
+    if (lab.trail.length > 200) lab.trail.splice(0, lab.trail.length - 200);
+  }
+  for (const s of G.slimes) {
+    if (s._d && s._d !== s.dir && s.state === 'active') s.squash = 0.22;
+    s._d = s.dir;
+    s.squash = Math.max(0, (s.squash || 0) - dt * 1.2);
+    const near = Math.hypot(s.x - pac.x, s.y - pac.y);
+    s.wob = s.state === 'active' && near < 2.5 ? Math.sin(G.t * 16) * 0.07 * (1 - near / 2.5) : 0;
+  }
+  for (const q of lab.taffy) q.t += dt;
+}
+function slimeFloor() { // the trails and the splatter, on the floor
+  for (const p of lab.trail) {
+    fbx.globalAlpha = Math.max(0, 0.55 * (1 - p.t / 3.5));
+    const r = p.big ? 2 : 1;
+    pr(Math.round(p.x * T - camX) - r, Math.round(p.y * T - camY) - 1, r * 2 + 1, 2, '#4ac04a');
+    if (p.t < 0.6) pr(Math.round(p.x * T - camX) - r + 1, Math.round(p.y * T - camY) - 1, 1, 1, '#c8ffb0');
+  }
+  for (const s of lab.stains) {
+    fbx.globalAlpha = s.t < 4 ? 0.9 : Math.max(0, 0.9 * (1 - (s.t - 4) / 3));
+    const b = gooBlob(s.r);
+    fbx.drawImage(b, Math.round(s.x * T - camX - s.r), Math.round(s.y * T - camY - s.r));
+  }
+  fbx.globalAlpha = 1;
+}
 // ---------- Dash effects (every floor with dash) ----------
 // A kick of dust as the dash starts, glints along the floor, speed lines streaming off behind, and a
 // white ring on a near miss through an enemy. In the lab the kick-off throws up goo as well.
@@ -8251,12 +8274,18 @@ function renderWorld() {
   if (theme.flood) fldUpdate(dt, theme);
   if (theme.crypt) cryUpdate(dt, theme);
   if (G.cfg.dash) dashUpdate(dt, theme);
+  frostUpdate(dt, theme);
+  if (hasFlow) waterUpdate(dt);
+  if (G.slimes.length || lab.trail.length || lab.stains.length || lab.taffy.length) slimeUpdate(dt, theme);
   drawDecor(theme, dt);
+  frostBlooms();
+  if (G.vents.length && !theme.boiler && G.state !== 'cast') ventBoard();
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
   if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
-  if (theme.flood && G.state !== 'cast') fldFloor(theme);
+  if ((theme.flood || hasFlow) && G.state !== 'cast') fldFloor(theme);
+  slimeFloor();
   worldTf();
   idTf();
   if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
@@ -8285,9 +8314,8 @@ function renderWorld() {
         fbx.stroke();
       }
     }
-    if (showEnemies && !theme.flood) for (const h of G.hounds) drawScent(h);
     idTf();
-    if (showEnemies && theme.flood) for (const h of G.hounds) fldScent(h);
+    if (showEnemies) for (const h of G.hounds) pxScent(h);
     for (const f of G.flyDots) { const k = f.t / MAGNET_FLY; blit(dotSprite(), f.x + (pac.x - f.x) * k + 0.5, f.y + (pac.y - f.y) * k + 0.5); }
     // Shadows go down first, so nobody stands on anybody else's.
     if (pacShown) shadowAt(pac.x, pac.y, 1.2, 0.66);
@@ -8369,6 +8397,10 @@ function renderWorld() {
   if (theme.flood) fldPost(dt, theme);
   if (theme.crypt) cryPost(dt, theme);
   if (G.cfg.dash) dashPost();
+  if (enemiesShown()) labTaffy(); // after the light, so the goo glows even under the blacklight
+  frostPost();
+  magnetPost();
+  if (G.vents.length) ventPost(dt, theme);
   if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); if (theme.crypt) cryDark(theme); }
   if (fxOn) {
     bloom();
