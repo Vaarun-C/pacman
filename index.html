@@ -978,6 +978,8 @@ const SFX = {
   whoosh() { beep(260, 900, 0.5, 'triangle', 0.1); beep(420, 1300, 0.4, 'sine', 0.05, 0.1); },
   clang() { [0, 0.18, 0.42].forEach((t, i) => { beep(180 - i * 30, 90, 0.16, 'square', 0.07, t); beep(1400 - i * 200, 700, 0.06, 'square', 0.03, t); }); beep(55, 40, 1.4, 'sawtooth', 0.08); },
   whistle() { beep(1800, 2600, 0.25, 'sine', 0.07); beep(2600, 1200, 0.2, 'triangle', 0.05, 0.22); },
+  gurgle() { for (let i = 0; i < 7; i++) beep(220 + (i % 3) * 90, 120, 0.12, 'sine', 0.08, i * 0.11); beep(70, 45, 1.6, 'triangle', 0.1); },
+  shake() { for (let i = 0; i < 6; i++) beep(900 + (i % 2) * 300, 600, 0.04, 'triangle', 0.035, i * 0.04); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
@@ -1086,7 +1088,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); blrReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -5348,6 +5350,7 @@ const themeFor = (stage, lv = 0) => {
   if (lv && (stage === 2 || stage === 3)) return THEMES[`${stage}-${lv}`] || (THEMES[`${stage}-${lv}`] = (stage === 2 ? freezerTheme : labTheme)(lv));
   if (lv && stage === 4) return THEMES['4-1'] || (THEMES['4-1'] = throneTheme());
   if (lv && stage === 5) return THEMES[`5-${lv}`] || (THEMES[`5-${lv}`] = boilerTheme(lv));
+  if (lv && stage === 6) return THEMES[`6-${lv}`] || (THEMES[`6-${lv}`] = floodTheme(lv));
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 };
 const curTheme = () => themeFor(G.cfg.stage, G.lvIndex >= ROOF ? 0 : G.cfg.lv);
@@ -7135,6 +7138,446 @@ function blrPost(dt, theme) {
   }
 }
 
+// ---------- Flooded Pipes (stage 6) ----------
+// B4-B7, where the pipes burst years ago and the Bloodhound lives: wet drain tiles, culverts with a
+// tide line, moss on everything, bulkhead lamps, spouts pouring into puddles, drips off the ceiling
+// that ring the puddles. Every so often the whole system flushes: a gurgle, the spouts gush, the light
+// turns colder and the depth markers rise. The hound leaves wet paw prints and shakes himself off when
+// he climbs out of the water; a rubber duck rides the currents. B4 is the Kennel (doghouses, straw, a
+// dog crate for a ghost house), B5 the Spillway, B6 the Pound (chain-link), B7 the Flume (a water park).
+const FLOOD_STENCILS = {
+  1: ['BEWARE OF DOG', "WHO'S A GOOD BOY?", 'WALKIES AT 9'],
+  2: ['LOST: 1 FRUIT SALAD', 'PLUMBER NEVER CALLED', 'SPILLWAY'],
+  3: ['HOUND POUND', 'GOOD BOYS ONLY', 'DO NOT FEED'],
+  4: ['THE FLUME', 'NO SWIMMING', 'HOLD ON TIGHT'],
+};
+const FLOOD_SIGNS = {
+  1: [['BEWARE OF DOG', '#e8c020', '#18181a'], ['GOOD BOY', '#3a8ad0', '#ffffff'], ['NO CATS', '#c83030', '#ffffff']],
+  2: [['WET FLOOR', '#e8c020', '#18181a'], ['CALL PLUMBER', '#e8e0d0', '#2a2a2a'], ['DANGER', '#c83030', '#ffffff']],
+  3: [['GOOD BOYS', '#3a8ad0', '#ffffff'], ['NO FEEDING', '#c83030', '#ffffff'], ['ADOPT ME', '#e88ab0', '#2a1018']],
+  4: [['NO SWIMMING', '#c83030', '#ffffff'], ['HOLD ON', '#e8c020', '#18181a'], ['WHEE!', '#3ac8e8', '#0a2a3a']],
+};
+function floodTheme(lv) {
+  const kennel = lv === 1, spill = lv === 2, pound = lv === 3, flume = lv === 4, crate = kennel || pound;
+  const P = Object.fromEntries(Object.entries({
+    tileA: '#34423f', tileB: '#3a4844', grout: '#1a2422', algae: '#2a4a2e', puddle: '#12303a', gloss: '#4a8a9a',
+    fTileA: '#3a6a7a', fTileB: '#447888', fGrout: '#1e3a44',
+    conc: '#3c403e', concLine: '#2a2e2c', stain: '#2c3a34',
+    straw: '#8a7034', straw2: '#b0903e', strawDk: '#4a3a1a', crateFloor: '#4a3c22',
+    sump: '#0a2430', sumpHi: '#14404e',
+    plank: '#5a3e26', plank2: '#4e3420', plankGap: '#24160c', plankTop: '#7a5636',
+    rib: '#1e3036', culv: '#2e4a52', culvHi: '#3e5e66', rust: '#6a4a2a', scum: '#8a9a88', below: '#22403e',
+    wallC: '#4a4e4c', link: '#8a9298', post: '#5a6268',
+    fTile: '#7aa8b8', fTileG: '#3a5e6a', stripe: '#c84040',
+    lip: '#060c0e', moss: '#1e3a22', base: '#1e140c',
+    shing: '#8a3424', shingDk: '#4a1a14', shingSeam: '#6a2a1c', roofRim: '#b04a34', roofRimF: '#d06048', roofRimR: '#702a1e',
+    cap: '#3a4644', capLine: '#2c3634', mossA: '#2e5a34', mossB: '#3e7044', capPud: '#1c3a44', capPudHi: '#6aa8b8',
+    rim: '#6aa8a8', rimF: '#9ad0d0', rimR: '#3a6a6a', ring2: '#2e4a4a', ring3: '#24383a', capIn: '#2c3836', capHi: '#465452',
+  }).map(([k, v]) => [k, hex(v)]));
+  return {
+    id: 'flood' + lv, void: '#02060a', map: '#2a7f9a', runner: false, decor: true, flood: true, lv, kennel, spill, pound, flume, crate,
+    ambient: kennel ? [0.54, 0.54, 0.52] : flume ? [0.52, 0.62, 0.68] : spill ? [0.44, 0.54, 0.6] : [0.5, 0.54, 0.58], vignette: 0.5,
+    grade: kennel ? ['#9ac8a0', 0.1] : ['#3ab8c8', flume ? 0.1 : 0.13],
+    floor(x, y, t) {
+      if (t.house) {
+        if (!crate) return mixc(P.sump, P.sumpHi, vnoise(x / 6, y / 4) * 0.7); // the bottom of a flooded sump
+        const s = hash2(x >> 1, y * 3 + (x & 1)); // straw bedding in the crate
+        return s > 0.7 ? P.straw2 : s > 0.35 ? P.straw : s > 0.15 ? P.crateFloor : P.strawDk;
+      }
+      let col;
+      if (kennel || pound) { // concrete with expansion joints; straw kicked about the kennel
+        col = x % 18 === 0 || y % 18 === 0 ? P.concLine : mulc(P.conc, 0.88 + vnoise(x / 9, y / 9) * 0.2);
+        const st = vnoise(x / 12 + 4, y / 12) - 0.66;
+        if (st > 0) col = mixc(col, P.stain, Math.min(0.7, st * 4));
+        if (kennel && vnoise(x / 7 + 13, y / 7) > 0.64) { const s = hash2(x >> 1, y); if (s > 0.55) col = s > 0.85 ? P.straw2 : P.straw; }
+      } else {
+        const tx = (x / 9) | 0, ty = (y / 9) | 0, gx = x % 9, gy = y % 9;
+        if (flume) col = gx === 0 || gy === 0 ? P.fGrout : mixc(P.fTileA, P.fTileB, hash2(tx, ty));
+        else {
+          col = gx === 0 || gy === 0 ? P.grout : mixc(P.tileA, P.tileB, hash2(tx, ty));
+          if ((gx === 0 || gy === 0) && vnoise(x / 5, y / 5) > 0.5) col = P.algae;
+        }
+        if (gx > 0 && gy > 0) col = mulc(col, 0.9 + vnoise(x / 3, y / 3) * 0.14);
+      }
+      const pd = vnoise(x / 16 + 5, y / 16) - (spill ? 0.62 : 0.7); // puddles, with a glint off the lamps
+      if (pd > 0) { col = mixc(col, P.puddle, Math.min(0.8, pd * 5)); if (pd > 0.06 && hash2(x, y * 5) > 0.93) col = P.gloss; }
+      return col;
+    },
+    face(x, y, v, F, edge) {
+      let col;
+      const tide = Math.round(F * 0.55);
+      if (v === 0) col = P.lip;
+      else if (kennel) { // kennel planks, chewed along the top
+        if (v === 1) col = hash2(x >> 1, 41) > 0.86 ? P.lip : P.plankTop;
+        else if (v === F - 1) col = P.base;
+        else col = x % 5 === 0 ? P.plankGap : mulc(hash2((x / 5) | 0, 7) > 0.5 ? P.plank : P.plank2, 0.9 + vnoise(x / 3, y / 2) * 0.2);
+      } else if (pound) { // chain-link over concrete, a fence post every so often
+        col = x % 24 < 2 ? P.post : (x + v) % 4 === 0 || ((x - v) % 4 + 4) % 4 === 0 ? P.link : mulc(P.wallC, 0.85 + vnoise(x / 6, y / 4) * 0.2);
+        if (v === F - 1) col = P.moss;
+      } else if (flume) { // water-park tiles, a red stripe, darker below the waterline
+        col = x % 4 === 0 || v % 4 === 0 ? P.fTileG : P.fTile;
+        if (F >= 7 && v === Math.round(F * 0.35)) col = P.stripe;
+        if (v > tide) col = mixc(col, P.below, 0.45);
+        if (v === F - 1) col = P.moss;
+      } else { // a corrugated culvert, streaked with rust, a scummy tide line, algae below it
+        col = v % 3 === 0 ? P.rib : v % 3 === 1 ? P.culvHi : P.culv;
+        if (hash2(x >> 1, 23) > 0.9 && vnoise(x / 2, y / 6) > 0.4) col = mixc(col, P.rust, 0.6);
+        if (v === tide) col = P.scum;
+        else if (v > tide) col = mixc(mulc(col, 0.75), P.algae, Math.min(0.7, vnoise(x / 4, y / 3) * 0.9));
+        if (v === F - 1) col = P.moss;
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) {
+      if (kennel) { // the kennel's walls wear little shingled roofs
+        if (ring === 1) return side === 'front' ? P.roofRimF : side === 'right' ? P.roofRimR : P.roofRim;
+        if (ring === 2) return P.shingDk;
+        return y % 3 === 2 ? P.shingDk : (x + ((y / 3) | 0) * 3) % 6 === 0 ? P.shingSeam : mulc(P.shing, 0.9 + hash2((x + ((y / 3) | 0) * 3) / 6 | 0, y / 3 | 0) * 0.2);
+      }
+      if (ring === 1) return side === 'front' ? P.rimF : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2) return P.ring2;
+      if (ring === 3) return P.ring3;
+      if (ring === 6) return P.capIn;
+      if (ring === 7) return P.capHi;
+      if (flume) return x % 6 === 0 || y % 6 === 0 ? P.fGrout : P.fTileA;
+      let col = x % 12 === 0 || y % 12 === 0 ? P.capLine : P.cap;
+      const m = vnoise(x / 6, y / 6);
+      if (m > 0.64) col = m > 0.76 ? P.mossB : P.mossA;
+      const pd = vnoise(x / 5 + 9, y / 5);
+      if (pd > 0.8) col = pd > 0.86 && hash2(x, y) > 0.7 ? P.capPudHi : P.capPud;
+      return col;
+    },
+    pick(big, r, roll) {
+      if (!big) return roll < 0.6 ? 'drain' : 'leash';
+      if (kennel) return roll < 0.22 ? 'doghouse' : roll < 0.36 ? 'bowl' : roll < 0.5 ? 'sign' : roll < 0.64 ? 'chewed' : roll < 0.8 ? 'lamp' : roll < 0.9 ? 'leash' : 'spout';
+      if (spill) return roll < 0.3 ? 'spout' : roll < 0.46 ? 'lamp' : roll < 0.6 ? 'depth' : roll < 0.7 ? 'chewed' : roll < 0.84 ? 'sign' : 'drain';
+      if (pound) return roll < 0.2 ? 'lamp' : roll < 0.36 ? 'sign' : roll < 0.5 ? 'bowl' : roll < 0.64 ? 'ball' : roll < 0.76 ? 'leash' : roll < 0.88 ? 'spout' : 'depth';
+      return roll < 0.34 ? 'spout' : roll < 0.52 ? 'lamp' : roll < 0.68 ? 'depth' : roll < 0.84 ? 'sign' : roll < 0.92 ? 'bowl' : 'drain';
+    },
+    bake(L, g) {
+      let bowls = 0;
+      for (const d of L.decor) if (d.kind === 'bowl') d.name = flume && bowls++ % 2 ? 'ARF 2' : 'ARF'; // the Flume: his brother has a bowl now
+      // Painted along the wall tops (on the kennel's shingles, on wooden boards).
+      const lines = FLOOD_STENCILS[lv], picked = [];
+      for (const s of wideTops(L)) {
+        if (picked.length >= lines.length) break;
+        const txt = lines[picked.length], w = tinyW(txt);
+        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 12) continue;
+        picked.push(s);
+        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        if (kennel) { g.fillStyle = '#3a2614'; g.fillRect(tx - 3, ty - 3, w + 6, 11); g.fillStyle = '#7a5636'; g.fillRect(tx - 2, ty - 2, w + 4, 9); tinyText(g, txt, tx, ty, '#f0e0b8'); }
+        else tinyText(g, txt, tx, ty, flume ? '#e8f4f8' : '#8ab0a8');
+      }
+      // Mist pooled over the dead ends on the wetter floors.
+      L.fog = [];
+      if (spill || flume) {
+        const open = (c, r) => r >= 0 && r < L.h && c >= 0 && c < L.w && L.reach[r * L.w + c];
+        for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
+          if (!open(c, r)) continue;
+          const u = !open(c, r - 1), d = !open(c, r + 1), l = !open(c - 1, r), rt = !open(c + 1, r), n = u + d + l + rt;
+          if ((n >= 3 || (n === 2 && !(u && d) && !(l && rt))) && hash2(c, r * 3 + 5) < 0.5) L.fog.push({ x: c + 0.5, y: r + 0.55, s: hash2(c, r) * 6.3 });
+        }
+      }
+    },
+  };
+}
+
+// Per-attempt state for the flooded floors, reset with the level.
+const fld = { flush: { next: 12, t: 0 }, rings: [], drops: [], floaters: [], wetTiles: null, seen: new Map(), house: new Set(), lens: 0 };
+function fldReset() { Object.assign(fld, { flush: { next: 12, t: 0 }, rings: [], drops: [], floaters: [], wetTiles: null, seen: new Map(), house: new Set(), lens: 0 }); }
+const FLUSH = 3.2;
+const flushK = () => fld.flush.t > 0 ? Math.sin((1 - fld.flush.t / FLUSH) * Math.PI) : 0;
+const fldRing = (x, y, big) => { fld.rings.push({ x, y, t: 0, big }); if (fld.rings.length > 60) fld.rings.shift(); };
+function fldSpawnFloater(f) {
+  const w = fld.wetTiles; if (!w.length) return;
+  const [c, r] = w[Math.floor(Math.random() * w.length)];
+  Object.assign(f, { x: c, y: r, fade: 0 });
+}
+function fldUpdate(dt, theme) {
+  if (!dt) return;
+  const F = fld.flush, k = flushK();
+  if (F.t > 0) F.t = Math.max(0, F.t - dt);
+  if ((F.next -= dt) <= 0) { F.next = 16 + Math.random() * 6; F.t = FLUSH; if (G.state === 'play') SFX.gurgle(); }
+  for (const q of fld.rings) q.t += dt;
+  fld.rings = fld.rings.filter(q => q.t < (q.big ? 0.8 : 0.55));
+  fld.lens += ((theme.flume ? 0.35 : 0) + k * 0.6 - fld.lens) * Math.min(1, dt * 2);
+  // Drips off the ceiling: a drop falls into view and rings the floor where it lands.
+  if (Math.random() < dt * (3 + k * 14) && fld.drops.length < 30) {
+    const x = (camX + Math.random() * VIEW_W) | 0, y = (camY + Math.random() * VIEW_H) | 0;
+    if (x >= 0 && y >= 0 && x < art.PW && y < art.PH && art.cls[y * art.PW + x] === 0) fld.drops.push({ x, y0: y - 26, y, t: 0 });
+  }
+  for (const d of fld.drops) if ((d.t += dt) >= 0.28) { d.done = true; fldRing(d.x / T, d.y / T, false); }
+  fld.drops = fld.drops.filter(d => !d.done);
+  // Things riding the currents: a rubber duck, a leaf or two, a bottle.
+  if (hasFlow) {
+    if (!fld.wetTiles) {
+      fld.wetTiles = [];
+      for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (M[r][c] !== '#' && flowAt(c, r)) fld.wetTiles.push([c, r]);
+      fld.floaters = ['duck', 'leaf', 'leaf', 'bottle'].map(kind => { const f = { kind, seed: Math.random() * 6 }; fldSpawnFloater(f); return f; });
+    }
+    for (const f of fld.floaters) {
+      f.fade = Math.min(1, (f.fade || 0) + dt * 2);
+      const c = Math.round(f.x), r = Math.round(f.y), d = flowAt(c, r);
+      if (!d) { fldSpawnFloater(f); continue; }
+      const sp = (f.kind === 'duck' ? 1.3 : 1.7) * (1 + k * 0.6) * dt, side = d.x ? 'y' : 'x';
+      f[side] += (Math.round(f[side]) - f[side]) * Math.min(1, dt * 4);
+      f.x += d.x * sp; f.y += d.y * sp;
+      const nc = Math.round(f.x + d.x * 0.5), nr = Math.round(f.y + d.y * 0.5);
+      if (!flowAt(nc, nr) || M[nr]?.[nc] === '#') { fldRing(f.x + 0.5, f.y + 0.5, true); fldSpawnFloater(f); }
+    }
+  }
+  if (G.state !== 'play' && G.state !== 'ready') return;
+  // Splashing: anyone wading through a current throws up spray; the hound shakes himself off as he climbs out.
+  const wade = (e, rate, key) => {
+    const wet = !!flowAt(e.x, e.y), was = fld.seen.get(key);
+    fld.seen.set(key, wet);
+    if (wet && Math.random() < dt * rate) parts.push({ x: e.x + 0.5 + (Math.random() - 0.5) * 0.6, y: e.y + 0.8, vx: (Math.random() - 0.5) * 1.6, vy: -1.2 - Math.random(), t: 0.4, t0: 0.4, col: Math.random() < 0.5 ? '#bfe8f4' : '#6ac0d8', g: 9 });
+    if (wet && Math.random() < dt * 2.5) fldRing(e.x + 0.5, e.y + 0.6, false);
+    return was && !wet;
+  };
+  if (G.state === 'play') wade(pac, pac.dash > 0 ? 50 : 10, pac);
+  for (const g of G.ghosts) if (g.mode === 'active' && !g.eaten) wade(g, 3, g);
+  for (const h of G.hounds) if (h.state === 'hunt' && wade(h, 14, h)) {
+    fxBurst(h.x + 0.5, h.y + 0.4, '#bfe8f4', 18, 4.5, 0.5); fxBurst(h.x + 0.5, h.y + 0.4, '#6ac0d8', 10, 3, 0.45); SFX.shake();
+  }
+  // The crate or the sump: anyone coming out drips (or splashes) on the way.
+  const inside = new Set([...G.ghosts.filter(g => g.mode === 'house'), ...G.hounds.filter(h => h.state === 'house')]);
+  for (const e of inside) fld.house.add(e);
+  for (const e of [...fld.house]) if (!inside.has(e)) {
+    fld.house.delete(e);
+    if (theme.crate) fxBurst(e.x + 0.5, e.y + 0.6, '#b0903e', 8, 3, 0.45);
+    else { fxBurst(e.x + 0.5, e.y + 0.6, '#bfe8f4', 16, 4, 0.5); fldRing(e.x + 0.5, e.y + 0.8, true); }
+  }
+  // Bubbles rising off the currents.
+  if (hasFlow && Math.random() < dt * 6) {
+    const c = Math.floor((camX + Math.random() * VIEW_W) / T), r = Math.floor((camY + Math.random() * VIEW_H) / T);
+    if (flowAt(c, r) && M[r]?.[c] !== '#') parts.push({ x: c + Math.random(), y: r + Math.random(), vx: 0, vy: -0.3, t: 0.5, t0: 0.5, col: '#e6fcff', g: 0 });
+  }
+}
+// The flush turns the light colder and sets it wavering.
+function fldAmbient(amb, theme) {
+  const k = flushK();
+  if (k > 0) amb = mulc(mixc(amb, [0.36, 0.52, 0.72], k * 0.4), 1 + Math.sin(G.t * 9) * 0.04 * k);
+  if (theme.spill && hash2(Math.floor(G.t * 7), 23) > 0.97) amb = mulc(amb, 0.8);
+  return amb;
+}
+function fldDecor(theme, dt, glow) {
+  const L = art, k = flushK(), houndHome = G.hounds.some(h => h.state === 'house');
+  for (const d of L.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    if (d.kind === 'lamp') { // a caged bulkhead lamp, cold white, stuttering in a flush
+      const out = (k > 0.3 && hash2(Math.floor(G.t * 14), d.c * 5 + d.r) > 0.6) || (theme.spill && hash2(Math.floor(G.t * 5), d.c * 3 + d.r) > 0.95);
+      const lx = x - 4, ly = y0 + ((F - 6) >> 1);
+      if (!glow) {
+        pr(lx, ly, 8, 6, '#2a3436'); pr(lx + 1, ly + 1, 6, 4, out ? '#4a5a5e' : '#d8f0f4');
+        pr(lx + 1, ly + 2, 6, 1, '#2a3436'); pr(lx + 3, ly + 1, 1, 4, '#2a3436'); pr(lx + 4, ly + 1, 1, 4, '#2a3436');
+        if (!out) addLightPx(x, y1 + T * 0.5, 3.3 * T, [0.7, 0.92, 1], 0.6);
+      } else if (!out) { pr(lx + 1, ly + 1, 2, 1, '#ffffff'); pr(lx + 5, ly + 3, 2, 1, '#f0fcff'); }
+    } else if (d.kind === 'spout') { // a pipe mouth pouring into a puddle at the foot of the wall
+      const mx = x - 3, my = y0 + 1, fall = Math.round(y1 - my + T * 0.45), wide = k > 0.3 ? 3 : 2;
+      if (!glow) {
+        pr(mx - 1, my - 1, 8, 6, '#1a2224'); pr(mx, my, 6, 4, '#4a5a5e'); pr(mx, my, 6, 1, '#7a8a8e'); pr(mx + 1, my + 1, 4, 2, '#0a1012');
+        addLightPx(x, y1 + T * 0.4, 1.6 * T, [0.4, 0.7, 0.9], 0.18);
+      }
+      const ph = Math.floor(G.t * 16);
+      for (let j = 2; j < fall; j++) for (let i = 0; i < wide; i++) {
+        const h = hash2(i + d.c * 3, j - ph);
+        if (!glow) pr(x - 1 + i, my + j, 1, 1, h > 0.55 ? '#bfe8f4' : '#4aa8c8');
+        else if (h > 0.85) pr(x - 1 + i, my + j, 1, 1, '#ffffff');
+      }
+      if (!glow && G.state === 'play') {
+        if (Math.random() < dt * (k > 0.3 ? 30 : 10)) parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.3, y: (d.y1 + T * 0.45) / T, vx: (Math.random() - 0.5) * 1.4, vy: -0.8 - Math.random() * 0.6, t: 0.35, t0: 0.35, col: '#bfe8f4', g: 9 });
+        if (Math.random() < dt * 2.5) fldRing(d.x / T, (d.y1 + T * 0.5) / T, k > 0.3);
+      }
+    } else if (d.kind === 'depth') { // a depth marker: the water's line on it rises in a flush
+      if (glow) continue;
+      const rx = x - 1, top = y0 + 1, h = F - 2;
+      pr(rx - 1, top, 4, h, '#1a2224'); pr(rx, top, 2, h, '#d8dcd0');
+      for (let j = 1; j < h; j += 2) pr(rx, top + j, j % 4 === 1 ? 2 : 1, 1, '#2a2a2a');
+      const lvl = Math.round(h * (0.75 - k * 0.5 - (theme.flume ? 0.15 : 0)));
+      pr(rx - 1, top + lvl, 4, 1, '#3ac8e8'); pr(rx, top + lvl + 1, 2, h - lvl - 1, '#4a8aa0');
+      tinyText(fbx, String(lvl < h / 2 ? 3 : 2), rx + 4, top + 1, '#b8c8c0');
+    } else if (d.kind === 'chewed') { // a pipe something has been chewing on, dripping from the bite
+      if (glow) continue;
+      const py = y0 + 3;
+      pr(x - 10, py, 20, 3, '#5a6a6e'); pr(x - 10, py, 20, 1, '#8a9a9e'); pr(x - 10, py + 2, 20, 1, '#2a3436');
+      for (const bx of [-5, -2, 3]) { pr(x + bx, py, 2, 1, '#0a1012'); pr(x + bx, py + 1, 1, 1, '#0a1012'); }
+      pr(x - 8, py + 2, 1, 1, '#d8d8d0'); pr(x + 6, py, 1, 1, '#d8d8d0'); // tooth marks
+      if (G.state === 'play' && Math.random() < dt * 1.2) parts.push({ x: (d.x - 1.5) / T, y: (d.y0 + 6) / T, vx: 0, vy: 0.2, t: 0.5, t0: 0.5, col: '#8adcf0', g: 12 });
+    } else if (d.kind === 'bowl') { // a dog bowl at the foot of the wall, with his name on it
+      if (glow) continue;
+      const w = Math.max(12, tinyW(d.name || 'ARF') + 4), bx = x - (w >> 1), by = y1 - 1;
+      pr(bx, by - 4, w, 5, '#c83030'); pr(bx + 1, by - 5, w - 2, 1, '#e85050'); pr(bx + 1, by, w - 2, 1, '#8a1a1a');
+      pr(bx + 2, by - 5, w - 4, 1, Math.floor(G.t * 3 + d.seed * 9) % 3 ? '#4aa8c8' : '#8adcf0');
+      tinyText(fbx, d.name || 'ARF', bx + 2, by - 3, '#ffffff');
+    } else if (d.kind === 'doghouse') { // a doghouse; while a hound's home, it snores
+      const dx = x - 8, dy = y1 - 12;
+      if (!glow) {
+        for (let j = 0; j < 5; j++) pr(dx + 4 - j, dy + j, 8 + j * 2, 1, j === 0 ? '#d06048' : '#8a3424');
+        pr(dx, dy + 5, 16, 7, '#7a5636'); pr(dx, dy + 5, 16, 1, '#a07448');
+        for (let i = 3; i < 16; i += 4) pr(dx + i, dy + 6, 1, 6, '#5a3e26');
+        pr(dx + 5, dy + 7, 6, 5, '#0a0604'); pr(dx + 6, dy + 6, 4, 1, '#0a0604');
+      } else if (houndHome) {
+        const ph = (G.t * 0.6 + d.seed) % 1;
+        fbx.globalAlpha = 1 - ph; tinyText(fbx, 'Z', dx + 12 + Math.round(ph * 4), dy + 4 - Math.round(ph * 10), '#e8f4ff'); fbx.globalAlpha = 1;
+      }
+    } else if (d.kind === 'leash') { // a hook, a leash hanging in a loop, a collar
+      if (glow) continue;
+      pr(x, y0 + 1, 2, 2, '#9aa2a8');
+      for (let j = 0; j < F - 3; j++) pr(x + Math.round(Math.sin(j / (F - 3) * Math.PI) * 2), y0 + 3 + j, 1, 1, '#c83040');
+      pr(x - 2, y1 - 3, 5, 3, '#2a5ad0'); pr(x - 1, y1 - 2, 3, 1, '#0a1012'); pr(x, y1 - 1, 1, 1, '#e8c040');
+    } else if (d.kind === 'ball') { // tennis balls (he thinks the power pellets are balls)
+      if (glow) continue;
+      for (const [ox, oy] of [[-5, 0], [0, -1], [5, 0]]) {
+        const bx = x + ox, by = y1 - 3 + oy;
+        pr(bx - 1, by - 1, 3, 3, '#c8e040'); pr(bx - 1, by, 1, 1, '#e8f4c0'); pr(bx + 1, by - 1, 1, 1, '#9ab830');
+      }
+    } else if (d.kind === 'drain') { // a drain grate in the wall, trickling
+      if (glow) continue;
+      const gx = x - 4, gy = y0 + ((F - 6) >> 1);
+      pr(gx, gy, 8, 6, '#1a2224'); for (let i = 1; i < 8; i += 2) pr(gx + i, gy + 1, 1, 4, '#5a6a6e');
+      if (Math.floor(G.t * 8 + d.seed * 9) % 2) pr(gx + 3, gy + 6, 2, Math.max(1, F - 7 - ((F - 6) >> 1)), '#4aa8c8');
+    } else if (d.kind === 'sign') {
+      if (glow) continue;
+      const [s, bg, ink] = FLOOD_SIGNS[theme.lv][Math.floor(d.seed * 3)];
+      const w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      pr(sx, sy, w, 7, bg); pr(sx, sy, w, 1, css(mixc(hex(bg), [255, 255, 255], 0.4))); tinyText(fbx, s, sx + 2, sy + 1, ink);
+    }
+  }
+}
+// On the floor, over the water: puddle rings, the drops falling into them, and the things the current carries.
+const duckSprite = left => spr(`duck|${left}`, () => pixSprite(10, 8, (x, y) => {
+  x = left ? 10 - x : x;
+  if (x > 8.4 && y > 2.3 && y < 3.7) return hex('#ff8a20'); // the beak
+  if (Math.hypot(x - 7, y - 2.5) < 2.1) return hex(Math.hypot(x - 7.5, y - 2) < 0.6 ? '#1a1a1a' : '#ffd820');
+  const bx = (x - 4.5) / 4.5, by = (y - 5.6) / 2.4;
+  if (bx * bx + by * by < 1) return hex(y < 5 ? '#ffe860' : '#e8b810');
+  return null;
+}, 0.3));
+function fldFloor(theme) {
+  for (const q of fld.rings) {
+    const k = q.t / (q.big ? 0.8 : 0.55), r = (q.big ? 5 : 3) * (0.3 + k), cx = q.x * T - camX, cy = q.y * T - camY;
+    if (cx < -8 || cy < -8 || cx > VIEW_W + 8 || cy > VIEW_H + 8) continue;
+    fbx.globalAlpha = 0.7 * (1 - k);
+    const n = Math.max(8, Math.round(r * 4));
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; pr(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r * 0.5), 1, 1, '#bfe8f4'); }
+  }
+  fbx.globalAlpha = 1;
+  for (const f of fld.floaters) {
+    const d = flowAt(Math.round(f.x), Math.round(f.y)), bob = Math.round(Math.sin(G.t * 3 + f.seed));
+    fbx.globalAlpha = f.fade;
+    const cx = Math.round((f.x + 0.5) * T - camX), cy = Math.round((f.y + 0.5) * T - camY) + bob;
+    if (f.kind === 'duck') { fbx.drawImage(duckSprite(d && d.x < 0), cx - 5, cy - 6); pr(cx - 5, cy + 2, 10, 1, '#bfe8f4'); }
+    else if (f.kind === 'leaf') { pr(cx - 1, cy, 3, 2, '#4a8a3a'); pr(cx, cy, 1, 1, '#7ab85a'); }
+    else { pr(cx - 2, cy, 5, 2, '#3a7a4a'); pr(cx - 2, cy, 5, 1, '#8ad89a'); pr(cx + 3, cy, 1, 1, '#c8a060'); }
+  }
+  fbx.globalAlpha = 1;
+}
+// The hound's scent in pixels: paw prints, a pad and three toes, freshest last.
+function fldScent(h) {
+  if (h.state !== 'hunt' || h.lost || G.fright > 0 || !h.trail.length) return;
+  const n = h.trail.length, from = Math.max(0, n - SCENT_PRINTS);
+  let prev = from ? h.trail[from - 1] : { x: h.x, y: h.y };
+  h.trail.slice(from).forEach((t, k) => {
+    const i = from + k, dx = t.x - prev.x, dy = t.y - prev.y;
+    prev = t;
+    if (Math.abs(dx) > 2) return;
+    const len = Math.hypot(dx, dy) || 1, fx = dx / len, fy = dy / len, side = i % 2 ? 1 : -1;
+    const cx = (t.x + 0.5 - fy * side * 0.16) * T - camX, cy = (t.y + 0.5 + fx * side * 0.16) * T - camY;
+    fbx.globalAlpha = 0.85 * (k + 1) / (n - from);
+    pr(Math.round(cx - 1.5), Math.round(cy - 1.5), 3, 3, '#ffb46b'); pr(Math.round(cx - 1.5), Math.round(cy - 1.5), 1, 1, '#ffe0b0');
+    for (const q of [-1, 0, 1]) { const a = Math.atan2(fy, fx) + q * 0.6; pr(Math.round(cx + Math.cos(a) * T * 0.24), Math.round(cy + Math.sin(a) * T * 0.24), 1, 1, '#ffb46b'); }
+  });
+  fbx.globalAlpha = 1;
+}
+// The ghost house: a wire dog crate over straw, or a flooded sump with whoever's waiting bobbing in it.
+function fldHouse(theme) {
+  const b = art.houseBox; if (!b) return;
+  const x0 = b.c0 * T - camX, y0 = b.r0 * T - camY, w = (b.c1 - b.c0 + 1) * T, h = (b.r1 - b.r0 + 1) * T;
+  if (x0 > VIEW_W || y0 > VIEW_H || x0 + w < 0 || y0 + h < 0) return;
+  if (theme.crate) {
+    fbx.globalAlpha = 0.85;
+    for (let i = 2; i < w - 1; i += 5) pr(x0 + i, y0, 1, h, '#9aa2a8');
+    for (const j of [0, h >> 1, h - 1]) pr(x0, y0 + j, w, 1, '#b8c0c4');
+    fbx.globalAlpha = 1;
+    addLightPx(x0 + w / 2, y0 + h / 2, 2.6 * T, [1, 0.85, 0.5], 0.2);
+    return;
+  }
+  const top = y0 + Math.round(h * 0.45);
+  fbx.globalAlpha = 0.5;
+  for (let i = 0; i < w; i++) { const sy = Math.round(top + Math.sin(G.t * 2.2 + i * 0.3) * 1.5); pr(x0 + i, sy, 1, y0 + h - sy, '#1a6a8a'); }
+  fbx.globalAlpha = 0.9;
+  for (let i = 0; i < w; i += 2) pr(x0 + i, Math.round(top + Math.sin(G.t * 2.2 + i * 0.3) * 1.5), 2, 1, '#8adcf0');
+  for (let i = 0; i < 5; i++) pr(x0 + 3 + ((hash2(i, 11) * (w - 6)) | 0), Math.round(y0 + h - 2 - ((G.t * (6 + i * 2) + i * 9) % (h * 0.5))), 1, 1, '#e6fcff');
+  fbx.globalAlpha = 1;
+  addLightPx(x0 + w / 2, y0 + h / 2, 2.8 * T, [0.4, 0.8, 1], 0.3);
+}
+// The house door: the crate's wire gate (swung open when someone's coming), or a sluice gate that lifts and gushes.
+function fldDoor(theme) {
+  const y = Math.round((house.exitY + 1.3) * T) - camY, x0 = house.doorC * T - camX, hh = Math.max(3, Math.round(T * 0.24));
+  const busy = [...G.ghosts, ...G.hounds].some(e => Math.abs(e.y - (house.exitY + 1)) < 1.4 && Math.abs(e.x - house.doorX) < 1.4);
+  if (theme.crate) {
+    if (busy) { pr(x0, y - 4, 1, hh + 5, '#b8c0c4'); pr(x0 + 1, y - 4, 2, 1, '#b8c0c4'); return; }
+    for (let i = 0; i < 2 * T; i++) for (let j = 0; j < hh; j++) if ((i + j) % 3 === 0 || i === 0 || i === 2 * T - 1) pr(x0 + i, y + j, 1, 1, '#b8c0c4');
+    pr(x0 + T - 1, y + 1, 2, 2, '#e8c040'); // the latch
+    return;
+  }
+  const lift = busy ? 4 : 0;
+  pr(x0, y - lift, 2 * T, hh, '#4a5a60'); pr(x0, y - lift, 2 * T, 1, '#7a8a90');
+  for (let i = 3; i < 2 * T; i += 6) pr(x0 + i, y - lift + 1, 1, 1, '#a8b4b8');
+  if (busy) { for (let i = 0; i < 2 * T; i++) pr(x0 + i, y - lift + hh, 1, lift, hash2(i, Math.floor(G.t * 16)) > 0.5 ? '#bfe8f4' : '#4aa8c8'); }
+}
+// After the light: the drops falling, caustics on the water, mist, drops of water on the lens.
+const mistBlue = () => spr(`mistblue|${T}`, () => {
+  const w = Math.round(T * 2.6), h = Math.round(T * 1.2);
+  return pixSprite(w, h, (x, y) => { const dx = (x - w / 2) / (w / 2), dy = (y - h / 2) / (h / 2), f = 1 - (dx * dx + dy * dy); return f > bayer(x, y) * 0.9 ? [200, 230, 240, 56] : null; }, 0);
+});
+const causticTex = () => spr(`caust|${T}`, () => {
+  const P = T * 2, c = mkCanvas(P, P), im = c.g.createImageData(P, P);
+  for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) {
+    const a = Math.sin((x / P * 2 + Math.sin(y / P * Math.PI * 2) * 0.3) * Math.PI * 2), b = Math.sin((y / P * 2 + Math.sin(x / P * Math.PI * 2) * 0.3) * Math.PI * 2);
+    const v = 1 - Math.min(Math.abs(a), Math.abs(b));
+    if (v > 0.9) { const i = (y * P + x) * 4; im.data[i] = 110; im.data[i + 1] = 200; im.data[i + 2] = 220; im.data[i + 3] = 255; }
+  }
+  c.g.putImageData(im, 0, 0);
+  c.pat = fbx.createPattern(c, 'repeat');
+  return c;
+});
+const lensDrops = Array.from({ length: 26 }, (_, i) => {
+  const u = hash2(i, 61) ** 1.6 * 26; // hugging the left and right edges
+  return { x: i % 2 ? u : VIEW_W - 3 - u, y: hash2(i, 63) * VIEW_H, sp: 2 + hash2(i, 64) * 5, s: hash2(i, 65) };
+});
+function fldPost(dt, theme) {
+  for (const d of fld.drops) { // a drop falling from the ceiling
+    const k = d.t / 0.28, y = Math.round(d.y0 + (d.y - d.y0) * k * k) - camY;
+    pr(d.x - camX, y, 1, 2, '#bfe8f4');
+  }
+  if (hasFlow) { // caustics glinting off the currents
+    const tex = causticTex(), P = tex.width, sh = G.t * T * 0.5;
+    tex.pat.setTransform(new DOMMatrix([1, 0, 0, 1, ((sh - camX) % P + P) % P, ((sh * 0.6 - camY) % P + P) % P]));
+    fbx.globalCompositeOperation = 'lighter'; fbx.globalAlpha = 0.16 + flushK() * 0.12; fbx.fillStyle = tex.pat;
+    const c0 = Math.max(0, Math.floor(camX / T)), c1 = Math.min(W - 1, Math.ceil((camX + VIEW_W) / T));
+    const r0 = Math.max(0, Math.floor(camY / T)), r1 = Math.min(H - 1, Math.ceil((camY + VIEW_H) / T));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (M[r][c] !== '#' && flowAt(c, r)) fbx.fillRect(Math.round(c * T - camX), Math.round(r * T - camY), T, T);
+    fbx.globalCompositeOperation = 'source-over'; fbx.globalAlpha = 1;
+  }
+  const fs = mistBlue(), k = flushK();
+  for (const f of art.fog || []) {
+    fbx.globalAlpha = Math.min(1, 0.4 + 0.25 * Math.sin(G.t * 0.7 + f.s) + k * 0.4);
+    blit(fs, f.x + Math.sin(G.t * 0.4 + f.s) * 0.25, f.y + 0.1);
+  }
+  fbx.globalAlpha = 1;
+  if (fxOn && fld.lens > 0.03) for (const d of lensDrops) { // drops of water on the lens, sliding down
+    d.y += d.sp * dt * (0.4 + fld.lens); if (d.y > VIEW_H + 4) d.y = -4;
+    const x = Math.round(d.x), y = Math.round(d.y);
+    fbx.globalAlpha = Math.min(0.8, fld.lens * (0.6 + d.s));
+    pr(x, y, 2, 3, '#7ab8c8'); pr(x, y, 1, 1, '#ffffff'); pr(x, y + 3, 2, 1, '#2a5a6a');
+    if (d.s > 0.5) pr(x, y - 3, 1, 3, '#7ab8c8');
+  }
+  fbx.globalAlpha = 1;
+}
+
 // ---------- Dash effects (every floor with dash) ----------
 // A kick of dust as the dash starts, glints along the floor, speed lines streaming off behind, and a
 // white ring on a near miss through an enemy. In the lab the kick-off throws up goo as well.
@@ -7266,6 +7709,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.lab) return labDecor(theme, dt, glow);
   if (theme.throne) return thrDecor(theme, dt, glow);
   if (theme.boiler) return blrDecor(theme, dt, glow);
+  if (theme.flood) return fldDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -7486,7 +7930,7 @@ function renderWorld() {
   const dt = G.paused ? 0 : rdt, theme = curTheme();
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -7498,12 +7942,14 @@ function renderWorld() {
   if (theme.lab) labUpdate(dt, theme);
   if (theme.throne) thrUpdate(dt, theme);
   if (theme.boiler) blrUpdate(dt, theme);
+  if (theme.flood) fldUpdate(dt, theme);
   if (G.cfg.dash) dashUpdate(dt, theme);
   drawDecor(theme, dt);
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
+  if (theme.flood && G.state !== 'cast') fldFloor(theme);
   worldTf();
   idTf();
   if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
@@ -7532,8 +7978,9 @@ function renderWorld() {
         fbx.stroke();
       }
     }
-    if (showEnemies) for (const h of G.hounds) drawScent(h);
+    if (showEnemies && !theme.flood) for (const h of G.hounds) drawScent(h);
     idTf();
+    if (showEnemies && theme.flood) for (const h of G.hounds) fldScent(h);
     for (const f of G.flyDots) { const k = f.t / MAGNET_FLY; blit(dotSprite(), f.x + (pac.x - f.x) * k + 0.5, f.y + (pac.y - f.y) * k + 0.5); }
     // Shadows go down first, so nobody stands on anybody else's.
     if (pacShown) shadowAt(pac.x, pac.y, 1.2, 0.66);
@@ -7564,6 +8011,7 @@ function renderWorld() {
     if (theme.lab) labVat();
     if (theme.boiler) blrFurnace();
     if (showEnemies) for (const h of G.hounds) pxHound(h);
+    if (theme.flood) fldHouse(theme);
     if (showEnemies) for (const s of G.slimes) if (s.state !== 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state !== 'house') pxWraith(w);
     if (showEnemies) for (const s of G.blobules) pxSlime({ ...s, state: 'bit', blue: true });
@@ -7600,6 +8048,7 @@ function renderWorld() {
   if (theme.lab) amb = labAmbient(amb, theme);
   if (theme.throne) amb = thrAmbient(amb);
   if (theme.boiler) amb = blrAmbient(amb, theme);
+  if (theme.flood) amb = fldAmbient(amb, theme);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
@@ -7608,6 +8057,7 @@ function renderWorld() {
   if (theme.lab) labPost(dt);
   if (theme.throne) thrPost(dt);
   if (theme.boiler) blrPost(dt, theme);
+  if (theme.flood) fldPost(dt, theme);
   if (G.cfg.dash) dashPost();
   if (G.cfg.dark && G.state !== 'clear' && !cast) { fbx.save(); worldTf(); drawDark(); fbx.restore(); idTf(); }
   if (fxOn) {
