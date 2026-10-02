@@ -557,7 +557,7 @@ const SPEAKERS = {
   SLIME:  { name: 'THE SLIME', color: '#5cff6b', voice: 170, wave: 'triangle', portrait: true },
   KING:   { name: 'KING GHOST', color: '#ffd86b', voice: 140, wave: 'sawtooth', portrait: true },
   HOUND:  { name: 'THE BLOODHOUND', color: '#b4a8d0', voice: 300, portrait: true },
-  BLOB:   { name: 'THE BIG BLOB', color: '#ff6a4a', voice: 85, wave: 'sawtooth', portrait: true },
+  BLOB:   { name: 'THE BIG BLOB', color: '#6ae84a', voice: 85, wave: 'sawtooth', portrait: true },
   GARGOYLE: { name: 'THE GARGOYLE', color: '#c3c7dc', voice: 110, wave: 'sawtooth', portrait: true },
   SPIDER: { name: 'THE SPIDER', color: '#c9a0ff', voice: 980, portrait: true },
   SKULL:  { name: 'SKELETON KING', color: '#ece6cf', voice: 190, portrait: true },
@@ -3533,7 +3533,7 @@ function drawBlob(b) {
   if (r > 0 && Math.floor(b.dead * 14) % 2 === 0) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); }
   for (let i = 0; i < 14; i++) {
     const a = i * Math.PI / 7 + 0.2, d = p * 8, s = 0.35 * (1 - p * 0.5);
-    ctx.fillStyle = css(BLOB_RED[3 + (i % 3)]);
+    ctx.fillStyle = css(BLOB_GOO[3 + (i % 3)]);
     ctx.fillRect(cx + Math.cos(a) * d - s / 2, cy + Math.sin(a) * d - s / 2 + p * p * 3, s, s);
   }
   if (p > 0.25) FRUITS.slice(0, 8).forEach((f, i) => {
@@ -4585,11 +4585,11 @@ function pxKing(b) {
   fbx.drawImage(sp, -sp.width / 2, -sp.height * 0.7); fbx.restore();
 }
 
-// The Big Blob, a heap of red goo: a tall lumpy dome that slumps into a puddle, mottled with lighter
+// The Big Blob, a heap of green goo: a tall lumpy dome that slumps into a puddle, mottled with lighter
 // blotches up where the light falls and dark clots below, two mismatched black eyes weeping goo and
 // a mouth dragged open in a long, frowning wail. Sized by its mass; three frames of ooze roll lumps along its
 // back, let the drips stretch and the puddle creep, and the goo's mottling slide slowly downhill.
-const BLOB_RED = ['#1e0a14', '#5a1020', '#8a1c24', '#b82c2a', '#d84a36', '#ec7a52'].map(hex); // outline .. highlight
+const BLOB_GOO = ['#0a1e10', '#145020', '#1e7a26', '#2ea83a', '#4ad050', '#8cf07c'].map(hex); // outline .. highlight
 const BLOB_BODY = { fright: '#2121ff', flash: '#ffffff', hit: '#ffffff', ice: '#bdf4ff' };
 const BLOB_FRAMES = 3;
 function blobSprite(rp, frame, mode, ph, lx, ly, eaten) { // rp: radius in pixels; mode: '' | fright | flash | hit | ice | a colour; lx, ly: where it looks
@@ -4597,9 +4597,9 @@ function blobSprite(rp, frame, mode, ph, lx, ly, eaten) { // rp: radius in pixel
     const a = frame / BLOB_FRAMES * Math.PI * 2, rw = rp * 0.98, rh = rp * 1.66;
     const S = Math.ceil(rp * 2.4) + 4, SH = Math.ceil(rp * 1.72) + 5, c = S / 2, base = SH - 3;
     const plain = !mode, fr = mode === 'fright' || mode === 'flash';
-    const ramp = plain ? BLOB_RED : makeRamp(BLOB_BODY[mode] || mode);
+    const ramp = plain ? BLOB_GOO : makeRamp(BLOB_BODY[mode] || mode);
     const face = hex(mode === 'flash' ? '#ff2a2a' : '#ffb8ae'), eye = hex(mode === 'ice' ? '#4a7f99' : '#100810');
-    const lip = plain ? BLOB_RED[1] : ramp[1], maw = hex('#141a28'), throat = hex('#22323c'), speck = hex('#f8b080');
+    const lip = plain ? BLOB_GOO[1] : ramp[1], maw = hex('#141a28'), throat = hex('#22323c'), speck = hex('#d0f8a8');
     const ghosts = eaten ? eaten.split(',').map(hex) : [];
     const lumps = [[-0.78, 0.07, 0.03], [-0.3, 0.05, 0.08], [0.5, 0.06, 0.05], [0.86, 0.06, 0.02]]; // [where, how tall, how wide]
     const topAt = u => { // the dome's height over x = u, peaking a little left of centre; the lumps roll along it
@@ -4660,7 +4660,7 @@ function blobSprite(rp, frame, mode, ph, lx, ly, eaten) { // rp: radius in pixel
       if (n < 0.26 && m < 0.5 && k < 0.85) return ramp[l > 0.3 ? 2 : 1]; // dark clots
       if (m > 0.85 && l < 0.2) return ramp[1];
       return ramp[l > 0.85 ? 4 : l > 0.25 ? 3 : l > -0.3 ? 2 : 1];
-    }, plain ? BLOB_RED[0] : 0.3);
+    }, plain ? BLOB_GOO[0] : 0.3);
     sp.base = base;
     return sp;
   });
@@ -8294,7 +8294,7 @@ function entityLights(showEnemies, pacShown) {
   for (const g of G.gargoyles) if (g.moving) addLight(g.x + 0.5, g.y + 0.3, 1.1, '#ff3b3b', 0.3);
   for (const o of G.orbs) addLight(o.x + 0.5, o.y + 0.5, 1.3, o.web ? '#e6e9ff' : o.goo ? '#8dff5c' : '#ff5ce1', 0.4);
   for (const v of G.vents) if (ventState(v) === 'blast') addLight(v.c + 0.5, v.r + 0.5, 2.6, '#ff8a3a', 0.6);
-  if (G.boss && G.boss.state !== 'dead') addLight(G.boss.x + 0.5, G.boss.y + 0.5, 3.2, G.boss.kind === 'blob' ? '#ff6a4a' : '#ffd86b', 0.35);
+  if (G.boss && G.boss.state !== 'dead') addLight(G.boss.x + 0.5, G.boss.y + 0.5, 3.2, G.boss.kind === 'blob' ? '#6aff4a' : '#ffd86b', 0.35);
 }
 
 // ---------- Scenery ----------
