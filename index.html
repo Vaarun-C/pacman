@@ -1096,7 +1096,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); attReset(); cldReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); attReset(); cldReset(); pentReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -5460,6 +5460,7 @@ const themeFor = (stage, lv = 0) => {
   if (lv && stage === 7) return THEMES[`7-${lv}`] || (THEMES[`7-${lv}`] = cryptTheme(lv));
   if (lv && stage === 8) return THEMES['8-1'] || (THEMES['8-1'] = sewerTheme());
   if (lv && stage === 9) return THEMES[`9-${lv}`] || (THEMES[`9-${lv}`] = belfryTheme(lv));
+  if (lv && stage === 12) return THEMES['12-1'] || (THEMES['12-1'] = penthouseTheme());
   if (lv && stage === 11) return THEMES[`11-${lv}`] || (THEMES[`11-${lv}`] = cloudTheme(lv));
   if (lv && stage === 10) return THEMES[`10-${lv}`] || (THEMES[`10-${lv}`] = atticTheme(lv));
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
@@ -9170,6 +9171,183 @@ function cldPost(dt, theme) {
   fbx.globalAlpha = 1;
 }
 
+// ---------- The Penthouse Crypt (stage 12, the Skeleton King) ----------
+// 20F, the top of the tower and the landlord's own rooms: polished black marble inlaid with gold,
+// every pillar a sarcophagus, an altar heaped with the rent, or a stand of candles; stained glass and
+// tattered banners along the top wall; and in the middle his bone throne on a rune circle, the stolen
+// fruit salad in a golden bowl beside it. The room follows the fight: the candles burn in the colour
+// of his phase (green, then lilac with cobwebs creeping over the pillars as the spiders come, then red
+// with the floor cracking open), flare up whenever a phase begins, and the circle blazes while he casts.
+// When he's beaten the candles turn gold, the light warms and the fruit bowl shines.
+function penthouseTheme() {
+  const P = Object.fromEntries(Object.entries({
+    marbleA: '#1a1622', marbleB: '#221c2c', vein: '#3a3048',
+    stone: '#2a2632', stoneHi: '#3a3444', joint: '#121018', boneIn: '#8a8070', lip: '#08060c', base: '#141018',
+    cap: '#24202e', capHi: '#2e2838', capVein: '#3e3650',
+    rim: '#c8a040', rimF: '#e8c868', rimR: '#8a6a24', ring2: '#4a3a24', ring3: '#2e2430',
+  }).map(([k, v]) => [k, hex(v)]));
+  return {
+    id: 'pent', void: '#04020a', map: '#d8cfa8', runner: false, decor: true, pent: true, dust: true,
+    ambient: [0.46, 0.42, 0.54], vignette: 0.5, grade: ['#6a4a9a', 0.12],
+    floor(x, y, t) { // black marble in a checker, veined, with dark seams (nothing dot-like: dots are for eating)
+      const c = (x / T) | 0, r = (y / T) | 0;
+      let col = mulc((c + r) & 1 ? P.marbleA : P.marbleB, 0.92 + vnoise(x / 6, y / 6) * 0.14);
+      if (Math.abs(vnoise(x / 9 + c, y / 7) - 0.5) < 0.02) col = P.vein;
+      if (t.u === 0 || t.v === 0) col = mulc(col, 0.7);
+      return col;
+    },
+    face(x, y, v, F, edge) { // dark stone, a row of little skulls set into it
+      let col;
+      if (v === 0) col = P.lip;
+      else if (v === F - 1) col = P.base;
+      else {
+        col = (x + (v & 1) * 3) % 6 === 0 ? P.joint : mulc(mixc(P.stone, P.stoneHi, hash2(x / 6 | 0, v)), 0.9 + vnoise(x / 3, y / 3) * 0.2);
+        if (F >= 5 && v === (F >> 1) && x % 8 < 3) col = P.boneIn;
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // polished slabs edged in gold
+      if (ring === 1) return side === 'front' ? P.rimF : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2) return P.ring2;
+      if (ring === 3) return P.ring3;
+      let col = mulc(P.cap, 0.92 + vnoise(x / 5, y / 5) * 0.16);
+      if (Math.abs(vnoise(x / 7 + 3, y / 5) - 0.5) < 0.025) col = P.capVein;
+      return col;
+    },
+    pick(big, r, roll) { return r === 0 && roll < 0.55 ? 'glass' : 'banner'; },
+    bake(L, g) {
+      // The pillars: 2x2 blocks standing free. Each is a sarcophagus, an altar of coins, or a bare slab.
+      L.pillars = [];
+      for (let r = 1; r < L.h - 2; r++) for (let c = 1; c < L.w - 2; c++) {
+        if (!(L.solidT(c, r) && L.solidT(c + 1, r) && L.solidT(c, r + 1) && L.solidT(c + 1, r + 1))) continue;
+        if (L.solidT(c - 1, r) || L.solidT(c, r - 1) || L.solidT(c + 2, r) || L.solidT(c, r + 2)) continue;
+        const k = hash2(c * 3 + 1, r * 7 + 2), x0 = c * L.T, y0 = r * L.T, cx = x0 + L.T;
+        let top = -1; for (let y = y0; y < y0 + 2 * L.T; y++) if (L.cls[y * L.PW + cx] === 1) { if (top < 0) top = y; }
+        const kind = k < 0.42 ? 'coffin' : k < 0.66 ? 'coins' : 'slab';
+        L.pillars.push({ c, r, x: cx, y: top + 2, kind, candles: hash2(c * 5, r * 3) < 0.55, seed: k });
+        const y = top + 3;
+        if (kind === 'coffin') { // a carved lid: a coffin shape in gold, a skull at its head
+          const rows = [3, 4, 5, 5, 5, 4, 4, 3, 3, 2];
+          rows.forEach((hw, j) => { g.fillStyle = '#a8862e'; g.fillRect(cx - hw, y + j, hw * 2, 1); g.fillStyle = '#2a2232'; if (hw > 1) g.fillRect(cx - hw + 1, y + j, hw * 2 - 2, 1); });
+          g.fillStyle = '#c8bca0'; g.fillRect(cx - 1, y + 1, 2, 2); g.fillStyle = '#1a0010'; g.fillRect(cx - 1, y + 2, 1, 1);
+          g.fillStyle = '#6a5a3a'; g.fillRect(cx, y + 4, 1, 4); g.fillRect(cx - 1, y + 5, 3, 1); // a cross on the lid
+        } else if (kind === 'coins') { // the rent, in a heap
+          for (let i = 0; i < 14; i++) { const ox = ((hash2(i, c) - 0.5) * 9) | 0, oy = ((hash2(i, r + 9) - 0.2) * 6) | 0; g.fillStyle = hash2(i, 3) > 0.5 ? '#e8c040' : '#c89a20'; g.fillRect(cx + ox, y + 3 + oy, 2, 1); }
+          g.fillStyle = '#fff0a0'; g.fillRect(cx, y + 2, 1, 1);
+        }
+      }
+      // An engraved rune circle round the throne.
+      const tx = (meta.throne.x + 0.5) * L.T, ty = (meta.throne.y + 0.5) * L.T, R = 3.2 * L.T;
+      g.fillStyle = '#3a3048';
+      for (let i = 0; i < 160; i++) { const a = i / 160 * Math.PI * 2; g.fillRect(Math.round(tx + Math.cos(a) * R), Math.round(ty + Math.sin(a) * R * 0.85), 1, 1); g.fillRect(Math.round(tx + Math.cos(a) * (R - 3)), Math.round(ty + Math.sin(a) * (R - 3) * 0.85), 1, 1); }
+      // Where the cracks open up in his last phase.
+      L.cracks = [];
+      for (let k = 0; k < 7; k++) {
+        let x = tx + (hash2(k, 1) - 0.5) * 18 * L.T, y = ty + (hash2(k, 2) - 0.5) * 20 * L.T, a = hash2(k, 3) * 6.3;
+        const pts = [[x, y]];
+        for (let i = 0; i < 9; i++) { a += (hash2(k, i + 5) - 0.5) * 1.6; x += Math.cos(a) * 4; y += Math.sin(a) * 4; pts.push([x, y]); }
+        L.cracks.push(pts);
+      }
+    },
+  };
+}
+
+// Per-fight state for the crypt (kept through the spell's rebuilds, which rebake the level art).
+const pent = { ph: 1, flare: 0, warm: 0 };
+function pentReset() { Object.assign(pent, { ph: 1, flare: 0, warm: 0 }); }
+const PENT_GOLD = '#ffd86b';
+const pentPhase = () => { const b = G.boss; return !b ? 1 : b.state === 'dead' ? 0 : G.state === 'phase' ? G.phaseTo : bossPhase(b); };
+const pentFlame = () => { const ph = pentPhase(); return ph ? BOSSES.skull.colors[ph] : PENT_GOLD; };
+const pentCasting = () => G.boss && G.spell.phase === 'chant';
+function pentUpdate(dt) {
+  if (!dt) return;
+  const ph = pentPhase();
+  if (ph && ph !== pent.ph) { pent.ph = ph; pent.flare = 1.2; } // a new phase: every candle flares
+  pent.flare = Math.max(0, pent.flare - dt);
+  if (!ph) pent.warm = Math.min(1, pent.warm + dt / 2.5);
+  const col = pentFlame();
+  for (const p of art.pillars || []) if (p.candles && Math.random() < dt * (pent.flare > 0 ? 6 : 1.2)) parts.push({ x: p.x / T + (Math.random() < 0.5 ? -0.65 : 0.65), y: (p.y - 4) / T, vx: (Math.random() - 0.5) * 0.3, vy: -0.8, t: 0.8, t0: 0.8, col, g: 0 });
+}
+function pentAmbient(amb) {
+  const ph = pentPhase();
+  if (!ph) return mixc(amb, [0.95, 0.85, 0.65], pent.warm * 0.6);
+  const tint = [[0.4, 0.62, 0.5], [0.56, 0.46, 0.72], [0.7, 0.36, 0.38]][ph - 1];
+  amb = mixc(amb, tint, 0.35 + (ph === 3 ? 0.1 * Math.sin(G.t * 3) : 0));
+  if (pentCasting()) amb = mixc(amb, [0.85, 0.3, 0.3], 0.3 + 0.2 * Math.sin(G.t * 18));
+  if (pent.flare > 0) amb = mixc(amb, lightCol(pentFlame()), Math.min(0.5, pent.flare * 0.5));
+  return amb;
+}
+function pentDecor(theme, dt, glow) {
+  const ph = pentPhase(), col = pentFlame(), big = pent.flare > 0 ? 2 : 0, rgb = lightCol(col);
+  for (const d of art.decor) { // along the top wall: stained glass and banners in his colours
+    const x = d.x - camX, y0 = d.y0 - camY, F = d.y1 - d.y0;
+    if (x < -20 || x > VIEW_W + 20) continue;
+    if (d.kind === 'glass') {
+      if (!glow) { pr(x - 3, y0, 7, F, '#1a1420'); pr(x - 2, y0 + 1, 5, F - 1, '#1a2448'); pr(x - 1, y0, 3, 1, '#1a1420'); }
+      fbx.globalAlpha = glow ? 0.6 : 1;
+      for (let j = 1; j < F; j++) for (let i = -2; i <= 2; i++) if ((i + j) % 2) pr(x + i, y0 + j, 1, 1, ['#8a3aff', '#3a6aff', '#ff3a6a'][(i + j * 2 + 9) % 3]);
+      fbx.globalAlpha = 1;
+      if (!glow) addLightPx(x, d.y1 - camY + T * 0.6, 2 * T, [0.6, 0.45, 1], 0.3);
+    } else if (d.kind === 'banner' && !glow) { // a tattered banner with his crown on it
+      const sw = Math.round(Math.sin(G.t * 1.4 + d.seed * 6) * 0.6);
+      pr(x - 3, y0, 7, 1, '#6a5a3a');
+      for (let j = 1; j < F + 3; j++) pr(x - 2 + (j > F ? sw : 0), y0 + j, 5 - (j > F + 1 ? 2 : 0), 1, ph === 3 ? '#6a1a2a' : '#3a1a5a');
+      pr(x - 1, y0 + 2, 3, 1, '#e8c040'); pr(x, y0 + 1, 1, 1, '#e8c040');
+    }
+  }
+  for (const p of art.pillars || []) {
+    const x = p.x - camX, y = p.y - camY;
+    if (x < -20 || x > VIEW_W + 20 || y < -20 || y > VIEW_H + 20) continue;
+    if (p.candles) for (const ox of [-7, 6]) { // a candle at each front corner of the slab
+      if (!glow) { pr(x + ox, y - 1, 2, 3, '#e8dcc0'); pr(x + ox + 1, y - 1, 1, 3, '#b4a482'); }
+      else { const fl = Math.floor(G.t * 12 + p.seed * 40 + ox) % 3; pr(x + ox, y - 3 - big, 2, 2 + big, col); pr(x + ox + (fl === 1 ? 1 : 0), y - 4 - big - (fl === 2 ? 1 : 0), 1, 1, '#ffffff'); }
+    }
+    if (p.candles && !glow) addLightPx(x, y + T * 0.6, (2.2 + big * 0.6) * T, rgb, 0.55 + big * 0.2);
+    if (!glow && (ph === 2 || ph === 3) && hash2(p.c, p.r) < 0.6) { // cobwebs creeping over the slabs since the spiders came
+      fbx.globalAlpha = 0.55;
+      const s = p.seed < 0.5 ? -1 : 1, cx = x + s * 9, cy = y - 3;
+      for (let i = 0; i < 5; i++) { pr(cx - s * i, cy, 1, 1, '#d8d8e0'); pr(cx, cy + i, 1, 1, '#d8d8e0'); pr(cx - s * i, cy + i, 1, 1, '#b8b8c8'); }
+      fbx.globalAlpha = 1;
+    }
+    if (glow && p.kind === 'coins' && Math.floor(G.t * 2 + p.seed * 9) % 4 === 0) pr(x + ((p.seed * 7) | 0) - 3, y + 3, 1, 1, '#ffffff'); // a glint off the gold
+  }
+  // The rune circle round the throne: it glows in his colour, and blazes while he casts.
+  const tx = Math.round((meta.throne.x + 0.5) * T - camX), ty = Math.round((meta.throne.y + 0.5) * T - camY), R = 3.2 * T;
+  if (glow && ph) {
+    const k = pentCasting() ? 0.6 + 0.4 * Math.sin(G.t * 20) : 0.18 + 0.08 * Math.sin(G.t * 2);
+    fbx.globalAlpha = k;
+    for (let i = 0; i < 160; i++) { const a = i / 160 * Math.PI * 2 + (pentCasting() ? G.t : 0); pr(Math.round(tx + Math.cos(a) * R), Math.round(ty + Math.sin(a) * R * 0.85), 1, 1, pentCasting() ? BOSSES.skull.colors[3] : col); }
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 - G.t * 0.3; pr(Math.round(tx + Math.cos(a) * (R - 1.5)) - 1, Math.round(ty + Math.sin(a) * (R - 1.5) * 0.85) - 1, 3, 3, pentCasting() ? BOSSES.skull.colors[3] : col); }
+    fbx.globalAlpha = 1;
+  }
+  if (ph === 3) for (const pts of art.cracks || []) { // the floor cracking open, red light welling up
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i - 1], [bx, by] = pts[i], n = 4;
+      for (let s = 0; s < n; s++) { const px_ = Math.round(ax + (bx - ax) * s / n - camX), py_ = Math.round(ay + (by - ay) * s / n - camY); if (art.cls[(Math.round(ay + (by - ay) * s / n)) * art.PW + Math.round(ax + (bx - ax) * s / n)] !== 0) continue; pr(px_, py_, 1, 1, glow ? '#ff6a4a' : '#0a0204'); }
+    }
+  }
+  if (glow) {
+    if (!ph) { // beaten: the salad shines
+      fbx.globalAlpha = 0.5 + 0.3 * Math.sin(G.t * 4);
+      pr(tx + 2 * T - 6, ty - 4, 12, 3, '#fff0a0');
+      fbx.globalAlpha = 1;
+    }
+    return;
+  }
+  // His throne, all bones and gold, and the stolen fruit salad beside it.
+  pr(tx - 5, ty - 14, 11, 13, '#c8bca0'); pr(tx - 4, ty - 13, 9, 11, ph === 3 ? '#5a1a2a' : '#3a1a5a');
+  for (const ox of [-6, 5]) { pr(tx + ox, ty - 16, 2, 16, '#e8dcc0'); pr(tx + ox, ty - 17, 2, 2, '#ece6cf'); pr(tx + ox, ty - 16, 1, 1, '#1a0010'); }
+  pr(tx - 3, ty - 18, 7, 3, '#ffd23f'); pr(tx - 3, ty - 19, 1, 1, '#ffd23f'); pr(tx, ty - 20, 1, 2, '#ffd23f'); pr(tx + 3, ty - 19, 1, 1, '#ffd23f'); // a crown over the back
+  pr(tx - 5, ty - 2, 11, 3, '#8a7a5a'); pr(tx - 5, ty - 2, 11, 1, '#c8bca0');
+  const bx = tx + 2 * T, by = ty - 1;
+  for (let j = 0; j <= 3; j++) { const w = 6 - j; pr(bx - w, by + j, w * 2 + 1, 1, j ? '#a8862e' : '#e8c040'); }
+  const F_ = ['#e84a3a', '#e8c83a', '#5ab83a', '#e88a3a', '#a84ab8', '#e86a8a'];
+  for (let i = 0; i < 6; i++) pr(bx - 5 + i * 2, by - 2 - (i % 2), 2, 2, F_[i]);
+  if (!ph) addLightPx(bx, by, 2.5 * T, [1, 0.85, 0.5], 0.6 * pent.warm);
+  // The gargoyles' pedestals on the top corridor.
+  for (const [c, r] of meta.perches || []) { const px_ = Math.round(c * T - camX), py_ = Math.round((r + 1) * T - camY); pr(px_ + 1, py_ - 3, T - 2, 3, '#3a3444'); pr(px_ + 1, py_ - 3, T - 2, 1, '#5a5464'); }
+}
+
 // ---------- Frost (every floor) ----------
 // A frost berry sends a shockwave of ice out from Pac-Man and brings frost in at the screen's edge, and
 // the Wraith leaves frost on any wall he drifts through. The Freezer adds its own: walls that ice over
@@ -9506,6 +9684,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.belfry) return belDecor(theme, dt, glow);
   if (theme.attic) return attDecor(theme, dt, glow);
   if (theme.cloud) return cldDecor(theme, dt, glow);
+  if (theme.pent) return pentDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -9745,6 +9924,7 @@ function renderWorld() {
   if (theme.belfry) belUpdate(dt, theme);
   if (theme.attic) attUpdate(dt, theme);
   if (theme.cloud) cldUpdate(dt, theme);
+  if (theme.pent) pentUpdate(dt);
   if (G.gargoyles.length) gargoyleFx(dt);
   if (G.cfg.dash) dashUpdate(dt, theme);
   frostUpdate(dt, theme);
@@ -9871,6 +10051,7 @@ function renderWorld() {
   if (theme.belfry) amb = belAmbient(amb);
   if (theme.attic) amb = attAmbient(amb);
   if (theme.cloud) amb = cldAmbient(amb, theme);
+  if (theme.pent) amb = pentAmbient(amb);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
