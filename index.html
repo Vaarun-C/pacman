@@ -3306,8 +3306,84 @@ function drawSkullHead(cx, cy, k, tilt, bone, glow, ph, fr, flash, ice) {
   drawCrown(0, -1.18, 0.72, ice ? '#e6fbff' : '#ffd23f');
   ctx.restore();
 }
+// The Skeleton King, a sorcerer-king in pixels: a tall collar standing up behind his crowned skull, a
+// purple robe (crimson in his last phase) open down the front on his ribs, an ermine stole, bony hands,
+// and an orb sceptre glowing in the phase colour, like his eyes. He bobs as he floats. Casting, he
+// raises his arms in a ring of runes; beaten down, he's a heap of robe, bones and crowned skull.
+// st: { ph, eye (the phase colour in his eyes), mode: '' | 'hit' | 'fright' | 'flash' | 'ice', pose: 'idle' | 'cast' | 'pile', f }
+let LICH_RAMPS = null;
+const lichRamps = () => LICH_RAMPS || (LICH_RAMPS = Object.fromEntries(Object.entries({
+  purple: ['#120820', '#1e0e34', '#2e1650', '#43207a', '#5e34a0', '#8a5ac8'], crimson: ['#1a0610', '#2e0a1a', '#4a1028', '#6a1a3a', '#8a2a50', '#b04870'],
+  ermine: ['#4a4a5a', '#8a8a9a', '#c8c8d0', '#e8e8ec', '#f6f6f8', '#ffffff'], dark: ['#05020a', '#0a0414', '#0e0618', '#140a20', '#1a0e2a', '#241638'],
+  socket: Array(6).fill('#1a0010'), iceSocket: Array(6).fill('#4a7f99'),
+}).map(([k, v]) => [k, v.map(hex)])));
+function lichPrims(st) {
+  const RR = lichRamps(), GLOW = BOSSES.skull.colors, BONE = '#ece6cf', SOCKET = '#1a0010';
+  const tone = c => st.mode === 'ice' ? '#bdf4ff' : st.mode === 'hit' ? '#ffffff' : st.mode === 'fright' ? '#2121ff' : st.mode === 'flash' ? '#f0f0ff' : c;
+  const scared = st.mode === 'fright' || st.mode === 'flash', face = st.mode === 'flash' ? '#ff2a2a' : '#ffb8ae';
+  const robe = st.mode ? makeRamp(tone('#ffffff')) : st.ph === 3 ? RR.crimson : RR.purple, erm = st.mode ? makeRamp(tone('#ffffff')) : RR.ermine;
+  const glow = st.mode === 'ice' ? '#e6fbff' : st.mode ? tone('#ffffff') : GLOW[st.eye || st.ph], wood = st.mode ? tone('#c89a30') : '#c89a30';
+  const boneLine = (pts, w = 0.12) => line(pts, tone(BONE), w);
+  const fingers = (hx, hy, s, up) => [-1, 0, 1].map(i => boneLine([[hx, hy], [hx + (s * 0.1 + i * 0.07), hy + (up ? -0.26 : 0.26)]], 0.07));
+  const crown = (cx, cy, k) => [poly([[cx - 0.95 * k, cy + 0.5 * k], [cx - 1.05 * k, cy - 0.35 * k], [cx - 0.5 * k, cy + 0.12 * k], [cx, cy - 0.55 * k], [cx + 0.5 * k, cy + 0.12 * k], [cx + 1.05 * k, cy - 0.35 * k], [cx + 0.95 * k, cy + 0.5 * k]], makeRamp(st.mode === 'ice' ? '#e6fbff' : '#ffd23f')),
+    dot(cx, cy + 0.18 * k, st.mode ? '#ffffff' : '#e83a5a', 1.4), dot(cx - 0.6 * k, cy + 0.28 * k, st.mode ? '#ffffff' : '#3a8aff', 1), dot(cx + 0.6 * k, cy + 0.28 * k, st.mode ? '#ffffff' : '#3a8aff', 1)];
+  const skull = (cx, cy, k) => {
+    const bone = makeRamp(tone(BONE)), p = [ball(cx, cy - 0.12 * k, 0.6 * k, bone), ell(cx, cy + 0.32 * k, 0.4 * k, 0.24 * k, 0, bone)];
+    if (scared) return [...p, dot(cx - 0.24 * k, cy - 0.1 * k, face, 1.6 * k), dot(cx + 0.24 * k, cy - 0.1 * k, face, 1.6 * k), line([[cx - 0.32 * k, cy + 0.28 * k], [cx - 0.16 * k, cy + 0.2 * k], [cx, cy + 0.28 * k], [cx + 0.16 * k, cy + 0.2 * k], [cx + 0.32 * k, cy + 0.28 * k]], face, 0.06 * k)];
+    const sock = st.mode === 'ice' ? RR.iceSocket : RR.socket, sc = st.mode === 'ice' ? '#4a7f99' : SOCKET;
+    for (const s of [-1, 1]) p.push(ell(cx + s * 0.24 * k, cy - 0.08 * k, 0.17 * k, 0.2 * k, 0, sock), dot(cx + s * 0.24 * k, cy - 0.06 * k, glow, (st.ph === 3 ? 1.8 : 1.3) * k));
+    p.push(poly([[cx - 0.07 * k, cy + 0.16 * k], [cx + 0.07 * k, cy + 0.16 * k], [cx, cy + 0.04 * k]], sock), line([[cx - 0.26 * k, cy + 0.36 * k], [cx + 0.26 * k, cy + 0.36 * k]], sc, 0.06 * k));
+    for (let i = -2; i <= 2; i++) p.push(line([[cx + i * 0.11 * k, cy + 0.3 * k], [cx + i * 0.11 * k, cy + 0.42 * k]], sc, 0.03 * k));
+    if (st.ph >= 2) for (const s of [-1, 1]) p.push(line([[cx + s * 0.44 * k, cy - 0.34 * k], [cx + s * 0.1 * k, cy - 0.24 * k]], sc, 0.07 * k)); // furious brows
+    if (st.ph === 3) p.push(line([[cx + 0.1 * k, cy - 0.66 * k], [cx + 0.18 * k, cy - 0.46 * k], [cx + 0.1 * k, cy - 0.36 * k]], sc, 0.04 * k)); // cracked
+    return p;
+  };
+  const p = [], bob = st.f ? 0.07 : 0, up = st.pose === 'cast';
+  if (st.pose === 'pile') {
+    p.push(poly([[-1.6, 1.8], [-1.2, 1.1], [-0.4, 0.95], [0.5, 1.15], [1.3, 1.0], [1.65, 1.8]], robe));
+    for (const [x, y, a] of [[-0.9, 1.4, 0.4], [0.8, 1.3, -0.5], [0.1, 1.55, 0.1]]) p.push(boneLine([[x - Math.cos(a) * 0.36, y - Math.sin(a) * 0.36], [x + Math.cos(a) * 0.36, y + Math.sin(a) * 0.36]], 0.16));
+    p.push(line([[1.3, 1.5], [0.5, 1.75]], wood, 0.09), ball(1.38, 1.47, 0.15, makeRamp(glow)));
+    return [...p, ...skull(0, 0.7, 0.9), ...crown(-0.15, -0.12, 0.45)];
+  }
+  p.push(poly([[-0.75, -0.45 + bob], [-1.0, -1.45 + bob], [-0.42, -0.8 + bob], [0.42, -0.8 + bob], [1.0, -1.45 + bob], [0.75, -0.45 + bob]], robe)); // the collar, standing up behind his head
+  const hem = [[-1.45, 1.9], [-1.1, 1.62], [-0.8, 1.95], [-0.45, 1.66], [0, 1.95], [0.45, 1.66], [0.8, 1.95], [1.1, 1.62], [1.45, 1.9]];
+  p.push(poly([[-0.8, -0.35 + bob], [0.8, -0.35 + bob], ...hem.slice().reverse().map(([x, y]) => [x, y + bob])], robe));
+  p.push(poly([[-0.24, -0.2 + bob], [0.24, -0.2 + bob], [0.42, 1.8 + bob], [-0.42, 1.8 + bob]], st.mode ? robe : RR.dark)); // open down the front
+  for (let i = 0; i < 4; i++) { const y = 0.05 + i * 0.2 + bob, w = 0.2 + i * 0.03; p.push(boneLine([[-w, y + 0.08], [0, y], [w, y + 0.08]], 0.07)); }
+  p.push(boneLine([[0, -0.15 + bob], [0, 0.95 + bob]], 0.07));
+  if (!st.mode) for (const s of [-1, 1]) p.push(line([[s * 0.24, -0.2 + bob], [s * 0.42, 1.8 + bob]], '#e8c040', 0.05), line([[s * 0.27, 0.1 + bob], [s * 0.3, 0.3 + bob]], glow, 0.05));
+  p.push(ell(-0.55, -0.32 + bob, 0.42, 0.22, 0.25, erm), ell(0.55, -0.32 + bob, 0.42, 0.22, -0.25, erm));
+  if (!st.mode) for (const x of [-0.75, -0.45, 0.45, 0.75]) p.push(dot(x, -0.3 + bob, '#1a1a1a', 1));
+  for (const s of [-1, 1]) {
+    const hand = up ? [s * 1.25, -1.25] : [s * 1.2, 0.7 + bob];
+    p.push(poly([[s * 0.65, -0.25 + bob], [s * 1.05, -0.15 + bob], [hand[0] + s * 0.22, hand[1] + (up ? 0.45 : -0.05)], [hand[0] - s * 0.2, hand[1] + (up ? 0.55 : -0.25)]], robe), ...fingers(hand[0], hand[1], s, up));
+  }
+  if (!up) p.push(line([[1.3, -0.75 + bob], [1.3, 1.6 + bob]], wood, 0.09), ball(1.3, -0.9 + bob, 0.17, makeRamp(glow)), ...crown(1.3, -1.12 + bob, 0.16));
+  p.push(...skull(0, -0.78 + bob, 1.2), ...crown(0, -1.62 + bob, 0.6));
+  if (up) for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + (st.f ? 0.4 : 0); p.push(dot(Math.cos(a) * 1.9, -0.2 + Math.sin(a) * 1.6, GLOW[3], 1.8)); } // runes wheeling round him
+  return p;
+}
+const lichSprite = st => spr(`lich|${T}|${st.ph}|${st.eye || st.ph}|${st.mode}|${st.pose}|${st.f}`, () => primSprite(lichPrims(st), 4.6));
+function pxSkull(b) {
+  const ph = b.look || bossPhase(b), ice = iceOn();
+  const fr = G.fright > 0 && b.state === 'chase', flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const hit = b.inv > 0 && Math.floor(b.inv * 12) % 2 === 0;
+  const cut = G.state === 'phase' && b === G.boss && Math.floor(G.t * 8) % 2 === 0; // the cut-in: his eyes flicker between the old phase and the new
+  const mode = ice ? 'ice' : hit ? 'hit' : fr ? (flash ? 'flash' : 'fright') : '';
+  let pose = b === G.boss && G.spell.phase === 'chant' ? 'cast' : 'idle', shake = 0;
+  if (b.state === 'pile') pose = 'pile';
+  if (b.state === 'rise') { // pulling himself back together: flickering between the heap and standing, faster as he rises
+    const k = 1 - b.rt / SKULL_RISE;
+    pose = Math.floor(G.t * (6 + k * 14)) % 2 && k > 0.3 ? 'idle' : 'pile';
+    shake = Math.round(Math.sin(G.t * 40) * T * 0.08);
+  }
+  const f = G.chill > 0 ? 0 : Math.floor(G.t * (pose === 'cast' ? 6 : 2.5)) % 2;
+  const sp = lichSprite({ ph, eye: cut ? Math.max(1, ph - 1) : ph, mode, pose, f });
+  fbx.drawImage(sp, Math.round((b.x + 0.5) * T - camX - sp.width / 2) + shake, Math.round((b.y + 0.5) * T - camY - sp.height / 2));
+}
+// His death, still drawn in vector: rings bursting out, his bones flung everywhere, his skull spinning away.
 function drawSkull(b) {
-  const cx = b.x + 0.5, cy = b.y + 0.5, def = BOSSES.skull;
+  const cx = b.x + 0.5, cy = b.y + 0.5;
   if (b.state === 'dead') {
     const p = b.dead / 2.8;
     ctx.lineWidth = 0.14;
@@ -3319,38 +3395,7 @@ function drawSkull(b) {
     }
     for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + p, d = p * 7; drawBone(cx + Math.cos(a) * d, cy + Math.sin(a) * d + p * p * 3, a * 2 + p * 9, 1.3); }
     if (p < 0.5) drawSkullHead(cx, cy - 0.4 - p * 2, 1 - p, p * 6, '#ece6cf', '#ffffff', 1, false, false, false);
-    return;
   }
-  const ph = b.look || bossPhase(b), ice = iceOn();
-  const fr = G.fright > 0 && b.state === 'chase';
-  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
-  const hit = b.inv > 0 && Math.floor(b.inv * 12) % 2 === 0;
-  const cut = G.state === 'phase' && b === G.boss && Math.floor(G.t * 8) % 2 === 0;
-  const bone = ice ? '#bdf4ff' : hit ? '#ffffff' : fr ? (flash ? '#ffffff' : '#2121ff') : '#ece6cf';
-  const glow = cut ? def.colors[ph - 1] || '#ffffff' : def.colors[ph];
-  if (b.state === 'pile' || b.state === 'rise') {
-    const k = b.state === 'rise' ? 1 - b.rt / SKULL_RISE : 0, shake = b.state === 'rise' ? Math.sin(G.t * 40) * 0.08 : 0;
-    for (const [dx, dy, a] of [[-0.8, 1.0, 0.3], [0.7, 1.05, -0.4], [0, 1.2, 0.1], [-0.35, 0.8, -1.2], [0.4, 0.75, 1.1]]) drawBone(cx + dx + shake, cy + dy, a, 1.3, bone);
-    drawSkullHead(cx + shake, cy + 0.2 - k * 0.8, 0.72 + k * 0.28, 0.45 * (1 - k), bone, glow, ph, false, false, ice);
-    return;
-  }
-  if (b === G.boss && G.spell.phase === 'chant') { // casting: runes wheel around him
-    const k = G.spell.t / SPELL_CHANT;
-    ctx.strokeStyle = def.colors[3]; ctx.lineWidth = 0.1; ctx.globalAlpha = 0.5 + 0.5 * Math.sin(G.t * 20);
-    ctx.beginPath(); ctx.arc(cx, cy, 2 + k * 0.8, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = def.colors[3];
-    for (let i = 0; i < 6; i++) { const a = G.t * 3 + i * Math.PI / 3; ctx.fillRect(cx + Math.cos(a) * (2 + k * 0.8) - 0.12, cy + Math.sin(a) * (2 + k * 0.8) - 0.12, 0.24, 0.24); }
-    ctx.globalAlpha = 1;
-  }
-  ctx.strokeStyle = bone; ctx.lineWidth = 0.18; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(cx, cy + 0.1); ctx.lineTo(cx, cy + 1.4); ctx.stroke(); // spine
-  for (let i = 0; i < 3; i++) { // ribs
-    const y = cy + 0.45 + i * 0.3, w = 0.8 - i * 0.15;
-    ctx.beginPath(); ctx.moveTo(cx - w, y + 0.12); ctx.quadraticCurveTo(cx, y - 0.2, cx + w, y + 0.12); ctx.stroke();
-  }
-  const wave = G.chill > 0 ? 0 : Math.sin(G.t * 6) * 0.2, up = b === G.boss && G.spell.phase === 'chant' ? -1.3 : 0;
-  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 0.75, cy + 0.4); ctx.lineTo(cx + s * 1.3, cy + 0.95 + s * wave + up); ctx.lineTo(cx + s * 1.5, cy + 0.35 + s * wave + up * 1.4); ctx.stroke(); }
-  drawSkullHead(cx, cy - 0.55, 1, 0, bone, glow, ph, fr, flash, ice);
 }
 // The cloud cover over quarters that are about to rebuild. Puffs drift in from the nearest edge of the
 // quarter, outer ones first, until they close over it; they hold while the maze changes underneath,
@@ -3920,8 +3965,6 @@ function drawBanner() {
 }
 
 // ---------- Story screens ----------
-// Draws with G.fright forced on, so sprites show their blue frightened face.
-function withFright(on, fn) { const f = G.fright; if (on) G.fright = 5; fn(); G.fright = f; }
 function roundRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -5052,7 +5095,6 @@ function drawPortrait(who, mood, typing, x, y, s) {
 // ---------- Characters off the playfield ----------
 // Any of the cast as a pixel sprite, t pixels to a tile: menus, the tower, the cast screen and the
 // ending draw them at a screen tile scale of k (t = k * UNIT).
-const vecChars = {};
 function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
   const sp = SPEAKERS[who], scared = mood === 'scared', frame = Math.floor(G.t * 4) % 2;
   if (who === 'PAC') return withT(t, () => pacSprite(face.a, pacMouth(open)));
@@ -5071,18 +5113,8 @@ function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
     return withT(Math.round(t * 0.5), () => kingSprite(ph, scared ? '#2121ff' : BOSS_COLORS[ph], frame, li, scared ? 'fright' : ''));
   }
   if (who === 'BLOB') return blobSprite(Math.round(t * 0.9), Math.floor(G.t * 4) % BLOB_FRAMES, scared ? 'fright' : '', mood === 'angry' ? 3 : 1, face.x, face.y, '');
-  // Not redrawn yet: the vector drawing at this size, hardened into pixels.
-  const size = Math.round(t * 2.4) + 2, key = `${who}|${size}`, c = vecChars[key] || (vecChars[key] = mkCanvas(size, size, true)), v = c.g;
-  v.setTransform(1, 0, 0, 1, 0, 0); v.clearRect(0, 0, size, size);
-  v.setTransform(t, 0, 0, t, size / 2, size / 2);
-  if (who === 'SKULL') { v.scale(0.5, 0.5); v.translate(0, 0.45); }
-  const at = { x: -0.5, y: -0.5 }, o = ctx; ctx = v;
-  withFright(scared, () => {
-    if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: scared ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
-  });
-  ctx = o;
-  hardenCanvas(c);
-  return c;
+  if (who === 'SKULL') return withT(Math.round(t * 0.5), () => lichSprite({ ph: mood === 'angry' ? 3 : 1, mode: scared ? 'fright' : '', pose: scared ? 'pile' : 'idle', f: frame }));
+  return null;
 }
 // Draws an image on the main canvas centred on (cx, cy) in screen tiles, on the shared pixel grid.
 function drawImgPx(img, cx, cy, top) {
@@ -9792,11 +9824,12 @@ function renderWorld() {
         for (const cp of G.centipedes) vec(drawCentipede, cp);
         for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
       }
-      if (G.boss && (G.boss.kind === 'skull' || G.boss.state === 'dead')) vec(drawBoss, G.boss);
+      if (G.boss && G.boss.state === 'dead') vec(drawBoss, G.boss);
       if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
       vecEnd();
     }
     if (showEnemies) { pxDrops(); for (const g of G.gargoyles) pxGargoyle(g); }
+    if (G.boss && G.boss.kind === 'skull' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) pxSkull(G.boss);
     if (G.boss && G.boss.kind !== 'skull' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) (G.boss.kind === 'king' ? pxKing : pxBlob)(G.boss);
     if (showEnemies) {
       for (const m of G.minions) pxGhost({ ...m, frightened: true, eaten: false });
