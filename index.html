@@ -3075,7 +3075,6 @@ function drawSlime(s) {
 }
 function drawBoss(b) {
   if (b.kind === 'blob') { drawBlob(b); return; }
-  if (b.kind === 'skull') { drawSkull(b); return; }
   const cx = b.x + 0.5, cy = b.y + 0.5, r = 1.55;
   if (b.state === 'dead') {
     const p = b.dead / 2.8;
@@ -3284,28 +3283,6 @@ function drawBone(cx, cy, ang, s = 1, color = '#f2ecd6') {
   ctx.restore();
 }
 // The Skeleton King's skull, crowned, drawn around (cx, cy) at scale k and tilted by tilt.
-function drawSkullHead(cx, cy, k, tilt, bone, glow, ph, fr, flash, ice) {
-  ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt); ctx.scale(k, k);
-  ctx.fillStyle = bone;
-  ctx.beginPath(); ctx.arc(0, -0.1, 0.95, 0, Math.PI * 2); ctx.fill();
-  ctx.fillRect(-0.55, 0.45, 1.1, 0.5);
-  if (fr) scaredFace(0, 0.05, 1.4, flash);
-  else {
-    ctx.fillStyle = '#1a0010';
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * 0.38, -0.05, 0.28, 0.32, 0, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = glow;
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(s * 0.38, -0.02, 0.11, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = '#1a0010';
-    ctx.beginPath(); ctx.moveTo(-0.12, 0.42); ctx.lineTo(0.12, 0.42); ctx.lineTo(0, 0.2); ctx.fill();
-    for (let i = 0; i < 5; i++) ctx.fillRect(-0.47 + i * 0.22, 0.62, 0.05, 0.3);
-    if (ph >= 2) { // furious brow ridges
-      ctx.strokeStyle = '#1a0010'; ctx.lineWidth = 0.12;
-      for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 0.66, -0.46); ctx.lineTo(s * 0.12, -0.3); ctx.stroke(); }
-    }
-  }
-  drawCrown(0, -1.18, 0.72, ice ? '#e6fbff' : '#ffd23f');
-  ctx.restore();
-}
 // The Skeleton King, a sorcerer-king in pixels: a tall collar standing up behind his crowned skull, a
 // purple robe (crimson in his last phase) open down the front on his ribs, an ermine stole, bony hands,
 // and an orb sceptre glowing in the phase colour, like his eyes. He bobs as he floats. Casting, he
@@ -3339,11 +3316,13 @@ function lichPrims(st) {
     return p;
   };
   const p = [], bob = st.f ? 0.07 : 0, up = st.pose === 'cast';
-  if (st.pose === 'pile') {
+  if (st.pose === 'head') return [...skull(0, 0.3, 1.2), ...crown(0, -0.54, 0.6)];
+  if (st.pose === 'crown') return crown(0, 0, 0.6);
+  if (st.pose === 'pile' || st.pose === 'robe') {
     p.push(poly([[-1.6, 1.8], [-1.2, 1.1], [-0.4, 0.95], [0.5, 1.15], [1.3, 1.0], [1.65, 1.8]], robe));
     for (const [x, y, a] of [[-0.9, 1.4, 0.4], [0.8, 1.3, -0.5], [0.1, 1.55, 0.1]]) p.push(boneLine([[x - Math.cos(a) * 0.36, y - Math.sin(a) * 0.36], [x + Math.cos(a) * 0.36, y + Math.sin(a) * 0.36]], 0.16));
     p.push(line([[1.3, 1.5], [0.5, 1.75]], wood, 0.09), ball(1.38, 1.47, 0.15, makeRamp(glow)));
-    return [...p, ...skull(0, 0.7, 0.9), ...crown(-0.15, -0.12, 0.45)];
+    return st.pose === 'robe' ? p : [...p, ...skull(0, 0.7, 0.9), ...crown(-0.15, -0.12, 0.45)];
   }
   p.push(poly([[-0.75, -0.45 + bob], [-1.0, -1.45 + bob], [-0.42, -0.8 + bob], [0.42, -0.8 + bob], [1.0, -1.45 + bob], [0.75, -0.45 + bob]], robe)); // the collar, standing up behind his head
   const hem = [[-1.45, 1.9], [-1.1, 1.62], [-0.8, 1.95], [-0.45, 1.66], [0, 1.95], [0.45, 1.66], [0.8, 1.95], [1.1, 1.62], [1.45, 1.9]];
@@ -3381,20 +3360,51 @@ function pxSkull(b) {
   const sp = lichSprite({ ph, eye: cut ? Math.max(1, ph - 1) : ph, mode, pose, f });
   fbx.drawImage(sp, Math.round((b.x + 0.5) * T - camX - sp.width / 2) + shake, Math.round((b.y + 0.5) * T - camY - sp.height / 2));
 }
-// His death, still drawn in vector: rings bursting out, his bones flung everywhere, his skull spinning away.
-function drawSkull(b) {
-  const cx = b.x + 0.5, cy = b.y + 0.5;
-  if (b.state === 'dead') {
-    const p = b.dead / 2.8;
-    ctx.lineWidth = 0.14;
-    for (let k = 0; k < 3; k++) {
-      const q = p * 1.4 - k * 0.2;
-      if (q <= 0 || q > 1) continue;
-      ctx.strokeStyle = ['#ffd86b', '#ece6cf', '#ffffff'][k];
-      ctx.beginPath(); ctx.arc(cx, cy, 0.5 + q * 6, 0, Math.PI * 2); ctx.stroke();
-    }
-    for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + p, d = p * 7; drawBone(cx + Math.cos(a) * d, cy + Math.sin(a) * d + p * p * 3, a * 2 + p * 9, 1.3); }
-    if (p < 0.5) drawSkullHead(cx, cy - 0.4 - p * 2, 1 - p, p * 6, '#ece6cf', '#ffffff', 1, false, false, false);
+// Primitives turned by ang and scaled by k about the sprite's centre, so a spinning head stays pixel art.
+function turnPrims(prims, ang, k) {
+  const c = Math.cos(ang), sn = Math.sin(ang), at = (x, y) => [(x * c - y * sn) * k, (x * sn + y * c) * k];
+  return prims.map(q => {
+    if (q.t === 'ell') { const [x, y] = at(q.x, q.y); return { ...q, x, y, rx: q.rx * k, ry: q.ry * k, rot: q.rot + ang }; }
+    if (q.t === 'line') return { ...q, pts: q.pts.map(([x, y]) => at(x, y)), w: q.w * k };
+    if (q.t === 'dot') { const [x, y] = at(q.x, q.y); return { ...q, x, y, pr: q.pr * k }; }
+    return poly(q.pts.map(([x, y]) => at(x, y)), q.ramp);
+  });
+}
+const ANG16 = a => ((Math.round(a / (Math.PI / 8)) % 16) + 16) % 16;
+const lichHeadSprite = (ai, ki) => spr(`lichhead|${T}|${ai}|${ki}`, () => primSprite(turnPrims(lichPrims({ ph: 3, mode: '', pose: 'head', f: 0 }), ai * Math.PI / 8, 0.3 + ki * 0.14), 2.6));
+const lichCrownSprite = ai => spr(`lichcrown|${T}|${ai}`, () => primSprite(turnPrims(lichPrims({ ph: 3, mode: '', pose: 'crown', f: 0 }), ai * Math.PI / 8, 1), 1.6));
+const lichBoneSprite = ai => spr(`lichbone|${T}|${ai}`, () => {
+  const r = makeRamp('#ece6cf');
+  return primSprite(turnPrims([line([[-0.3, 0], [0.3, 0]], '#ece6cf', 0.13), ball(-0.33, -0.08, 0.09, r), ball(-0.33, 0.08, 0.09, r), ball(0.33, -0.08, 0.09, r), ball(0.33, 0.08, 0.09, r)], ai * Math.PI / 8, 1.3), 1.2);
+});
+// His death: he flashes and shakes; his robe crumples empty and fades while his bones burst out and his
+// colours ripple away in rings; his crowned skull flies up spinning and bursts into dust, his crown
+// clatters down onto the floor, and a wisp of him drifts up and is gone.
+function pxSkullDeath(b) {
+  const t = b.dead, p = t / 2.8, cx = b.x + 0.5, cy = b.y + 0.5, S = (x, y) => [Math.round(x * T - camX), Math.round(y * T - camY)];
+  const put = (sp, x, y, a = 1) => { const [sx, sy] = S(x, y); fbx.globalAlpha = a; fbx.drawImage(sp, sx - (sp.width >> 1), sy - (sp.height >> 1)); fbx.globalAlpha = 1; };
+  if (t < 0.35) { put(lichSprite({ ph: 3, mode: Math.floor(t * 20) % 2 ? 'hit' : '', pose: 'idle', f: 0 }), cx + Math.sin(t * 60) * 0.08, cy); return; }
+  const cols = BOSSES.skull.colors;
+  for (let k = 0; k < 3; k++) { // his colours, rippling away
+    const q = p * 1.4 - k * 0.2;
+    if (q <= 0 || q > 1) continue;
+    const [sx, sy] = S(cx, cy), r = (0.5 + q * 6) * T, n = Math.ceil(r * 1.2);
+    fbx.globalAlpha = 1 - q;
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; pr(Math.round(sx + Math.cos(a) * r), Math.round(sy + Math.sin(a) * r), 2, 2, [cols[1], cols[2], cols[3]][k]); }
+    fbx.globalAlpha = 1;
+  }
+  put(lichSprite({ ph: 3, mode: '', pose: 'robe', f: 0 }), cx, cy, Math.max(0, 1 - (p - 0.15) * 1.4)); // the empty robe, fading
+  if (p > 0.1 && p < 0.9) for (let i = 0; i < 7; i++) { // a wisp of him, drifting up
+    const k = (p - 0.1) / 0.8, [sx, sy] = S(cx + Math.sin(k * 9 + i) * 0.25, cy + 0.6 - k * 4 - i * 0.18);
+    fbx.globalAlpha = (1 - k) * (1 - i / 8); pr(sx, sy, 2, 2, i ? '#c9a0ff' : '#ffffff');
+  }
+  fbx.globalAlpha = 1;
+  for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + p, d = p * 7; put(lichBoneSprite(ANG16(a * 2 + p * 9)), cx + Math.cos(a) * d, cy + Math.sin(a) * d + p * p * 3); }
+  if (p < 0.5) put(lichHeadSprite(ANG16(p * 6), Math.round((1 - p) * 5)), cx, cy - 0.4 - p * 2); // his head, spinning away
+  else { // ...bursts into dust; the crown drops and bounces to rest
+    if (!b.dusted) { b.dusted = true; fxBurst(cx, cy - 1.4, '#ece6cf', 26, 4, 0.8); fxBurst(cx, cy - 1.4, '#c9a0ff', 12, 3, 0.9); SFX.crumble(); }
+    const k = Math.min(1, (p - 0.5) / 0.35), fall = k < 0.7 ? (k / 0.7) ** 2 : 1 - Math.sin((k - 0.7) / 0.3 * Math.PI) * 0.12;
+    put(lichCrownSprite(k < 1 ? ANG16(k * 7) : 0), cx + k * 0.6, cy - 1.4 + fall * 2.6);
   }
 }
 // The cloud cover over quarters that are about to rebuild. Puffs drift in from the nearest edge of the
@@ -9824,12 +9834,12 @@ function renderWorld() {
         for (const cp of G.centipedes) vec(drawCentipede, cp);
         for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
       }
-      if (G.boss && G.boss.state === 'dead') vec(drawBoss, G.boss);
+      if (G.boss && G.boss.state === 'dead' && G.boss.kind !== 'skull') vec(drawBoss, G.boss);
       if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
       vecEnd();
     }
     if (showEnemies) { pxDrops(); for (const g of G.gargoyles) pxGargoyle(g); }
-    if (G.boss && G.boss.kind === 'skull' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) pxSkull(G.boss);
+    if (G.boss && G.boss.kind === 'skull' && (showEnemies || G.state === 'clear')) (G.boss.state === 'dead' ? pxSkullDeath : pxSkull)(G.boss);
     if (G.boss && G.boss.kind !== 'skull' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) (G.boss.kind === 'king' ? pxKing : pxBlob)(G.boss);
     if (showEnemies) {
       for (const m of G.minions) pxGhost({ ...m, frightened: true, eaten: false });
