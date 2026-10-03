@@ -983,6 +983,8 @@ const SFX = {
   wind() { beep(180, 420, 1.2, 'triangle', 0.05); beep(240, 160, 1.6, 'sine', 0.06, 0.4); beep(320, 520, 0.9, 'triangle', 0.03, 0.9); },
   growl() { beep(70, 50, 0.8, 'sawtooth', 0.09); beep(95, 60, 0.6, 'square', 0.04, 0.25); beep(60, 45, 0.7, 'sawtooth', 0.07, 0.6); },
   squeak() { beep(2400, 3200, 0.05, 'square', 0.03); beep(2800, 2200, 0.05, 'square', 0.025, 0.07); },
+  bong(f = 392, d = 0) { beep(f, f * 0.995, 2.4, 'triangle', 0.1, d); beep(f * 2.01, f * 2, 1.4, 'sine', 0.04, d); beep(f / 2, f / 2, 2.8, 'sine', 0.07, d); },
+  flap() { for (let i = 0; i < 5; i++) beep(500 + (i % 2) * 250, 260, 0.04, 'triangle', 0.035, i * 0.045); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
@@ -1091,7 +1093,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -5332,6 +5334,7 @@ const themeFor = (stage, lv = 0) => {
   if (lv && stage === 6) return THEMES[`6-${lv}`] || (THEMES[`6-${lv}`] = floodTheme(lv));
   if (lv && stage === 7) return THEMES[`7-${lv}`] || (THEMES[`7-${lv}`] = cryptTheme(lv));
   if (lv && stage === 8) return THEMES['8-1'] || (THEMES['8-1'] = sewerTheme());
+  if (lv && stage === 9) return THEMES[`9-${lv}`] || (THEMES[`9-${lv}`] = belfryTheme(lv));
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 };
 const curTheme = () => themeFor(G.cfg.stage, G.lvIndex >= ROOF ? 0 : G.cfg.lv);
@@ -7991,6 +7994,437 @@ function sewPost() {
   }
 }
 
+// ---------- The Belfry (stage 9) ----------
+// 11F-13F, the first of the sky floors, where the bells haven't rung in 300 years: oak boards under
+// limestone walls streaked by the rain, bells hung from their beams, louvres letting the moonlight in,
+// bell ropes, lanterns, carved grotesques and pigeons everywhere. Every so often the wind gets up: a
+// cloud crosses the moon, feathers blow through, the ropes and bells swing. A bell shivers when a
+// gargoyle creeps past it, and the grotesques' eyes catch red while any gargoyle is moving. Clear the
+// floor and the bells finally ring. The ghost house hangs the great bell, behind a wooden gate.
+// 11F is the bell chamber, 12F the loft (timber, straw, the clock's gears), 13F the roof in a storm.
+const BELFRY_PLAQUES = {
+  1: ['SILENT SINCE 1724', 'DO NOT RING', 'STATUES DO NOT MOVE'],
+  2: ['BELL LOFT', 'MIND THE ROPES', 'NO PIGEONS PLEASE'],
+  3: ['DO NOT FEED THE GARGOYLES', 'BEWARE OF THE DOG', 'WINDY'],
+};
+function belfryTheme(lv) {
+  const loft = lv === 2, perch = lv === 3;
+  const P = Object.fromEntries(Object.entries({
+    oakA: '#3e2e22', oakB: '#4a3628', seam: '#1a120c', nail: '#5e5650', straw: '#a88a3a', strawHi: '#d0b05a', pit: '#2a1e16',
+    leadA: '#3a4250', leadB: '#424a5a', seamHi: '#6a7488', seamLo: '#20262e', puddle: '#141c2c', glint: '#a8b8e0', moss: '#3a4a2e',
+    stone: '#6a6a78', stoneHi: '#7e7e8c', joint: '#2a2a34', lichen: '#7a8a46', lichenHi: '#a8a85a', streak: '#3e4250',
+    timber: '#4a3424', timberHi: '#5e4430', timberLo: '#2e2016', gap: '#140e0a', lip: '#0a0a10', base: '#1a1a22',
+    slab: '#4a4a58', slabLine: '#2e2e3a', dropping: '#d8d8cc', beam: '#3a2a1c', beamLine: '#22180e',
+    rim: '#a8acc8', rimF: '#c8ccdc', rimR: '#6a6e88', ring2: '#4e5068', ring3: '#3a3c50',
+    wRim: '#8a6a48', wRimF: '#a8845a', wRimR: '#5a4230', wRing2: '#3e2c1e', wRing3: '#2e2016',
+  }).map(([k, v]) => [k, hex(v)]));
+  const R = loft ? [P.wRim, P.wRimF, P.wRimR, P.wRing2, P.wRing3] : [P.rim, P.rimF, P.rimR, P.ring2, P.ring3];
+  return {
+    id: 'belfry' + lv, void: '#04050c', map: '#8a8fb8', runner: false, decor: true, belfry: true, dust: !perch, storm: perch, lv, loft, perch,
+    ambient: perch ? [0.42, 0.46, 0.62] : loft ? [0.54, 0.5, 0.58] : [0.48, 0.5, 0.66], vignette: 0.5,
+    grade: loft ? ['#8a7ab8', 0.1] : ['#5a6ab8', 0.12],
+    floor(x, y, t) {
+      if (t.house) return y % 6 === 0 ? P.seam : mulc(P.pit, 0.85 + vnoise(x / 6, y / 2) * 0.3); // the bell pit
+      if (perch) { // lead sheets on the roof walk: standing seams, moss, rain pooling in the dips
+        const sx = x % 12;
+        let col = sx === 0 ? P.seamHi : sx === 1 ? P.seamLo : mulc(mixc(P.leadA, P.leadB, hash2(x / 12 | 0, y / 24 | 0)), 0.88 + vnoise(x / 5, y / 5) * 0.2);
+        const pd = vnoise(x / 9 + 5, y / 7) - 0.63;
+        if (pd > 0 && sx > 1) col = hash2(x, y) > 0.97 ? P.glint : mixc(col, P.puddle, Math.min(0.85, pd * 6));
+        else if (vnoise(x / 4 + 20, y / 4) > 0.72) col = mixc(col, P.moss, 0.5);
+        return col;
+      }
+      // Old oak boards nailed at the joints; straw scattered through the loft.
+      const row = (y / 6) | 0, xs = x + ((hash2(row, 3) * 36) | 0), lx = xs % 36;
+      if (y % 6 === 0 || lx === 0) return P.seam;
+      if (lx === 2 && y % 6 === 3) return P.nail;
+      let col = mulc(mixc(P.oakA, P.oakB, hash2(xs / 36 | 0, row)), 0.86 + vnoise(x / 10, y / 1.2) * 0.22);
+      if (loft && vnoise(x / 6 + 7, y / 6) > 0.7 && hash2(x >> 1, y) > 0.72) col = hash2(x, y + 1) > 0.5 ? P.strawHi : P.straw;
+      return col;
+    },
+    face(x, y, v, F, edge) {
+      let col;
+      if (v === 0) col = P.lip;
+      else if (v === F - 1) col = P.base;
+      else if (loft && F >= 7) { // board-and-batten timber with a rail across the middle
+        const lx = x % 6, mid = F >> 1;
+        col = lx === 0 ? P.gap : lx === 1 ? P.timberHi : mulc(P.timber, 0.85 + vnoise(x / 2, y / 6) * 0.3);
+        if (v === mid) col = P.timberHi; else if (v === mid + 1) col = P.timberLo;
+      } else { // limestone blocks, lichen and the rain's streaks
+        const br = ((v - 1) / 3) | 0, bx = x + (br & 1) * 6;
+        col = (v - 1) % 3 === 2 || bx % 12 === 0 ? P.joint : mulc(mixc(P.stone, P.stoneHi, hash2(bx / 12 | 0, br + (y / 30 | 0) * 7)), 0.85 + vnoise(x / 3, y / 3) * 0.25);
+        if (hash2(x, 55) > (perch ? 0.8 : 0.9) && v < F * 0.75) col = mixc(col, P.streak, 0.6);
+        const li = vnoise(x / 4 + 3, y / 3);
+        if (li > 0.74) col = mixc(col, li > 0.8 ? P.lichenHi : P.lichen, 0.6);
+        if (perch) col = mulc(col, 0.86); // soaked
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // stone copings (timber beams in the loft), lichened, and the pigeons have been here
+      if (ring === 1) return side === 'front' ? R[1] : side === 'right' ? R[2] : R[0];
+      if (ring === 2) return R[3];
+      if (ring === 3) return R[4];
+      let col;
+      if (loft) col = y % 6 === 0 ? P.beamLine : mulc(P.beam, 0.85 + vnoise(x / 8, y / 1.5) * 0.25);
+      else {
+        col = x % 14 === 0 || y % 14 === 0 ? P.slabLine : mulc(P.slab, 0.88 + vnoise(x / 5, y / 5) * 0.22);
+        const li = vnoise(x / 3 + 40, y / 3);
+        if (li > 0.76) col = mixc(col, li > 0.82 ? P.lichenHi : P.lichen, 0.45);
+        if (perch && vnoise(x / 6 + 60, y / 6) > 0.66) col = mixc(col, P.puddle, 0.5);
+      }
+      if (hash2(x * 3, y) > 0.992) col = P.dropping;
+      return col;
+    },
+    pick(big, r, roll) {
+      if (!big) return perch ? (roll < 0.5 ? 'grotesque' : 'nest') : loft ? (roll < 0.55 ? 'rope' : 'nest') : (roll < 0.5 ? 'rope' : 'nest');
+      if (loft) return roll < 0.26 ? 'bell' : roll < 0.44 ? 'rope' : roll < 0.6 ? 'gears' : roll < 0.74 ? 'hay' : roll < 0.88 ? 'lantern' : 'nest';
+      if (perch) return roll < 0.34 ? 'grotesque' : roll < 0.52 ? 'lantern' : roll < 0.7 ? 'nest' : roll < 0.84 ? 'bell' : 'louvre';
+      return roll < 0.24 ? 'louvre' : roll < 0.46 ? 'bell' : roll < 0.6 ? 'rope' : roll < 0.74 ? 'lantern' : roll < 0.86 ? 'nest' : 'grotesque';
+    },
+    bake(L, g) {
+      // Notices carved into the widest tops (painted on the loft's beams).
+      const lines = BELFRY_PLAQUES[lv], picked = [];
+      for (const s of wideTops(L)) {
+        if (picked.length >= lines.length) break;
+        const txt = lines[picked.length], w = tinyW(txt);
+        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        picked.push(s);
+        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        if (loft) { tinyText(g, txt, tx + 1, ty + 1, '#140e0a'); tinyText(g, txt, tx, ty, '#c8b890'); }
+        else { tinyText(g, txt, tx, ty + 1, '#7a7a8a'); tinyText(g, txt, tx, ty, '#1a1a24'); }
+      }
+      // Feathers and droppings on the floor, tufts of straw in the loft, wet leaves on the roof.
+      L.pigeonSpots = [];
+      for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
+        const i = r * L.w + c;
+        if (!L.reach[i] || L.house[i]) continue;
+        if (Math.hypot(c - meta.pac.x, r - meta.pac.y) > 4 && hash2(c * 13 + lv, r * 3) < 0.1) L.pigeonSpots.push({ x: c, y: r, k: hash2(c, r * 17) });
+        if (hash2(c * 7 + lv, r * 5) > (loft ? 0.3 : 0.18) || Math.hypot(c - meta.pac.x, r - meta.pac.y) < 2) continue;
+        const x = c * L.T + 3 + ((hash2(c, r + 2) * (L.T - 8)) | 0), y = r * L.T + 3 + ((hash2(c + 2, r) * (L.T - 8)) | 0), k = hash2(c, r + 9);
+        if (k < 0.4) { // a feather
+          g.fillStyle = '#b8bcc8'; g.fillRect(x, y, 1, 1); g.fillRect(x + 1, y + 1, 2, 1); g.fillRect(x + 3, y + 2, 1, 1);
+          g.fillStyle = '#e0e2ea'; g.fillRect(x + 1, y, 1, 1); g.fillRect(x + 2, y + 2, 1, 1);
+        } else if (k < 0.75) { // a dropping
+          g.fillStyle = '#d8d8cc'; g.fillRect(x, y, 2, 1); g.fillRect(x + 1, y - 1, 1, 1);
+          g.fillStyle = '#6a6a62'; g.fillRect(x + 1, y, 1, 1);
+        } else if (loft) {
+          g.fillStyle = '#c8a84a'; g.fillRect(x, y, 4, 1); g.fillRect(x + 2, y + 1, 3, 1); g.fillStyle = '#8a6a24'; g.fillRect(x + 1, y + 1, 1, 1);
+        } else if (perch) {
+          g.fillStyle = '#6a4a26'; g.fillRect(x, y, 3, 2); g.fillStyle = '#8a6a34'; g.fillRect(x + 1, y, 1, 1);
+        }
+      }
+      L.pigeonSpots.sort((a, b) => a.k - b.k);
+    },
+  };
+}
+
+// Per-attempt state for the belfry, reset with the level.
+const bel = { gust: { next: 8, t: 0, dir: 1 }, moon: 1, toll: 0, tolled: false, pigeons: [], init: false, landT: 6, flapT: 0, birds: [] };
+function belReset() { Object.assign(bel, { gust: { next: 8, t: 0, dir: 1 }, moon: 1, toll: 0, tolled: false, pigeons: [], init: false, landT: 6, flapT: 0, birds: [] }); }
+const BEL_GUST = 3, BEL_TOLL = 4.5, PIGEONS = { 1: 4, 2: 7, 3: 3 };
+const windK = () => bel.gust.t > 0 ? Math.sin((1 - bel.gust.t / BEL_GUST) * Math.PI) : 0;
+// How far a bell is swinging right now: a sway in the wind, a shiver as a gargoyle creeps by, and a full swing when they toll.
+function belSwing(seed, shiver) {
+  let a = Math.sin(G.t * 0.9 + seed * 6) * (0.05 + windK() * 0.25);
+  if (shiver) a += Math.sin(G.t * 40 + seed * 9) * 0.09;
+  if (bel.toll > 0) a += Math.sin((BEL_TOLL - bel.toll) * 3.4 + seed) * 0.55 * Math.min(1, bel.toll);
+  return a;
+}
+// A bronze bell hung from its headstock, front on; the swing shears it sideways, and the clapper lags behind.
+function belBell(cx, top, big, ang) {
+  const prof = big ? [3, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 9, 9, 10, 11, 12, 13] : [1, 2, 2, 2, 3, 3, 4, 5], sh = Math.sin(ang), n = prof.length;
+  pr(cx - (big ? 5 : 2), top - (big ? 2 : 1), big ? 11 : 5, big ? 2 : 1, '#2a1e12');
+  prof.forEach((hw, j) => {
+    const ox = Math.round(sh * (j + 1)), y = top + j, lip = j === n - 1;
+    pr(cx - hw + ox, y, hw * 2 + 1, 1, lip ? '#8a6420' : '#b8862e');
+    pr(cx - hw + ox, y, 1, 1, '#e8c060');
+    if (j > 0) pr(cx - hw + ox + 1, y, 1, 1, '#d8a848');
+    pr(cx + hw + ox, y, 1, 1, '#5a3a14');
+    if (!lip && j > 1 && hash2(j, cx & 7) > 0.6) pr(cx + ox + 1 + (j & 1), y, 1, 1, '#4a8a74'); // verdigris
+    if (big && (j === 3 || j === n - 4)) pr(cx - hw + ox + 2, y, hw * 2 - 3, 1, '#8a6420'); // the bands cast round it
+  });
+  pr(cx + Math.round(sh * n * 0.4), top + n, 1, big ? 2 : 1, '#2a1a0a');
+}
+function belUpdate(dt, theme) {
+  if (!dt) return;
+  const Gu = bel.gust, live = G.state === 'play';
+  if (Gu.t > 0) Gu.t = Math.max(0, Gu.t - dt);
+  if ((Gu.next -= dt) <= 0) { Gu.next = 11 + Math.random() * 7; Gu.t = BEL_GUST; Gu.dir = Math.random() < 0.5 ? -1 : 1; if (live) SFX.wind(); }
+  const wk = windK();
+  bel.moon = 1 - wk * 0.4; // a cloud crosses the moon
+  if (wk > 0.2 && Math.random() < dt * 30 * wk) { // feathers (leaves, on the roof) blown through
+    const x = Gu.dir > 0 ? camX / T - 0.5 : (camX + VIEW_W) / T + 0.5, t = 2.4;
+    parts.push({ x, y: (camY + Math.random() * VIEW_H) / T, vx: Gu.dir * (6 + Math.random() * 3), vy: (Math.random() - 0.5) * 1.2, t, t0: t, col: theme.perch ? (Math.random() < 0.5 ? '#8a6a3a' : '#5a7a3a') : Math.random() < 0.6 ? '#d8dae2' : '#9a9eb0', g: 0 });
+  }
+  // The bells finally ring when the floor's cleared.
+  if (G.state === 'clear' && !bel.tolled) { bel.tolled = true; bel.toll = BEL_TOLL; [0, 1.1, 2.2].forEach((d, i) => SFX.bong([392, 330, 262][i], d)); }
+  if (G.state !== 'clear') bel.tolled = false;
+  bel.toll = Math.max(0, bel.toll - dt);
+  // A bell shivers, and sheds dust off its beam, while a gargoyle creeps by underneath.
+  for (const d of art.decor) {
+    if (d.kind === 'bell') {
+      d.shiver = G.gargoyles.some(g => g.moving && Math.hypot(g.x + 0.5 - d.x / T, g.y + 0.5 - d.y1 / T) < 7);
+      if (d.shiver && Math.random() < dt * 6) parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.6, y: (d.y0 + 2) / T, vx: 0, vy: 0.6, t: 0.8, t0: 0.8, col: '#8a8678', g: 2 });
+    } else if (d.kind === 'nest') { // the pigeon on the nest takes off if you come close
+      if (d.gone > 0) { d.gone -= dt; continue; }
+      if (live && Math.hypot(pac.x + 0.5 - d.x / T, pac.y + 0.5 - d.y1 / T) < 2.2) {
+        d.gone = 7 + Math.random() * 5;
+        belFlush(d.x / T, (d.y1 - 4) / T, pac.x + 0.5 < d.x / T ? 1 : -1);
+      }
+    } else if (d.kind === 'grotesque' && theme.perch && Math.random() < dt * 4) { // rain pouring out of its mouth
+      parts.push({ x: d.x / T + (Math.random() - 0.5) * 0.2, y: d.y1 / T + 0.35, vx: (Math.random() - 0.5) * 1.2, vy: -1, t: 0.3, t0: 0.3, col: '#a8c0e0', g: 8 });
+    }
+  }
+  // Pigeons strutting about the floor: they take off when anyone comes near, and drift back later.
+  const spots = art.pigeonSpots || [];
+  if (!bel.init) { bel.init = true; bel.pigeons = spots.slice(0, PIGEONS[theme.lv]).map((s, i) => ({ x: s.x + 0.5, y: s.y + 0.6, face: i % 2 ? 1 : -1, peck: Math.random() * 3, state: 'ground' })); }
+  const threats = [...G.ghosts.filter(g => g.mode === 'active' && !g.eaten), ...G.gargoyles.filter(g => g.moving), ...G.hounds.filter(h => h.state === 'hunt'), ...G.spiders.filter(s => s.state === 'active')];
+  for (const p of bel.pigeons) {
+    if (p.state === 'ground') {
+      if ((p.peck -= dt) < -0.35) { p.peck = 1 + Math.random() * 2.5; if (Math.random() < 0.3) p.face = -p.face; }
+      const near = Math.hypot(pac.x + 0.5 - p.x, pac.y + 0.5 - p.y) < 2.3 || threats.some(e => Math.hypot(e.x + 0.5 - p.x, e.y + 0.5 - p.y) < 1.6);
+      if (live && near) { p.state = 'gone'; belFlush(p.x, p.y - 0.3, pac.x + 0.5 < p.x ? 1 : -1); }
+    } else if (p.state === 'land') {
+      p.t += dt;
+      if (p.t >= 1.2) { p.state = 'ground'; p.peck = 1; }
+    }
+  }
+  if (bel.pigeons.some(p => p.state === 'gone') && (bel.landT -= dt) <= 0) { // one flutters back down somewhere quiet
+    bel.landT = 6 + Math.random() * 4;
+    const free = spots.filter(s => Math.hypot(s.x - pac.x, s.y - pac.y) > 6 && !bel.pigeons.some(p => p.state !== 'gone' && Math.abs(p.x - s.x - 0.5) < 1 && Math.abs(p.y - s.y - 0.6) < 1));
+    const s = free[Math.floor(Math.random() * free.length)], p = bel.pigeons.find(p => p.state === 'gone');
+    if (s && p) { const face = Math.random() < 0.5 ? -1 : 1; Object.assign(p, { x: s.x + 0.5, y: s.y + 0.6, face, state: 'land', t: 0 }); }
+  }
+  for (const b of bel.birds) { b.t += dt; b.x += b.vx * dt; b.y += b.vy * dt; b.vy -= 1.5 * dt; }
+  bel.birds = bel.birds.filter(b => b.t < 2.5);
+  bel.flapT = Math.max(0, bel.flapT - dt);
+  // The roof in the rain: drops splashing on the lead all around.
+  if (theme.perch) for (let i = 0; i < 2; i++) if (Math.random() < dt * 14) {
+    const c = Math.floor((camX + Math.random() * VIEW_W) / T), r = Math.floor((camY + Math.random() * VIEW_H) / T);
+    if (r >= 0 && r < H && c >= 0 && c < W && M[r][c] !== '#') parts.push({ x: c + Math.random(), y: r + Math.random(), vx: (Math.random() - 0.5) * 1.2, vy: -1.4, t: 0.22, t0: 0.22, col: '#a8c0e0', g: 10 });
+  }
+}
+// A pigeon bursts into the air: flapping off over the wall, shedding a feather or two.
+function belFlush(x, y, dir) {
+  bel.birds.push({ x, y, vx: dir * (3.5 + Math.random()), vy: -2.6, t: 0, ph: Math.random() * 6 });
+  fxBurst(x, y, '#d8dae2', 3, 1.5, 0.6);
+  if (!bel.flapT) { SFX.flap(); bel.flapT = 0.3; }
+}
+// The cloud over the moon, and the warm light of the bells when they ring.
+function belAmbient(amb) {
+  if (bel.moon < 1) amb = mulc(amb, 0.78 + bel.moon * 0.22);
+  if (bel.toll > 0) amb = mixc(amb, [0.75, 0.68, 0.55], Math.min(1, bel.toll) * 0.3);
+  return amb;
+}
+function belDecor(theme, dt, glow) {
+  const fl = flashLevel();
+  for (const d of art.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    if (d.kind === 'bell') { // a bell under its beam
+      if (glow) continue;
+      pr(x - 7, y0 + 1, 15, 2, '#3a2a1c'); pr(x - 7, y0 + 1, 15, 1, '#5a4230');
+      belBell(x, y0 + 4, false, belSwing(d.seed, d.shiver));
+    } else if (d.kind === 'rope') { // a bell rope, its striped sally swinging in the wind
+      if (glow) continue;
+      const sw = Math.sin(G.t * 1.3 + d.seed * 7) * (0.08 + windK() * 0.6) + (bel.toll > 0 ? Math.sin(G.t * 3.4) * 0.3 : 0);
+      for (let j = 0; j < F + 3; j++) {
+        const rx = Math.round(x + Math.sin(sw) * j * 0.45), sally = j >= F - 4 && j < F;
+        pr(rx, y0 + j, 1, 1, sally ? ['#c83a3a', '#e8e0d0', '#3a5ac8'][(j >> 1) % 3] : j % 3 ? '#b8a07a' : '#8a7454');
+        if (sally) pr(rx + 1, y0 + j, 1, 1, '#5a2020');
+      }
+    } else if (d.kind === 'louvre') { // a louvred opening onto the night: moonlight between the slats
+      const ox = x - 5, oy = y0 + 1, oh = F - 2, moon = bel.moon;
+      if (!glow) {
+        pr(ox - 1, oy, 12, oh + 1, '#3a3a48'); pr(ox, oy + 1, 10, oh - 1, '#0a0c18'); pr(ox + 1, oy, 8, 1, '#0a0c18');
+        for (let j = oy + 2; j < oy + oh; j += 2) { pr(ox, j, 10, 1, '#4a3a2a'); pr(ox, j - 1, 10, 1, fl > 0.3 ? '#dfe8ff' : '#28305a'); }
+        addLightPx(x, y1 + T * 0.9, 3.2 * T, [0.5, 0.6, 1], 0.7 * moon + fl * 1.2);
+      } else {
+        fbx.globalAlpha = Math.min(1, 0.75 * moon + fl);
+        for (let j = oy + 1; j < oy + oh; j += 2) pr(ox + 1, j, 8, 1, '#b8c8ff');
+        fbx.globalAlpha = 1;
+      }
+    } else if (d.kind === 'lantern') { // an iron lantern on a bracket, swinging when the wind gets up
+      const sw = Math.round(Math.sin(G.t * 1.7 + d.seed * 5) * windK() * 1.6), lx = x - 1 + sw, ly = y0 + 4;
+      if (!glow) {
+        pr(x - 1, y0 + 2, 4, 1, '#2a2420'); pr(x + 2, y0 + 2, 1, 3, '#2a2420');
+        pr(lx - 1, ly, 4, 1, '#1a1612'); pr(lx - 1, ly + 1, 4, 3, '#6a5020'); pr(lx - 1, ly + 4, 4, 1, '#1a1612'); pr(lx, ly - 1, 2, 1, '#1a1612');
+        addLightPx(lx + 1, y1 + T * 0.3, 3.2 * T, [1, 0.68, 0.36], 0.8);
+      } else { pr(lx, ly + 1, 2, 3, '#ffd890'); pr(lx, ly + 2, 2, 1, '#fff4c8'); }
+    } else if (d.kind === 'nest') { // twigs on a ledge, and a pigeon on them (or eggs, while it's away)
+      if (glow) continue;
+      pr(x - 4, y1 - 3, 9, 1, '#8a8a98');
+      pr(x - 3, y1 - 5, 7, 2, '#5a4026'); pr(x - 2, y1 - 5, 1, 1, '#8a6a3a'); pr(x + 2, y1 - 4, 1, 1, '#8a6a3a');
+      if (d.gone > 0) { pr(x - 1, y1 - 6, 1, 1, '#e8e8e0'); pr(x + 1, y1 - 6, 1, 1, '#d8d8d0'); }
+      else fbx.drawImage(pigeonSprite(0, Math.floor(G.t * 1.5 + d.seed * 9) % 5 === 0 ? 1 : 0), x - 4, y1 - 11); // bobbing its head now and then
+    } else if (d.kind === 'grotesque') { // a carved head on the wall: its eyes catch red while a gargoyle moves
+      const gx = x - 3, gy = y0 + ((F - 6) >> 1);
+      if (!glow) {
+        pr(gx, gy, 7, 5, '#7a7a8a'); pr(gx + 1, gy - 1, 5, 1, '#8a8a9a'); pr(gx, gy, 7, 1, '#9a9aaa');
+        pr(gx + 1, gy + 1, 2, 1, '#1a1a22'); pr(gx + 4, gy + 1, 2, 1, '#1a1a22');
+        pr(gx + 2, gy + 3, 3, 2, '#14141c'); pr(gx + 2, gy + 3, 1, 1, '#c8c8d0'); pr(gx + 4, gy + 3, 1, 1, '#c8c8d0');
+        pr(gx - 1, gy + 1, 1, 2, '#5a5a6a'); pr(gx + 7, gy + 1, 1, 2, '#5a5a6a');
+        if (theme.perch) for (let j = gy + 5; j < y1 + Math.round(T * 0.35); j++) pr(x + ((j + Math.floor(G.t * 20)) % 3 === 0 ? 1 : 0), j, 1, 1, '#8ab0d8');
+      } else if (G.gargMoving && Math.floor(G.t * 4 + d.seed * 3) % 3) { pr(gx + 1, gy + 1, 2, 1, '#ff3b3b'); pr(gx + 4, gy + 1, 2, 1, '#ff3b3b'); }
+    } else if (d.kind === 'gears') { // the clock's works: two cogs that tick round a notch a second
+      if (glow) continue;
+      const tick = Math.floor(G.t) + Math.min(1, (G.t % 1) * 5), cy = y0 + (F >> 1);
+      const cog = (cx, r, n, a, col, dark) => {
+        for (let k = 0; k < n; k++) { const t = a + k * Math.PI * 2 / n; pr(Math.round(cx + Math.cos(t) * (r + 1)), Math.round(cy + Math.sin(t) * (r + 1)), 1, 1, col); }
+        for (let k = 0; k < 16; k++) { const t = k * Math.PI / 8; pr(Math.round(cx + Math.cos(t) * r), Math.round(cy + Math.sin(t) * r), 1, 1, col); }
+        pr(cx - 1, cy - 1, 2, 2, dark); pr(Math.round(cx + Math.cos(a) * (r - 1.5)), Math.round(cy + Math.sin(a) * (r - 1.5)), 1, 1, dark);
+      };
+      cog(x - 3, 3, 8, tick * Math.PI / 8, '#a8843a', '#4a3a1a');
+      cog(x + 4, 2, 6, -tick * Math.PI / 6 + 0.3, '#8a7040', '#3a2a14');
+      if (G.state === 'play' && (G.t % 1) < 0.02 && Math.hypot(pac.x + 0.5 - d.x / T, pac.y + 0.5 - d.y1 / T) < 4) SFX.tick();
+    } else if (d.kind === 'hay') { // a bale at the foot of the wall
+      if (glow) continue;
+      pr(x - 5, y1 - 5, 11, 4, '#b8963a'); pr(x - 5, y1 - 5, 11, 1, '#d8b85a'); pr(x - 5, y1 - 2, 11, 1, '#8a6a24');
+      pr(x - 2, y1 - 5, 1, 4, '#5a3a1a'); pr(x + 2, y1 - 5, 1, 4, '#5a3a1a');
+      for (const ox of [-4, -1, 3, 5]) pr(x + ox, y1 - 6 - (ox & 1), 1, 1 + (ox & 1), '#d8b85a');
+    }
+  }
+  if (glow) return;
+  // The great bell, hung over the ghost house.
+  const b = art.houseBox;
+  if (b) {
+    const cx = Math.round((b.c0 + b.c1 + 1) / 2 * T - camX), y0 = Math.round(b.r0 * T - camY);
+    if (cx > -40 && cx < VIEW_W + 40 && y0 > -40 && y0 < VIEW_H + 20) {
+      pr(cx - 14, y0 + 1, 29, 2, '#3a2a1c'); pr(cx - 14, y0 + 1, 29, 1, '#5a4230');
+      belBell(cx, y0 + 5, true, belSwing(0.5, G.gargoyles.some(g => g.moving)) * 0.4);
+      addLightPx(cx, y0 + 16, 2.6 * T, [1, 0.8, 0.5], 0.3 + (bel.toll > 0 ? 0.4 : 0));
+    }
+  }
+}
+// The house door: a wooden gate whose two leaves fold back when someone's coming through.
+function belDoor() {
+  const y = Math.round((house.exitY + 1.3) * T) - camY, x0 = house.doorC * T - camX, hh = Math.max(4, Math.round(T * 0.3));
+  const busy = [...G.ghosts, ...G.hounds, ...G.wraiths, ...G.spiders].some(e => Math.abs(e.y - (house.exitY + 1)) < 1.4 && Math.abs(e.x - house.doorX) < 1.4);
+  const open = busy ? Math.round(T * 0.75) : 0;
+  for (const [a, b] of [[x0, x0 + T - open], [x0 + T + open, x0 + 2 * T]]) {
+    if (b - a < 2) continue;
+    pr(a, y, b - a, 1, '#8a6a44'); pr(a, y + hh - 1, b - a, 1, '#6a4a2e');
+    for (let i = a + 1; i < b; i += 3) pr(i, y, 1, hh, '#a8845a');
+  }
+}
+// Pigeons, walking right; f: the step, peck: head down.
+const pigeonSprite = (f, peck) => spr(`pigeon|${f}|${peck}`, () => pixSprite(9, 7, (x, y) => {
+  const hx = peck ? 7 : 6.6, hy = peck ? 4.2 : 2;
+  if (Math.hypot(x - hx, y - hy) < 1.3) return Math.hypot(x - hx - 0.6, y - hy + 0.2) < 0.45 ? hex('#e86a2a') : hex('#9a9eb0');
+  if (x > hx + 0.9 && x < hx + 2 && Math.abs(y - hy - 0.3) < 0.5) return hex('#d8b070');
+  if (y > 5.6 && (f ? [3.5, 5] : [4, 4.6]).some(lx => Math.abs(x - lx) < 0.6)) return hex('#c86a6a');
+  const bx = (x - 3.8) / 3.1, by = (y - 3.8) / 1.8;
+  if (bx * bx + by * by < 1) {
+    if (x > 5.2 && y < 3.8) return hex(y < 2.9 ? '#5a9a8a' : '#8a6aa8'); // the shimmer on its neck
+    if (Math.abs(y - 3.6) < 0.5 && x > 2 && x < 4.6) return hex('#3a3e4a'); // the wing bar
+    return hex(y < 3.4 ? '#c0c4d4' : '#9a9eb0');
+  }
+  if (x < 1.4 && y > 2.6 && y < 4.4) return hex('#4a4e5a'); // tail
+  return null;
+}, 0.3));
+const pigeonFlySprite = f => spr(`pigeonfly|${f}`, () => pixSprite(11, 8, (x, y) => {
+  if (Math.hypot(x - 8.8, y - 3.6) < 1.1) return hex('#7a7e90');
+  if (x > 9.6 && Math.abs(y - 3.8) < 0.5) return hex('#d8b070');
+  const bx = (x - 5.4) / 3, by = (y - 4.2) / 1.3;
+  if (bx * bx + by * by < 1) return hex('#8a8ea0');
+  if (x < 2.4 && Math.abs(y - 4.2) < 0.9) return hex('#4a4e5a');
+  if (f ? (y < 4 && y > 0.5 && Math.abs(x - 5) < 2.4 - (4 - y) * 0.4) : (y > 4.5 && y < 7.6 && Math.abs(x - 5) < 2.4 - (y - 4.5) * 0.5)) return hex(f ? '#a8acbc' : '#6a6e80');
+  return null;
+}, 0.3));
+// On the floor: the pigeons pecking about.
+function belFloor() {
+  for (const p of bel.pigeons) {
+    if (p.state !== 'ground') continue;
+    const sx = Math.round(p.x * T - camX), sy = Math.round(p.y * T - camY);
+    if (sx < -10 || sy < -10 || sx > VIEW_W + 10 || sy > VIEW_H + 10) continue;
+    const peck = p.peck < 0 ? 1 : 0, sp = pigeonSprite(Math.floor(G.t * 3 + p.x) % 2 && !peck ? 1 : 0, peck);
+    fbx.save();
+    if (p.face < 0) { fbx.translate(sx * 2, 0); fbx.scale(-1, 1); }
+    fbx.drawImage(sp, sx - 4, sy - 5);
+    fbx.restore();
+  }
+}
+// After the light: pigeons in the air, the rain on the roof, and the bells' ringing.
+function belPost(dt, theme) {
+  const fly = (x, y, face, ph) => {
+    const sx = Math.round(x * T - camX), sy = Math.round(y * T - camY);
+    fbx.save();
+    if (face < 0) { fbx.translate(sx * 2, 0); fbx.scale(-1, 1); }
+    fbx.drawImage(pigeonFlySprite(Math.floor(G.t * 14 + ph) % 2), sx - 5, sy - 4);
+    fbx.restore();
+  };
+  for (const b of bel.birds) fly(b.x, b.y, b.vx > 0 ? 1 : -1, b.ph);
+  for (const p of bel.pigeons) if (p.state === 'land') { // gliding back down
+    const k = 1 - Math.min(1, p.t / 1.2), e = k * k;
+    fly(p.x - p.face * 5 * e, p.y - 5 * e, p.face, p.x);
+  }
+  if (theme.perch) { // rain, slanting harder in the wind, lit up by the lightning
+    const fl = flashLevel(), slant = 0.25 + windK() * bel.gust.dir * 0.6;
+    fbx.globalAlpha = 0.28 + fl * 0.4;
+    for (let i = 0; i < 90; i++) {
+      const sp = 260 + hash2(i, 5) * 80, y = ((hash2(i, 2) * (VIEW_H + 20) + G.t * sp) % (VIEW_H + 20)) - 10;
+      const x = ((hash2(i, 1) * (VIEW_W + 40) + y * slant + 4000) % (VIEW_W + 40)) - 20;
+      pr(Math.round(x), Math.round(y), 1, 2, '#9ab0d8'); pr(Math.round(x + slant * 2), Math.round(y) + 2, 1, 2, '#9ab0d8');
+    }
+    fbx.globalAlpha = 1;
+  }
+  if (bel.toll > 0) { // rings of sound spreading off every bell in view
+    const k = Math.min(1, bel.toll);
+    const rings = [...art.decor.filter(d => d.kind === 'bell').map(d => [d.x - camX, d.y0 + 8 - camY]),
+      ...(art.houseBox ? [[(art.houseBox.c0 + art.houseBox.c1 + 1) / 2 * T - camX, art.houseBox.r0 * T + 10 - camY]] : [])];
+    for (const [cx, cy] of rings) {
+      if (cx < -60 || cx > VIEW_W + 60 || cy < -60 || cy > VIEW_H + 60) continue;
+      for (let w = 0; w < 2; w++) {
+        const f = (G.t * 0.9 + w * 0.5) % 1, r = 4 + f * T * 2;
+        fbx.globalAlpha = (1 - f) * 0.5 * k;
+        for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; pr(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r * 0.7), 1, 1, '#ffe8a0'); }
+      }
+    }
+    fbx.globalAlpha = 1;
+  }
+}
+
+// ---------- Gargoyle dust (every floor with gargoyles) ----------
+// A gargoyle on the move sheds grit and scores the floor behind it. A smashed one bursts into chunks
+// and a cloud of stone dust, and the pieces fly back together as it re-forms.
+const gar = { scrapes: [], seen: new Map() };
+function garReset() { gar.scrapes = []; gar.seen = new Map(); }
+function gargoyleFx(dt) {
+  if (!dt) return;
+  for (const g of G.gargoyles) {
+    const was = gar.seen.get(g);
+    gar.seen.set(g, g.state);
+    if (g.state === 'rubble' && was && was !== 'rubble') {
+      const x = g.rx + 0.5, y = g.ry + 0.5;
+      for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 4, t = 0.45 + Math.random() * 0.35;
+        parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 2.5, t, t0: t, col: i % 3 ? '#9a9fb8' : '#5c6078', g: 12, drag: 1.5 });
+      }
+      fxBurst(x, y, '#c8ccdc', 18, 2.4, 0.9);
+      G.shake = Math.max(G.shake, 0.2);
+    }
+    if (g.state === 'form' && was === 'rubble') for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2, d = 1.4, t = 0.45;
+      parts.push({ x: g.x + 0.5 + Math.cos(a) * d, y: g.y + 0.5 + Math.sin(a) * d, vx: -Math.cos(a) * d / t, vy: -Math.sin(a) * d / t, t, t0: t, col: '#9a9fb8', g: 0 });
+    }
+    if (g.moving) {
+      if (Math.random() < dt * 10) parts.push({ x: g.x + 0.5 + (Math.random() - 0.5) * 0.8, y: g.y + 0.6, vx: -g.dir.x * 0.6, vy: -g.dir.y * 0.6 + 0.3, t: 0.6, t0: 0.6, col: '#8a8ea8', g: 1.5 });
+      if ((g.scrapeT = (g.scrapeT || 0) - dt) <= 0) { g.scrapeT = 0.1; gar.scrapes.push({ x: g.x + 0.5, y: g.y + 0.75, h: !!g.dir.x, t: 0 }); }
+    }
+  }
+  for (const s of gar.scrapes) s.t += dt;
+  gar.scrapes = gar.scrapes.filter(s => s.t < 5).slice(-140);
+}
+function gargoyleFloor() { // claw marks scored into the floor, fading
+  for (const s of gar.scrapes) {
+    const x = Math.round(s.x * T - camX), y = Math.round(s.y * T - camY);
+    if (x < -8 || y < -8 || x > VIEW_W + 8 || y > VIEW_H + 8) continue;
+    fbx.globalAlpha = 0.4 * (1 - s.t / 5);
+    if (s.h) { pr(x - 3, y - 2, 6, 1, '#c8ccdc'); pr(x - 3, y, 6, 1, '#c8ccdc'); }
+    else { pr(x - 2, y - 3, 1, 6, '#c8ccdc'); pr(x + 1, y - 3, 1, 6, '#c8ccdc'); }
+  }
+  fbx.globalAlpha = 1;
+}
+
 // ---------- Frost (every floor) ----------
 // A frost berry sends a shockwave of ice out from Pac-Man and brings frost in at the screen's edge, and
 // the Wraith leaves frost on any wall he drifts through. The Freezer adds its own: walls that ice over
@@ -8324,6 +8758,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.flood) return fldDecor(theme, dt, glow);
   if (theme.crypt) return cryDecor(theme, dt, glow);
   if (theme.sewer) return sewDecor(theme, dt, glow);
+  if (theme.belfry) return belDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -8544,7 +8979,7 @@ function renderWorld() {
   const dt = G.paused ? 0 : rdt, theme = curTheme();
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -8559,6 +8994,8 @@ function renderWorld() {
   if (theme.flood) fldUpdate(dt, theme);
   if (theme.crypt) cryUpdate(dt, theme);
   if (theme.sewer) sewUpdate(dt, theme);
+  if (theme.belfry) belUpdate(dt, theme);
+  if (G.gargoyles.length) gargoyleFx(dt);
   if (G.cfg.dash) dashUpdate(dt, theme);
   frostUpdate(dt, theme);
   if (hasFlow) waterUpdate(dt);
@@ -8568,11 +9005,13 @@ function renderWorld() {
   if (G.vents.length && !theme.boiler && G.state !== 'cast') ventBoard();
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : theme.belfry ? belDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
   if (theme.sewer && G.state !== 'cast') { sewWater(); sewRats(); }
   if ((theme.flood || hasFlow) && G.state !== 'cast') fldFloor(theme);
   slimeFloor();
+  if (gar.scrapes.length && G.state !== 'cast') gargoyleFloor();
+  if (theme.belfry && G.state !== 'cast') belFloor();
   worldTf();
   idTf();
   if (G.state !== 'cast') for (const v of G.vents) drawVentGrate(v);
@@ -8674,6 +9113,7 @@ function renderWorld() {
   if (theme.flood) amb = fldAmbient(amb, theme);
   if (theme.crypt) amb = cryAmbient(amb);
   if (theme.sewer) amb = sewAmbient(amb);
+  if (theme.belfry) amb = belAmbient(amb);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
@@ -8685,6 +9125,7 @@ function renderWorld() {
   if (theme.flood) fldPost(dt, theme);
   if (theme.crypt) cryPost(dt, theme);
   if (theme.sewer) sewPost();
+  if (theme.belfry && !cast) belPost(dt, theme);
   if (G.cfg.dash) dashPost();
   if (enemiesShown()) labTaffy(); // after the light, so the goo glows even under the blacklight
   frostPost();
