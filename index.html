@@ -5330,7 +5330,7 @@ function bakeLevel(rows, theme) {
   const mini = mkCanvas(w * 2, h * 2);
   mini.g.fillStyle = theme.map;
   for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) if (solidT(c, r)) mini.g.fillRect(c * 2, r * 2, 2, 2);
-  const L = { canvas: out, mask, mini, cls, PW, PH, w, h, T, reach, house, solidT, houseBox: hb, decor: [] };
+  const L = { canvas: out, mask, mini, cls, dist, PW, PH, w, h, T, reach, house, solidT, houseBox: hb, decor: [] };
   if (theme.decor) L.decor = planDecor(L, theme);
   if (theme.bake) theme.bake(L, out.g);
   return L;
@@ -5602,14 +5602,12 @@ function freezerTheme(lv) {
       for (const s of spots) {
         if (picked.length >= lines.length) break;
         if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue; // one line per wall
-        const x0 = s.c0 * L.T, x1 = (s.c1 + 1) * L.T, xm = ((x0 + x1) / 2) | 0;
-        let yTop = -1, yBot = -1;
-        for (let y = s.r * L.T; y < (s.r + 2) * L.T; y++) if (L.cls[y * L.PW + xm] === 1) { if (yTop < 0) yTop = y; yBot = y; }
-        if (yTop < 0 || yBot - yTop < 10 || longest > x1 - x0 - 10) continue;
-        picked.push({ r: s.r, xm, y: yTop + ((yBot - yTop - 4) >> 1) });
+        const f = fitTopText(L, s, longest);
+        if (!f) continue;
+        picked.push({ r: s.r, x: f.x, y: f.y });
       }
-      picked.sort((a, b) => a.r - b.r || a.xm - b.xm);
-      picked.forEach((q, i) => tinyText(g, lines[i], q.xm - (tinyW(lines[i]) >> 1), q.y, '#4a6078'));
+      picked.sort((a, b) => a.r - b.r || a.x - b.x);
+      picked.forEach((q, i) => tinyText(g, lines[i], q.x + ((longest - tinyW(lines[i])) >> 1), q.y, '#4a6078'));
       // Fog pools in dead ends and corners.
       L.fog = [];
       const open = (c, r) => r >= 0 && r < L.h && c >= 0 && c < L.w && L.reach[r * L.w + c];
@@ -6690,6 +6688,30 @@ function thrPost(dt) {
 // the big boiler, B2 is all pipes (some of them leaking goo), B3 the dark, steamy tunnels.
 TINY['↓'] = '010010010111010';
 // Wall-top runs at least six tiles long, two tiles deep, widest first: room for a board or a stencil.
+// Where a line of tiny text w pixels wide (and m pixels of plate or margin round it) can sit on the wall
+// top s: the whole box must lie on the flat of the top, clear of its bevelled rim, or letters get cut off
+// where the top ends, narrows or meets another wall. Picks the spot nearest the middle; null if none fits.
+function fitTopText(L, s, w, m = 1) {
+  const x0 = s.c0 * L.T, x1 = (s.c1 + 1) * L.T, y0 = s.r * L.T, y1 = Math.min(L.PH, (s.r + 2) * L.T), bw = x1 - x0, bh = y1 - y0;
+  const BW = w + 2 * m, BH = 5 + 2 * m;
+  if (BW > bw || BH > bh) return null;
+  const I = new Int32Array((bw + 1) * (bh + 1)); // a summed table of the pixels that won't do
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    const i = (y0 + y) * L.PW + x0 + x, bad = L.cls[i] !== 1 || L.dist[i] < 4 ? 1 : 0;
+    I[(y + 1) * (bw + 1) + x + 1] = bad + I[y * (bw + 1) + x + 1] + I[(y + 1) * (bw + 1) + x] - I[y * (bw + 1) + x];
+  }
+  const badIn = (x, y) => I[(y + BH) * (bw + 1) + x + BW] - I[y * (bw + 1) + x + BW] - I[(y + BH) * (bw + 1) + x] + I[y * (bw + 1) + x];
+  let best = null, score = Infinity;
+  const cx = (bw - BW) / 2;
+  let fy0 = -1, fy1 = -1; // the flat of the top down the middle column, to centre on
+  for (let y = 0; y < bh; y++) { const i = (y0 + y) * L.PW + x0 + (bw >> 1); if (L.cls[i] === 1 && L.dist[i] >= 4) { if (fy0 < 0) fy0 = y; fy1 = y; } }
+  const cy = fy0 < 0 ? (bh - BH) / 2 : (fy0 + fy1 + 1 - BH) / 2;
+  for (let y = 0; y + BH <= bh; y++) for (let x = 0; x + BW <= bw; x++) {
+    const sc = Math.abs(y - cy) * 3 + Math.abs(x - cx);
+    if (sc < score && !badIn(x, y)) { score = sc; best = { x: x0 + x + m, y: y0 + y + m }; }
+  }
+  return best;
+}
 function wideTops(L) {
   const spots = [];
   for (let r = 1; r < L.h - 2; r++) {
@@ -6814,9 +6836,9 @@ function boilerTheme(lv) {
       if (pipes) { let n = 0; for (const d of D) if (d.kind === 'pipes' && n < 2 && hash2(d.c, d.r) < 0.6) { d.kind = 'goopipe'; n++; } }
       const spots = wideTops(L);
       if (lv === 1) { // the shift board on the widest wall top
-        const s = spots.find(s => s.yBot - s.yTop >= 15 && s.x1 - s.x0 >= 84);
-        if (s) {
-          const w = 70, h = 15, bx = s.xm - (w >> 1), by = s.yTop + ((s.yBot - s.yTop - h) >> 1);
+        let f = null; for (const s of spots) if ((f = fitTopText(L, s, 60, 6))) break; // the board and its frame, 72 x 17
+        if (f) {
+          const w = 70, h = 15, bx = f.x - 5, by = f.y - 5;
           g.fillStyle = '#4a3c34'; g.fillRect(bx - 1, by - 1, w + 2, h + 2);
           g.fillStyle = '#d8d4c8'; g.fillRect(bx, by, w, h);
           tinyText(g, 'ON SHIFT:', bx + 2, by + 2, '#2a4ad0');
@@ -6830,9 +6852,11 @@ function boilerTheme(lv) {
         for (const s of spots) {
           if (picked.length >= lines.length) break;
           const txt = lines[picked.length];
-          if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 9 || tinyW(txt) > s.x1 - s.x0 - 10) continue;
+          if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue;
+          const f = fitTopText(L, s, tinyW(txt));
+          if (!f) continue;
           picked.push(s);
-          tinyText(g, txt, s.xm - (tinyW(txt) >> 1), s.yTop + ((s.yBot - s.yTop - 4) >> 1), pipes ? '#b8925a' : '#8a6a52');
+          tinyText(g, txt, f.x, f.y, pipes ? '#b8925a' : '#8a6a52');
         }
       }
       // Steam pools in dead ends and corners (more of it down the tunnels).
@@ -7262,9 +7286,11 @@ function floodTheme(lv) {
       for (const s of wideTops(L)) {
         if (picked.length >= lines.length) break;
         const txt = lines[picked.length], w = tinyW(txt);
-        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 12) continue;
+        if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue;
+        const f = fitTopText(L, s, w, kennel ? 3 : 1);
+        if (!f) continue;
         picked.push(s);
-        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        const tx = f.x, ty = f.y;
         if (kennel) { g.fillStyle = '#3a2614'; g.fillRect(tx - 3, ty - 3, w + 6, 11); g.fillStyle = '#7a5636'; g.fillRect(tx - 2, ty - 2, w + 4, 9); tinyText(g, txt, tx, ty, '#f0e0b8'); }
         else tinyText(g, txt, tx, ty, flume ? '#e8f4f8' : '#8ab0a8');
       }
@@ -7642,9 +7668,11 @@ function cryptTheme(lv) {
       for (const s of wideTops(L)) {
         if (picked.length >= lines.length) break;
         const txt = lines[picked.length], w = tinyW(txt);
-        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue;
+        const f = fitTopText(L, s, w, 2); // its shadow sits a pixel below
+        if (!f) continue;
         picked.push(s);
-        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        const tx = f.x, ty = f.y;
         tinyText(g, txt, tx, ty + 1, '#5a544a'); tinyText(g, txt, tx, ty, '#14110e');
       }
       // Bones lying about the floor.
@@ -8224,9 +8252,11 @@ function belfryTheme(lv) {
       for (const s of wideTops(L)) {
         if (picked.length >= lines.length) break;
         const txt = lines[picked.length], w = tinyW(txt);
-        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue;
+        const f = fitTopText(L, s, w, 2); // its shadow sits a pixel off
+        if (!f) continue;
         picked.push(s);
-        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        const tx = f.x, ty = f.y;
         if (loft) { tinyText(g, txt, tx + 1, ty + 1, '#140e0a'); tinyText(g, txt, tx, ty, '#c8b890'); }
         else { tinyText(g, txt, tx, ty + 1, '#7a7a8a'); tinyText(g, txt, tx, ty, '#1a1a24'); }
       }
@@ -8648,9 +8678,11 @@ function atticTheme(lv) {
       for (const s of wideTops(L)) {
         if (picked.length >= lines.length) break;
         const txt = lines[picked.length], w = tinyW(txt);
-        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue;
+        const f = fitTopText(L, s, w);
+        if (!f) continue;
         picked.push(s);
-        tinyText(g, txt, s.xm - (w >> 1), s.yTop + ((s.yBot - s.yTop - 4) >> 1), '#3a2c1e');
+        tinyText(g, txt, f.x, f.y, '#3a2c1e');
       }
       // Odds and ends on the floor: dust bunnies, a lost marble, a button, bent nails; silk in the nest.
       for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
@@ -9003,9 +9035,11 @@ function cloudTheme(lv) {
       for (const s of wideTops(L)) {
         if (picked.length >= lines.length) break;
         const txt = lines[picked.length], w = tinyW(txt);
-        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        if (picked.some(q => Math.abs(q.r - s.r) < 2)) continue;
+        const f = fitTopText(L, s, w, 2); // room for the bridge's black plate (or the carving's highlight)
+        if (!f) continue;
         picked.push(s);
-        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        const tx = f.x, ty = f.y;
         if (bridge) { g.fillStyle = '#141018'; g.fillRect(tx - 2, ty - 2, w + 4, 9); tinyText(g, txt, tx, ty, '#e8c040'); } // stencilled on a black plate
         else if (fog) tinyText(g, txt, tx, ty, '#e8e0c0');
         else { tinyText(g, txt, tx, ty + 1, '#ffffff'); tinyText(g, txt, tx, ty, '#6a6e88'); } // carved
@@ -9470,9 +9504,9 @@ function ventPost(dt, theme) {
 }
 // The COOKED board on floors without one of their own: painted onto the widest wall top, live.
 function ventBoard() {
-  if (art.cookSpot === undefined) art.cookSpot = wideTops(art).find(s => s.yBot - s.yTop >= 10) || null;
+  if (art.cookSpot === undefined) { art.cookSpot = null; for (const s of wideTops(art)) if ((art.cookSpot = fitTopText(art, s, tinyW('COOKED:99') + 4, 2))) break; } // room for the widest it'll get
   const s = art.cookSpot; if (!s) return;
-  const txt = `COOKED:${blr.cooked}`, mw = tinyW(txt) + 6, mx = s.xm - (mw >> 1) - camX, my = s.yTop + ((s.yBot - s.yTop - 9) >> 1) - camY;
+  const txt = `COOKED:${blr.cooked}`, mw = tinyW(txt) + 6, mx = s.x - 1 - camX, my = s.y - 1 - camY;
   if (mx > VIEW_W || my > VIEW_H || mx + mw < 0 || my + 9 < 0) return;
   pr(mx - 1, my - 1, mw + 2, 9, '#5a4a40'); pr(mx, my, mw, 7, '#140806');
   tinyText(fbx, txt, mx + 3, my + 1, '#ff9a50');
