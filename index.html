@@ -3300,7 +3300,8 @@ function lichPrims(st) {
   const scared = st.mode === 'fright' || st.mode === 'flash', face = st.mode === 'flash' ? '#ff2a2a' : '#ffb8ae';
   const robe = st.mode ? makeRamp(tone('#ffffff')) : st.ph === 3 ? RR.crimson : RR.purple, erm = st.mode ? makeRamp(tone('#ffffff')) : RR.ermine;
   const glow = st.mode === 'ice' ? '#e6fbff' : st.mode ? tone('#ffffff') : GLOW[st.eye || st.ph], wood = st.mode ? tone('#c89a30') : '#c89a30';
-  const boneLine = (pts, w = 0.12) => line(pts, tone(BONE), w);
+  const thick = (pts, col, w) => line(pts, col, Math.max(w, 1.1 / T)); // never thinner than a pixel, or it drops out at the boss floor's small tiles
+  const boneLine = (pts, w = 0.12) => thick(pts, tone(BONE), w);
   const fingers = (hx, hy, s, up) => [-1, 0, 1].map(i => boneLine([[hx, hy], [hx + (s * 0.1 + i * 0.07), hy + (up ? -0.26 : 0.26)]], 0.07));
   const crown = (cx, cy, k) => [poly([[cx - 0.95 * k, cy + 0.5 * k], [cx - 1.05 * k, cy - 0.35 * k], [cx - 0.5 * k, cy + 0.12 * k], [cx, cy - 0.55 * k], [cx + 0.5 * k, cy + 0.12 * k], [cx + 1.05 * k, cy - 0.35 * k], [cx + 0.95 * k, cy + 0.5 * k]], makeRamp(st.mode === 'ice' ? '#e6fbff' : '#ffd23f')),
     dot(cx, cy + 0.18 * k, st.mode ? '#ffffff' : '#e83a5a', 1.4), dot(cx - 0.6 * k, cy + 0.28 * k, st.mode ? '#ffffff' : '#3a8aff', 1), dot(cx + 0.6 * k, cy + 0.28 * k, st.mode ? '#ffffff' : '#3a8aff', 1)];
@@ -3311,7 +3312,7 @@ function lichPrims(st) {
     for (const s of [-1, 1]) p.push(ell(cx + s * 0.24 * k, cy - 0.08 * k, 0.17 * k, 0.2 * k, 0, sock), dot(cx + s * 0.24 * k, cy - 0.06 * k, glow, (st.ph === 3 ? 1.8 : 1.3) * k));
     p.push(poly([[cx - 0.07 * k, cy + 0.16 * k], [cx + 0.07 * k, cy + 0.16 * k], [cx, cy + 0.04 * k]], sock), line([[cx - 0.26 * k, cy + 0.36 * k], [cx + 0.26 * k, cy + 0.36 * k]], sc, 0.06 * k));
     for (let i = -2; i <= 2; i++) p.push(line([[cx + i * 0.11 * k, cy + 0.3 * k], [cx + i * 0.11 * k, cy + 0.42 * k]], sc, 0.03 * k));
-    if (st.ph >= 2) for (const s of [-1, 1]) p.push(line([[cx + s * 0.44 * k, cy - 0.34 * k], [cx + s * 0.1 * k, cy - 0.24 * k]], sc, 0.07 * k)); // furious brows
+    if (st.ph >= 2) for (const s of [-1, 1]) p.push(thick([[cx + s * 0.44 * k, cy - 0.34 * k], [cx + s * 0.1 * k, cy - 0.24 * k]], sc, 0.07 * k)); // furious brows
     if (st.ph === 3) p.push(line([[cx + 0.1 * k, cy - 0.66 * k], [cx + 0.18 * k, cy - 0.46 * k], [cx + 0.1 * k, cy - 0.36 * k]], sc, 0.04 * k)); // cracked
     return p;
   };
@@ -3321,25 +3322,26 @@ function lichPrims(st) {
   if (st.pose === 'pile' || st.pose === 'robe') {
     p.push(poly([[-1.6, 1.8], [-1.2, 1.1], [-0.4, 0.95], [0.5, 1.15], [1.3, 1.0], [1.65, 1.8]], robe));
     for (const [x, y, a] of [[-0.9, 1.4, 0.4], [0.8, 1.3, -0.5], [0.1, 1.55, 0.1]]) p.push(boneLine([[x - Math.cos(a) * 0.36, y - Math.sin(a) * 0.36], [x + Math.cos(a) * 0.36, y + Math.sin(a) * 0.36]], 0.16));
-    p.push(line([[1.3, 1.5], [0.5, 1.75]], wood, 0.09), ball(1.38, 1.47, 0.15, makeRamp(glow)));
+    p.push(thick([[1.3, 1.5], [0.5, 1.75]], wood, 0.12), ball(1.38, 1.47, 0.15, makeRamp(glow)));
     return st.pose === 'robe' ? p : [...p, ...skull(0, 0.7, 0.9), ...crown(-0.15, -0.12, 0.45)];
   }
   p.push(poly([[-0.75, -0.45 + bob], [-1.0, -1.45 + bob], [-0.42, -0.8 + bob], [0.42, -0.8 + bob], [1.0, -1.45 + bob], [0.75, -0.45 + bob]], robe)); // the collar, standing up behind his head
   const hem = [[-1.45, 1.9], [-1.1, 1.62], [-0.8, 1.95], [-0.45, 1.66], [0, 1.95], [0.45, 1.66], [0.8, 1.95], [1.1, 1.62], [1.45, 1.9]];
   p.push(poly([[-0.8, -0.35 + bob], [0.8, -0.35 + bob], ...hem.slice().reverse().map(([x, y]) => [x, y + bob])], robe));
   p.push(poly([[-0.24, -0.2 + bob], [0.24, -0.2 + bob], [0.42, 1.8 + bob], [-0.42, 1.8 + bob]], st.mode ? robe : RR.dark)); // open down the front
-  for (let i = 0; i < 4; i++) { const y = 0.05 + i * 0.2 + bob, w = 0.2 + i * 0.03; p.push(boneLine([[-w, y + 0.08], [0, y], [w, y + 0.08]], 0.07)); }
-  p.push(boneLine([[0, -0.15 + bob], [0, 0.95 + bob]], 0.07));
-  if (!st.mode) for (const s of [-1, 1]) p.push(line([[s * 0.24, -0.2 + bob], [s * 0.42, 1.8 + bob]], '#e8c040', 0.05), line([[s * 0.27, 0.1 + bob], [s * 0.3, 0.3 + bob]], glow, 0.05));
+  for (let i = 0; i < 4; i++) { const y = 0.05 + i * 0.2 + bob, w = 0.2 + i * 0.03; p.push(line([[-w, y + 0.08], [0, y], [w, y + 0.08]], tone(BONE), 0.07)); } // thin on purpose: thicker, the ribs run together
+  p.push(line([[0, -0.15 + bob], [0, 0.95 + bob]], tone(BONE), 0.07));
+  if (!st.mode) for (const s of [-1, 1]) p.push(thick([[s * 0.24, -0.2 + bob], [s * 0.42, 1.8 + bob]], '#e8c040', 0.05), thick([[s * 0.27, 0.1 + bob], [s * 0.3, 0.3 + bob]], glow, 0.05));
   p.push(ell(-0.55, -0.32 + bob, 0.42, 0.22, 0.25, erm), ell(0.55, -0.32 + bob, 0.42, 0.22, -0.25, erm));
   if (!st.mode) for (const x of [-0.75, -0.45, 0.45, 0.75]) p.push(dot(x, -0.3 + bob, '#1a1a1a', 1));
   for (const s of [-1, 1]) {
     const hand = up ? [s * 1.25, -1.25] : [s * 1.2, 0.7 + bob];
     p.push(poly([[s * 0.65, -0.25 + bob], [s * 1.05, -0.15 + bob], [hand[0] + s * 0.22, hand[1] + (up ? 0.45 : -0.05)], [hand[0] - s * 0.2, hand[1] + (up ? 0.55 : -0.25)]], robe), ...fingers(hand[0], hand[1], s, up));
+    if (up) p.push(boneLine([[hand[0], hand[1] + 0.5], [hand[0], hand[1]]], 0.1)); // a bony wrist out of the sleeve
   }
-  if (!up) p.push(line([[1.3, -0.75 + bob], [1.3, 1.6 + bob]], wood, 0.09), ball(1.3, -0.9 + bob, 0.17, makeRamp(glow)), ...crown(1.3, -1.12 + bob, 0.16));
+  if (!up) p.push(thick([[1.3, -0.78 + bob], [1.3, 1.6 + bob]], wood, 0.12), ball(1.3, -0.9 + bob, 0.17, makeRamp(glow)), ...crown(1.3, -1.12 + bob, 0.16)); // the sceptre
   p.push(...skull(0, -0.78 + bob, 1.2), ...crown(0, -1.62 + bob, 0.6));
-  if (up) for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + (st.f ? 0.4 : 0); p.push(dot(Math.cos(a) * 1.9, -0.2 + Math.sin(a) * 1.6, GLOW[3], 1.8)); } // runes wheeling round him
+  if (up) for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + (st.f ? 0.4 : 0); p.push(dot(Math.cos(a) * 2.15, -0.2 + Math.sin(a) * 1.95, GLOW[3], 1.8)); } // runes wheeling round him, clear of his hands
   return p;
 }
 const lichSprite = st => spr(`lich|${T}|${st.ph}|${st.eye || st.ph}|${st.mode}|${st.pose}|${st.f}`, () => primSprite(lichPrims(st), 4.6));
