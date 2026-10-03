@@ -9332,7 +9332,7 @@ function waterUpdate(dt) {
 // ---------- Slime goo (every floor with slimes) ----------
 // Slimes leave a glistening trail (in the Boiler Room it dries instead), squash as they turn and wobble
 // when Pac-Man is close; a split splatters goo and the halves stay joined by a string of taffy.
-function slimeUpdate(dt, theme) {
+function slimeFx(dt, theme) {
   if (!dt) return;
   for (const s of lab.stains) s.t += dt;
   lab.stains = lab.stains.filter(s => s.t < 7);
@@ -9747,7 +9747,7 @@ function renderWorld() {
   if (G.cfg.dash) dashUpdate(dt, theme);
   frostUpdate(dt, theme);
   if (hasFlow) waterUpdate(dt);
-  if (G.slimes.length || lab.trail.length || lab.stains.length || lab.taffy.length) slimeUpdate(dt, theme);
+  if (G.slimes.length || lab.trail.length || lab.stains.length || lab.taffy.length) slimeFx(dt, theme);
   drawDecor(theme, dt);
   frostBlooms();
   if (G.vents.length && !theme.boiler && G.state !== 'cast') ventBoard();
