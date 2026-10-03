@@ -987,6 +987,7 @@ const SFX = {
   flap() { for (let i = 0; i < 5; i++) beep(500 + (i % 2) * 250, 260, 0.04, 'triangle', 0.035, i * 0.045); },
   creak() { beep(150, 110, 0.6, 'sawtooth', 0.035); beep(210, 150, 0.4, 'triangle', 0.05, 0.35); beep(120, 170, 0.5, 'sawtooth', 0.025, 0.7); },
   skitter() { for (let i = 0; i < 8; i++) beep(2400 + (i % 3) * 400, 2000, 0.02, 'square', 0.018, i * 0.035); },
+  foghorn() { beep(82, 78, 2.2, 'sawtooth', 0.06); beep(123, 118, 2.2, 'triangle', 0.05); beep(82, 80, 1.4, 'sawtooth', 0.04, 2.6); beep(123, 120, 1.4, 'triangle', 0.035, 2.6); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
@@ -1095,7 +1096,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); attReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); attReset(); cldReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -3366,18 +3367,50 @@ function cloudPuffs(q) {
   }
   return (q.puffs = out);
 }
+// Where every puff of the cloud banks is right now: how far it's in (0 = out of sight, 1 = settled), and where.
+function reformPuffs(qi) {
+  const R = G.reform, ease = k => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
+  return cloudPuffs(meta.reform[qi]).map(p => {
+    if (R.phase === 'in') { const k = ease((R.t / REFORM_IN - p.depth * 0.45 - p.lag * 0.15) / 0.4); return { p, k, x: p.x + p.ex * (1 - k) * 4, y: p.y + p.ey * (1 - k) * 4 }; }
+    if (R.phase === 'out') { const k = 1 - ease((R.t / REFORM_OUT - p.lag * 0.55) / 0.45); return { p, k, x: p.x + (1 - k) * 2.2, y: p.y - (1 - k) * 0.8 }; }
+    return { p, k: 1, x: p.x, y: p.y };
+  });
+}
+// How thickly the clouds cover a point (0: not at all).
+function reformCover(x, y) {
+  let best = 0;
+  for (const qi of G.reform.quads) for (const { p, k, x: px, y: py } of reformPuffs(qi)) if (k > best && Math.hypot(x - px, y - py) < p.r * (0.5 + 0.45 * k)) best = k;
+  return best;
+}
+// Anyone inside a cloud bank is lost in it: only their eyes show through, hazily.
+function reformEyes() {
+  const haze = (wx, wy, pts, col) => {
+    const k = reformCover(wx, wy);
+    if (k < 0.3) return;
+    const a = Math.min(1, (k - 0.3) * 2) * (0.75 + 0.15 * Math.sin(G.t * 5 + wx * 3)), sx = Math.round(wx * T - camX), sy = Math.round(wy * T - camY);
+    for (const [ox, oy] of pts) {
+      fbx.globalAlpha = a * 0.35; pr(sx + ox - 1, sy + oy - 1, 4, 4, col); // a soft glow round each eye
+      fbx.globalAlpha = a; pr(sx + ox, sy + oy, 2, 2, col);
+    }
+  };
+  const e = T / 18, two = (dy, gap = 4) => [[-Math.round(gap * e) - 1, Math.round(dy * e)], [Math.round(gap * e) - 1, Math.round(dy * e)]];
+  for (const g of G.ghosts) { // the ghosts' own eyes, looking where they're going
+    const k = reformCover(g.x + 0.5, g.y + 0.5);
+    if (k < 0.3) continue;
+    fbx.globalAlpha = Math.min(1, (k - 0.3) * 2) * 0.85; blit(ghostEyes(g.dir || L, !!g.eaten), g.x + 0.5, g.y + 0.5);
+  }
+  for (const g of G.gargoyles) if (g.moving) haze(g.x + 0.5, g.y + 0.5, two(-3), '#ff3b3b'); // a statue that isn't creeping shows nothing at all
+  for (const s of G.spiders) if (s.state !== 'house') haze(s.x + 0.5, s.y + 0.5, [[-2, Math.round(-7 * e)], [1, Math.round(-7 * e)], [-4, Math.round(-5 * e)], [3, Math.round(-5 * e)]], '#ff3b3b');
+  for (const h of G.hounds) if (h.state !== 'house') haze(h.x + 0.5, h.y + 0.5, two(-4, 3), '#ffe066');
+  for (const w of G.wraiths) if (w.state !== 'house') haze(w.x + 0.5, w.y + 0.42, two(-2, 3), '#c9b8ff');
+  for (const s of G.slimes) if (s.state !== 'house') haze(s.x + 0.5, s.y + 0.5, two(-1, 3), '#9aff8a');
+  fbx.globalAlpha = 1;
+}
 function drawReform() {
   const R = G.reform;
   if (!R.quads.length) return;
-  const ease = k => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
   for (const qi of R.quads) {
-    const q = meta.reform[qi], puffs = cloudPuffs(q);
-    const place = p => { // how far this puff is in (0 = out of sight, 1 = settled), and where it is
-      if (R.phase === 'in') { const k = ease((R.t / REFORM_IN - p.depth * 0.45 - p.lag * 0.15) / 0.4); return { k, x: p.x + p.ex * (1 - k) * 4, y: p.y + p.ey * (1 - k) * 4 }; }
-      if (R.phase === 'out') { const k = 1 - ease((R.t / REFORM_OUT - p.lag * 0.55) / 0.45); return { k, x: p.x + (1 - k) * 2.2, y: p.y - (1 - k) * 0.8 }; }
-      return { k: 1, x: p.x, y: p.y };
-    };
-    const at = puffs.map(p => ({ p, ...place(p) }));
+    const at = reformPuffs(qi);
     ctx.save();
     ctx.fillStyle = '#8f9fe0'; // shadow side first, so the whole bank reads as one mass
     for (const { p, k, x, y } of at) { if (k <= 0) continue; ctx.globalAlpha = k; ctx.beginPath(); ctx.arc(x + 0.15, y + 0.25 + Math.sin(G.t + p.bob) * 0.1, p.r * (0.55 + 0.45 * k), 0, Math.PI * 2); ctx.fill(); }
@@ -5210,7 +5243,7 @@ function bakeLevel(rows, theme) {
   const out = mkCanvas(PW, PH), img = out.g.createImageData(PW, PH), d = img.data;
   const shLen = Math.max(1, Math.round(T / 6)), info = { c: 0, r: 0, u: 0, v: 0, house: 0, e: -1 };
   for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
-    const i = y * PW + x; let col;
+    const i = y * PW + x; let col, alpha = 255;
     if (cls[i] === 2) col = theme.face(x, y, fv[i], fh[i], !isS(x - 1, y) ? -1 : !isS(x + 1, y) ? 1 : 0);
     else if (cls[i] === 1) {
       const ring = dist[i];
@@ -5225,6 +5258,7 @@ function bakeLevel(rows, theme) {
       info.c = c; info.r = r; info.u = x - c * T; info.v = y - r * T; info.house = house[r * w + c];
       info.e = theme.runner ? runEdge(c, r, info.u, info.v) : -1;
       col = theme.floor(x, y, info);
+      if (col[3] !== undefined) alpha = col[3];
       let sh = 1;
       for (let s = 1; s <= shLen + 1; s++) if (isS(x, y - s)) { sh = 0.5 + 0.45 * (s - 1) / (shLen + 1); break; }
       for (let s = 1; s <= shLen; s++) if (isS(x - s, y)) { sh = Math.min(sh, 0.68 + 0.25 * (s - 1) / shLen); break; }
@@ -5232,7 +5266,7 @@ function bakeLevel(rows, theme) {
       if (sh < 1) col = mulc(col, sh);
     }
     const k = i * 4;
-    d[k] = col[0]; d[k + 1] = col[1]; d[k + 2] = col[2]; d[k + 3] = 255;
+    d[k] = col[0]; d[k + 1] = col[1]; d[k + 2] = col[2]; d[k + 3] = alpha;
   }
   out.g.putImageData(img, 0, 0);
   // The walls alone, in white, for the level-clear flash.
@@ -5382,6 +5416,7 @@ const themeFor = (stage, lv = 0) => {
   if (lv && stage === 7) return THEMES[`7-${lv}`] || (THEMES[`7-${lv}`] = cryptTheme(lv));
   if (lv && stage === 8) return THEMES['8-1'] || (THEMES['8-1'] = sewerTheme());
   if (lv && stage === 9) return THEMES[`9-${lv}`] || (THEMES[`9-${lv}`] = belfryTheme(lv));
+  if (lv && stage === 11) return THEMES[`11-${lv}`] || (THEMES[`11-${lv}`] = cloudTheme(lv));
   if (lv && stage === 10) return THEMES[`10-${lv}`] || (THEMES[`10-${lv}`] = atticTheme(lv));
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 };
@@ -8811,6 +8846,286 @@ function websPost() {
   fbx.globalAlpha = 1;
 }
 
+// ---------- The Cloud Deck (stage 11) ----------
+// 17F-19F, so high the clouds come indoors. 17F is the observation deck: a glass floor with the cloud
+// sea drifting by underneath (a blimp, now and then a shooting star), white balustrades, coin-op
+// binoculars that turn to follow you, deck chairs and pennants. 18F, the Fog Bank, is a wet boardwalk
+// lost in fog that thins around Pac-Man; the foghorn sounds and the fog rolls thicker, red beacons
+// blink, and a creeping gargoyle's eyes glow through it. 19F, the Sky Bridge, is steel grating over
+// the city lights far below, red girders, a windsock, gusts, geese going by. When the clouds roll over
+// part of the maze, lightning flickers inside the bank while it rebuilds, and the new walls glisten
+// with dew as it lifts. The ghost house is a pen of cloud behind a velvet rope.
+const CLOUD_SIGNS = {
+  1: ['OBSERVATION DECK', 'DO NOT FEED THE CLOUDS', 'ALT. 1,700 FT'],
+  2: ['FOGHORN TESTED DAILY', 'LOST? FOLLOW THE DOTS', 'FOG BANK'],
+  3: ['SKY BRIDGE', 'MAX LOAD: 1 PAC', 'DO NOT LOOK DOWN'],
+};
+function cloudTheme(lv) {
+  const fog = lv === 2, bridge = lv === 3;
+  const P = Object.fromEntries(Object.entries({
+    frame: '#3a4268', frameHi: '#6a7298', glass: '#3a5a9a', glassHi: '#8ab0e8',
+    plankA: '#3e4a4e', plankB: '#46545a', plankGap: '#141a1e', wet: '#6a8a98',
+    bar: '#5a5e6a', barHi: '#8a8e9a', barLo: '#2e3038',
+    puff: '#d8dcf0', puffLo: '#a8b0d8', puffHi: '#ffffff',
+    marble: '#d8dae4', marbleLo: '#a8aabc', vein: '#8a8ca0', baluster: '#c8cad8', balLo: '#8a8ca0', sky: '#1a2450', brass: '#c8a040', brassHi: '#e8c868',
+    stone: '#5a6066', stoneHi: '#6e757c', joint: '#2a2e32', drip: '#8aa8b8',
+    girder: '#b8462a', girderHi: '#d8643c', girderLo: '#6a2414', rivet: '#e8885a',
+    lip: '#0e1018', base: '#1a1c28',
+    rim: '#c8ccdc', rimF: '#e8ecf8', rimR: '#8a8ea8', ring2: '#6a6e88', ring3: '#4e5068',
+    gRim: '#d8643c', gRimF: '#e8885a', gRimR: '#8a3018', gRing2: '#6a2414', gRing3: '#4a1a0e',
+  }).map(([k, v]) => [k, hex(v)]));
+  const R = bridge ? [P.gRim, P.gRimF, P.gRimR, P.gRing2, P.gRing3] : [P.rim, P.rimF, P.rimR, P.ring2, P.ring3];
+  return {
+    id: 'cloud' + lv, void: '#0a1030', map: '#7a9cff', runner: false, decor: true, cloud: true, sky: !fog, dust: false, lv, fog, bridge,
+    ambient: fog ? [0.56, 0.6, 0.66] : bridge ? [0.56, 0.58, 0.76] : [0.62, 0.64, 0.82], vignette: 0.45,
+    grade: fog ? ['#9ab0c0', 0.12] : ['#6a7ad8', 0.12],
+    floor(x, y, t) {
+      if (t.house) { // a pen of cloud
+        const n = vnoise(x / 5, y / 4) * 0.7 + vnoise(x / 2, y / 2) * 0.3;
+        return n > 0.62 ? P.puffHi : n > 0.42 ? P.puff : P.puffLo;
+      }
+      if (fog) { // a wet boardwalk, planks running across
+        const row = (y / 5) | 0;
+        if (y % 5 === 0) return P.plankGap;
+        let col = mulc(mixc(P.plankA, P.plankB, hash2(row, (x + row * 13) / 40 | 0)), 0.86 + vnoise(x / 9, y / 1.5) * 0.22);
+        if (vnoise(x / 7 + 9, y / 5) > 0.66) col = mixc(col, P.wet, 0.4); // puddled
+        return col;
+      }
+      if (bridge) { // steel grating: the sky shows through the holes
+        const gx = x % 4, gy = y % 4, edge = t.u < 1 || t.v < 1;
+        if (edge) return P.barLo;
+        if (gx === 0 || gy === 0) return gx === 0 && gy === 0 ? P.barHi : gy === 0 ? P.bar : mulc(P.bar, 0.8);
+        return [...P.barLo, 0];
+      }
+      // Glass panels in a frame: the cloud sea shows through, a sheen running across each pane.
+      if (t.u === 0 || t.v === 0) return t.u === 0 && t.v === 0 ? P.frameHi : P.frame;
+      const sheen = (t.c * 5 + t.r * 3) % 4 === 0 && Math.abs(t.u - t.v * 0.7 - T * 0.25) < 1; // a glint on some of the panes
+      return sheen ? [...P.glassHi, 110] : [...P.glass, 70];
+    },
+    face(x, y, v, F, edge) {
+      let col;
+      if (v === 0) col = bridge ? P.girderLo : P.lip;
+      else if (v === F - 1) col = P.base;
+      else if (bridge) { // a riveted girder, X-braced
+        const lx = x % 12, mid = F >> 1;
+        col = v === 1 || v === F - 2 ? P.girderHi : mulc(P.girder, 0.85 + vnoise(x / 4, y / 3) * 0.2);
+        if (Math.abs((lx - 6) - (v - mid) * 1.2) < 0.8 || Math.abs((lx - 6) + (v - mid) * 1.2) < 0.8) col = P.girderLo;
+        if ((v === 2 || v === F - 3) && x % 4 === 1) col = P.rivet;
+      } else if (fog) { // wet stone, condensation running down it
+        const br = ((v - 1) / 3) | 0, bx = x + (br & 1) * 5;
+        col = (v - 1) % 3 === 2 || bx % 10 === 0 ? P.joint : mulc(mixc(P.stone, P.stoneHi, hash2(bx / 10 | 0, br)), 0.85 + vnoise(x / 3, y / 3) * 0.2);
+        if (hash2(x, 33) > 0.86 && v > 1) col = mixc(col, P.drip, 0.5);
+      } else { // a white balustrade with the night between its balusters
+        const lx = x % 6, prof = [0, 1, 2, 2, 1, 0][Math.min(5, Math.floor((v - 1) / Math.max(1, (F - 2) / 6)))];
+        if (v <= 2) col = v === 1 ? P.brassHi : P.brass;
+        else if (v >= F - 3) col = P.marble;
+        else col = Math.abs(lx - 2.5) <= 0.5 + prof * 0.5 ? (lx < 2 ? P.baluster : P.balLo) : P.sky;
+      }
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) {
+      if (ring === 1) return side === 'front' ? R[1] : side === 'right' ? R[2] : R[0];
+      if (ring === 2) return R[3];
+      if (ring === 3) return R[4];
+      if (bridge) { // painted steel plate, rivets round the edge
+        let col = mulc(P.girder, 0.7 + vnoise(x / 6, y / 6) * 0.15);
+        if ((ring === 4 || ring === 5) && (x + y) % 4 === 0) col = P.rivet;
+        return col;
+      }
+      if (fog) { let col = mulc(P.stone, 0.9 + vnoise(x / 5, y / 5) * 0.2); if (vnoise(x / 4 + 30, y / 4) > 0.68) col = mixc(col, P.wet, 0.5); return col; }
+      let col = mulc(P.marble, 0.9 + vnoise(x / 6, y / 6) * 0.12); // marble with grey veins
+      if (Math.abs(vnoise(x / 9 + 4, y / 5) - 0.5) < 0.018) col = P.vein;
+      return col;
+    },
+    pick(big, r, roll) {
+      if (!big) return fog ? 'beacon' : bridge ? 'flag' : 'flag';
+      if (fog) return roll < 0.25 ? 'beacon' : roll < 0.45 ? 'horn' : roll < 0.65 ? 'lamp' : roll < 0.82 ? 'buoy' : 'scope';
+      if (bridge) return roll < 0.22 ? 'beacon' : roll < 0.42 ? 'sock' : roll < 0.62 ? 'flag' : roll < 0.8 ? 'lamp' : 'scope';
+      return roll < 0.26 ? 'scope' : roll < 0.46 ? 'chair' : roll < 0.64 ? 'flag' : roll < 0.84 ? 'lamp' : 'beacon';
+    },
+    bake(L, g) {
+      const lines = CLOUD_SIGNS[lv], picked = [];
+      for (const s of wideTops(L)) {
+        if (picked.length >= lines.length) break;
+        const txt = lines[picked.length], w = tinyW(txt);
+        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        picked.push(s);
+        const tx = s.xm - (w >> 1), ty = s.yTop + ((s.yBot - s.yTop - 4) >> 1);
+        if (bridge) { g.fillStyle = '#141018'; g.fillRect(tx - 2, ty - 2, w + 4, 9); tinyText(g, txt, tx, ty, '#e8c040'); } // stencilled on a black plate
+        else if (fog) tinyText(g, txt, tx, ty, '#e8e0c0');
+        else { tinyText(g, txt, tx, ty + 1, '#ffffff'); tinyText(g, txt, tx, ty, '#6a6e88'); } // carved
+      }
+    },
+  };
+}
+
+// Per-attempt state for the cloud floors (kept through the reforms, which rebake the level art).
+const cld = { horn: { next: 12, t: 0 }, gust: { next: 9, t: 0 }, geese: null, geeseT: 8, star: null, starT: 6, dew: [], reformWas: 'idle', flashT: 0 };
+function cldReset() { Object.assign(cld, { horn: { next: 12, t: 0 }, gust: { next: 9, t: 0 }, geese: null, geeseT: 8, star: null, starT: 6, dew: [], reformWas: 'idle', flashT: 0 }); }
+const HORN = 3.2, CGUST = 2.6;
+const hornK = () => cld.horn.t > 0 ? Math.sin((1 - cld.horn.t / HORN) * Math.PI) : 0;
+const cgustK = () => cld.gust.t > 0 ? Math.sin((1 - cld.gust.t / CGUST) * Math.PI) : 0;
+function cldUpdate(dt, theme) {
+  if (!dt) return;
+  const live = G.state === 'play';
+  if (theme.fog) { const H_ = cld.horn; if (H_.t > 0) H_.t = Math.max(0, H_.t - dt); if ((H_.next -= dt) <= 0) { H_.next = 16 + Math.random() * 6; H_.t = HORN; if (live) SFX.foghorn(); } }
+  if (theme.bridge) {
+    const Gu = cld.gust;
+    if (Gu.t > 0) Gu.t = Math.max(0, Gu.t - dt);
+    if ((Gu.next -= dt) <= 0) { Gu.next = 10 + Math.random() * 6; Gu.t = CGUST; if (live) SFX.wind(); }
+    if (cgustK() > 0.2 && Math.random() < dt * 24 * cgustK()) { const t = 1.6; parts.push({ x: camX / T - 0.5, y: (camY + Math.random() * VIEW_H) / T, vx: 9 + Math.random() * 4, vy: (Math.random() - 0.5) * 0.6, t, t0: t, col: Math.random() < 0.5 ? '#e6ecff' : '#b8c4e8', g: 0 }); }
+    if (!cld.geese && (cld.geeseT -= dt) <= 0) { cld.geeseT = 18 + Math.random() * 10; const left = Math.random() < 0.5; cld.geese = { x: left ? -40 : VIEW_W + 40, y: 20 + Math.random() * (VIEW_H - 80), vx: left ? 38 : -38, t: 0 }; }
+    if (cld.geese) { const g_ = cld.geese; g_.t += dt; g_.x += g_.vx * dt; if (g_.x < -80 || g_.x > VIEW_W + 80) cld.geese = null; }
+  }
+  if (!theme.fog) { // now and then a shooting star, far below
+    if (!cld.star && (cld.starT -= dt) <= 0) { cld.starT = 7 + Math.random() * 8; cld.star = { x: Math.random() * VIEW_W, y: Math.random() * VIEW_H * 0.7, t: 0 }; }
+    if (cld.star && (cld.star.t += dt) > 0.7) cld.star = null;
+  }
+  // When the clouds lift off a part of the maze that's just been rebuilt, the new walls glisten.
+  const R = G.reform;
+  if (cld.reformWas === 'hold' && R.phase === 'out') cld.dew = R.quads.map(qi => ({ q: meta.reform[qi], t: 2.4 }));
+  cld.reformWas = R.phase;
+  for (const d of cld.dew) d.t -= dt;
+  cld.dew = cld.dew.filter(d => d.t > 0);
+  cld.flashT = Math.max(0, cld.flashT - dt);
+  if (R.phase === 'hold' && Math.random() < dt * 5) { cld.flashT = 0.12; if (Math.random() < 0.4 && live) SFX.thud(); } // lightning in the bank
+  // The binoculars turn to follow Pac-Man.
+  for (const d of art.decor) if (d.kind === 'scope') { const want = Math.max(-1, Math.min(1, ((pac.x + 0.5) * T - d.x) / (T * 3))); d.look = (d.look || 0) + (want - (d.look || 0)) * Math.min(1, dt * 3); }
+}
+function cldAmbient(amb, theme) {
+  if (theme.fog) amb = mixc(amb, [0.75, 0.78, 0.82], hornK() * 0.25);
+  return amb;
+}
+// Under the floor: the night sky far below, the cloud sea drifting through it (city lights under the bridge).
+const puffSprite = s => spr(`cpuff|${T}|${s}`, () => {
+  const w = Math.round(T * (2.4 + s)), h = Math.round(T * (1 + s * 0.4));
+  return pixSprite(w, h, (x, y) => {
+    const dx = (x - w / 2) / (w / 2), dy = (y - h * 0.6) / (h * 0.6), bump = Math.sin(x / w * Math.PI * 3 + s) * 0.18;
+    const f = 1 - dx * dx - (dy + bump) * (dy + bump);
+    if (f <= 0) return null;
+    return y < h * 0.45 ? [232, 236, 255] : f > 0.35 ? [196, 204, 240] : [150, 160, 214];
+  }, 0);
+});
+function cldSky(theme) {
+  const g = fbx.createLinearGradient(0, 0, 0, VIEW_H);
+  g.addColorStop(0, '#0c1238'); g.addColorStop(1, '#2a1e58');
+  fbx.fillStyle = g; fbx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const par = 0.55, ox = -camX * par, oy = -camY * par;
+  if (theme.bridge) for (let i = 0; i < 140; i++) { // the city, far down
+    const x = ((hash2(i, 1) * 900 + ox * 0.6) % 900 + 900) % 900 - 100, y = ((hash2(i, 2) * 700 + oy * 0.6) % 700 + 700) % 700 - 100;
+    if (x < 0 || y < 0 || x > VIEW_W || y > VIEW_H) continue;
+    const on = Math.sin(G.t * (0.5 + hash2(i, 4)) + i) > -0.7;
+    if (on) pr(Math.round(x), Math.round(y), 1, 1, hash2(i, 3) > 0.7 ? '#ffe08a' : hash2(i, 3) > 0.4 ? '#ffb060' : '#c8d8ff');
+  }
+  else for (let i = 0; i < 40; i++) { // a few stars down there too
+    const x = ((hash2(i, 5) * 600 + ox) % 600 + 600) % 600 - 50, y = ((hash2(i, 6) * 700 + oy) % 700 + 700) % 700 - 100;
+    if (x >= 0 && y >= 0 && x < VIEW_W && y < VIEW_H && Math.sin(G.t * 2 + i) > -0.5) pr(Math.round(x), Math.round(y), 1, 1, '#c8d0ff');
+  }
+  if (cld.star) { const s = cld.star, k = s.t / 0.7; fbx.globalAlpha = 1 - k; for (let i = 0; i < 8; i++) pr(Math.round(s.x + k * 60 - i * 2), Math.round(s.y + k * 24 - i * 0.8), 1, 1, i ? '#b8c8ff' : '#ffffff'); fbx.globalAlpha = 1; }
+  if (!theme.bridge && Math.floor(G.t / 40) % 2 === 0) { // the blimp, drifting by
+    const bx = Math.round(((G.t * 6) % (VIEW_W + 200)) - 100 + ox * 0.3), by = Math.round(60 + (oy * 0.3 % 200));
+    pr(bx - 14, by - 4, 28, 8, '#8a8ea8'); pr(bx - 12, by - 5, 24, 1, '#b8bccc'); pr(bx - 16, by - 2, 2, 4, '#6a6e88'); pr(bx + 14, by - 2, 2, 4, '#6a6e88');
+    pr(bx - 4, by + 4, 8, 2, '#4a4e66'); tinyText(fbx, 'PAC AIR', bx - 13, by - 2, '#ffe600');
+    if (Math.floor(G.t * 2) % 2) pr(bx - 5, by + 5, 1, 1, '#ff3b3b');
+  }
+  for (let i = 0; i < 14; i++) { // the cloud sea
+    const s = i % 3, sp = puffSprite(s), W_ = VIEW_W + sp.width * 2;
+    const x = ((hash2(i, 7) * W_ + G.t * (3 + s * 2) + ox) % W_ + W_) % W_ - sp.width, y = ((hash2(i, 8) * (VIEW_H + 120) + oy) % (VIEW_H + 120) + VIEW_H + 120) % (VIEW_H + 120) - 60;
+    fbx.drawImage(sp, Math.round(x), Math.round(y));
+  }
+}
+function cldDecor(theme, dt, glow) {
+  for (const d of art.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    if (d.kind === 'beacon') { // a red warning light, blinking (in time with the foghorn on the Fog Bank)
+      const on = (Math.floor(G.t * 1.2 + d.seed * 3) % 2 === 0) || hornK() > 0.5, by = y0 + 2;
+      if (!glow) { pr(x - 2, by + 2, 5, 2, '#2a2e3a'); pr(x - 1, by, 3, 2, on ? '#ff5a4a' : '#5a1a1a'); if (on) addLightPx(x, by + T * 0.6, 2.4 * T, [1, 0.25, 0.2], 0.6 + hornK() * 0.5); }
+      else if (on) { pr(x - 1, by, 3, 2, '#ffb0a0'); pr(x, by, 1, 1, '#ffffff'); }
+    } else if (d.kind === 'lamp') { // a globe lamp on a post
+      if (!glow) { pr(x, y0 + 4, 1, F - 2, '#2a2e3a'); pr(x - 2, y1 - 1, 5, 1, '#2a2e3a'); pr(x - 2, y0 + 1, 5, 4, '#d8d0b0'); addLightPx(x, y1 + T * 0.4, 3.6 * T, [1, 0.86, 0.62], 0.8); }
+      else { pr(x - 2, y0 + 1, 5, 4, '#fff4c8'); pr(x - 1, y0 + 2, 2, 1, '#ffffff'); }
+    } else if (glow) continue;
+    else if (d.kind === 'scope') { // coin-op binoculars on a post, turning to follow you
+      const lk = Math.round((d.look || 0) * 2), sy = y0 + 2;
+      pr(x, sy + 4, 1, F - 4, '#3a4a6a'); pr(x - 2, y1 - 1, 5, 1, '#3a4a6a');
+      pr(x - 3 + lk, sy + 1, 7, 3, '#4a6a9a'); pr(x - 3 + lk, sy + 1, 7, 1, '#6a8aba');
+      pr(x - 4 + lk * 2, sy + 1, 2, 2, '#1a2030'); pr(x + 3 + lk * 2, sy + 1, 2, 2, '#1a2030'); // the eyepieces
+      pr(x - 1, sy + 4, 2, 1, '#e8c040'); // the coin slot
+    } else if (d.kind === 'chair') { // a striped deck chair
+      const cx = x - 4;
+      for (let i = 0; i < 6; i++) pr(cx + i, y1 - 4 - Math.round(i * 0.9), 1, 2, i % 2 ? '#e8e8f0' : '#3a6ad8');
+      pr(cx, y1 - 2, 1, 2, '#8a6a44'); pr(cx + 6, y1 - 3, 1, 3, '#8a6a44'); pr(cx + 2, y1 - 2, 4, 1, '#8a6a44');
+    } else if (d.kind === 'flag') { // a pennant on the rail, flapping
+      const wind = 1 + cgustK() * 2;
+      pr(x, y0 - 2, 1, F, '#c8ccd8');
+      for (let i = 0; i < 6; i++) { const wy = Math.round(Math.sin(G.t * 9 * wind + i * 0.9 + d.seed * 6) * (0.6 + i * 0.15)); pr(x + 1 + i, y0 - 2 + wy + (i >> 1), 1, Math.max(1, 3 - (i >> 1)), d.seed < 0.5 ? '#e83a3a' : '#ffe600'); }
+    } else if (d.kind === 'sock') { // a windsock: limp in a lull, straight out in a gust
+      const k = 0.4 + cgustK() * 0.6;
+      pr(x, y0, 1, F, '#c8ccd8');
+      for (let i = 0; i < 8; i++) { const dy = Math.round((1 - k) * i * 0.7 + Math.sin(G.t * 12 + i) * 0.4); pr(x + 1 + Math.round(i * k), y0 + 1 + dy, 1, Math.max(1, 3 - (i >> 2)), (i >> 1) % 2 ? '#ffffff' : '#ff6a2a'); }
+    } else if (d.kind === 'horn') { // a foghorn: it puffs when it sounds
+      pr(x - 4, y0 + 3, 3, 3, '#5a5e6a'); pr(x - 1, y0 + 2, 5, 5, '#8a8e9a'); pr(x + 4, y0 + 1, 2, 7, '#a8acb8');
+      if (hornK() > 0.2 && Math.random() < dt * 20) parts.push({ x: d.x / T + 0.4, y: (d.y0 + 4) / T, vx: 1.2 + Math.random(), vy: (Math.random() - 0.5) * 0.4, t: 1.2, t0: 1.2, col: '#d8e0e8', g: 0, drag: 1 });
+    } else if (d.kind === 'buoy') { // a lifebuoy on the wall
+      for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) { const r = Math.hypot(i, j); if (r > 1.6 && r < 3.6) pr(x + i, y0 + (F >> 1) + j, 1, 1, (Math.atan2(j, i) * 2 / Math.PI + 4.5 | 0) % 2 ? '#e8e8f0' : '#e83a2a'); }
+    }
+  }
+}
+// The ghost house's door: a velvet rope between brass posts, unhooked when someone's coming through.
+function cldDoor() {
+  const y = Math.round((house.exitY + 1.2) * T) - camY, x0 = house.doorC * T - camX, w = 2 * T;
+  pr(x0, y - 3, 2, 6, '#c8a040'); pr(x0 + w - 2, y - 3, 2, 6, '#c8a040');
+  const busy = [...G.ghosts, ...G.hounds, ...G.wraiths, ...G.spiders].some(e => Math.abs(e.y - (house.exitY + 1)) < 1.4 && Math.abs(e.x - house.doorX) < 1.4);
+  if (!busy) for (let i = 2; i < w - 2; i++) pr(x0 + i, y - 2 + Math.round(Math.sin(i / (w - 4) * Math.PI) * 2), 1, 2, '#b8202a');
+}
+// After the light: fog, the creeping gargoyles' eyes through it, geese, lightning in the clouds, dew on new walls.
+const fogBlob = () => spr(`fogblob|${T}`, () => {
+  const w = Math.round(T * 4.5), h = Math.round(T * 2.4);
+  return pixSprite(w, h, (x, y) => {
+    const dx = (x - w / 2) / (w / 2), dy = (y - h / 2) / (h / 2), f = 1 - (dx * dx + dy * dy);
+    return f > bayer(x, y) * 0.8 ? [208, 218, 228, 80] : null;
+  }, 0);
+});
+function cldPost(dt, theme) {
+  if (theme.fog) {
+    const n = 22, k = 0.55 + hornK() * 0.4, sp = fogBlob();
+    for (let i = 0; i < n; i++) {
+      const wx = ((hash2(i, 11) * (W + 8) + G.t * (0.4 + hash2(i, 12) * 0.5)) % (W + 8)) - 4, wy = hash2(i, 13) * (H + 2) - 1 + Math.sin(G.t * 0.3 + i) * 0.6;
+      const near = Math.hypot(wx - pac.x - 0.5, wy - pac.y - 0.5), a = k * Math.max(0, Math.min(1, (near - 2.2) / 3));
+      if (a <= 0.02) continue;
+      fbx.globalAlpha = a; blit(sp, wx, wy);
+    }
+    fbx.globalAlpha = 1;
+    for (const g of G.gargoyles) if (g.moving) { // a creeping gargoyle's eyes burn through the fog
+      const sx = Math.round((g.x + 0.5) * T - camX), sy = Math.round((g.y + 0.5) * T - camY) - Math.round(T * 0.12);
+      pr(sx - 4, sy, 2, 2, '#ff3b3b'); pr(sx + 2, sy, 2, 2, '#ff3b3b');
+    }
+  }
+  if (cld.geese) { // a V of geese crossing the sky
+    const g_ = cld.geese, dir = g_.vx > 0 ? 1 : -1, flap = Math.floor(G.t * 6) % 2;
+    for (let i = 0; i < 7; i++) {
+      const row = Math.ceil(i / 2), side = i % 2 ? 1 : -1, bx = Math.round(g_.x - dir * row * 7), by = Math.round(g_.y + (i ? side * row * 5 : 0));
+      pr(bx - 2, by - (flap ? 1 : 0), 2, 1, '#1a1c28'); pr(bx + 1, by - (flap ? 1 : 0), 2, 1, '#1a1c28'); pr(bx, by, 1, 1, '#1a1c28'); pr(bx + dir, by, 1, 1, '#1a1c28');
+    }
+  }
+  const R = G.reform;
+  if (cld.flashT > 0 && R.quads.length) { // lightning inside the bank
+    fbx.globalAlpha = 0.22;
+    for (const qi of R.quads) { const q = meta.reform[qi]; pr(Math.round(q.c0 * T - camX), Math.round(q.r0 * T - camY), (q.c1 - q.c0 + 1) * T, (q.r1 - q.r0 + 1) * T, '#e8f0ff'); }
+    fbx.globalAlpha = 1;
+  }
+  for (const d of cld.dew) { // dew sparkling along the walls that just formed
+    const q = d.q;
+    for (let i = 0; i < 26; i++) {
+      const px_ = Math.floor((q.c0 + Math.random() * (q.c1 - q.c0 + 1)) * T), py_ = Math.floor((q.r0 + Math.random() * (q.r1 - q.r0 + 1)) * T);
+      if (px_ < 0 || py_ < 1 || px_ >= art.PW || py_ >= art.PH || art.cls[py_ * art.PW + px_] !== 1 || art.cls[(py_ - 1) * art.PW + px_] === 1) continue;
+      fbx.globalAlpha = Math.min(1, d.t); pr(px_ - camX, py_ - camY, 1, 1, '#ffffff');
+    }
+  }
+  fbx.globalAlpha = 1;
+}
+
 // ---------- Frost (every floor) ----------
 // A frost berry sends a shockwave of ice out from Pac-Man and brings frost in at the screen's edge, and
 // the Wraith leaves frost on any wall he drifts through. The Freezer adds its own: walls that ice over
@@ -9146,6 +9461,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.sewer) return sewDecor(theme, dt, glow);
   if (theme.belfry) return belDecor(theme, dt, glow);
   if (theme.attic) return attDecor(theme, dt, glow);
+  if (theme.cloud) return cldDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -9371,6 +9687,7 @@ function renderWorld() {
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
   fbx.fillStyle = theme.void; fbx.fillRect(0, 0, VIEW_W, VIEW_H);
+  if (theme.sky) cldSky(theme); // seen through the floor where it's glass or grating
   fbx.drawImage(art.canvas, -camX, -camY);
   if (G.state === 'clear' && G.timer > 1 && Math.floor((G.timer - 1) / 0.22) % 2 === 0) { fbx.globalAlpha = 0.85; fbx.drawImage(art.mask, -camX, -camY); fbx.globalAlpha = 1; }
   atmoUpdate(dt, theme);
@@ -9383,6 +9700,7 @@ function renderWorld() {
   if (theme.sewer) sewUpdate(dt, theme);
   if (theme.belfry) belUpdate(dt, theme);
   if (theme.attic) attUpdate(dt, theme);
+  if (theme.cloud) cldUpdate(dt, theme);
   if (G.gargoyles.length) gargoyleFx(dt);
   if (G.cfg.dash) dashUpdate(dt, theme);
   frostUpdate(dt, theme);
@@ -9393,7 +9711,7 @@ function renderWorld() {
   if (G.vents.length && !theme.boiler && G.state !== 'cast') ventBoard();
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : theme.belfry ? belDoor() : theme.attic ? attDoor() : drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : theme.belfry ? belDoor() : theme.attic ? attDoor() : theme.cloud ? cldDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
   if (theme.sewer && G.state !== 'cast') { sewWater(); sewRats(); }
   if ((theme.flood || hasFlow) && G.state !== 'cast') fldFloor(theme);
@@ -9411,7 +9729,6 @@ function renderWorld() {
     if (G.webs.size) drawWebs();
     if (G.fruit && !pxFruit(G.fruit.kind, meta.fruit.x, meta.fruit.y)) { vecBegin(); vec(drawFruit, G.fruit.kind, meta.fruit.x, meta.fruit.y); vecEnd(); }
     worldTf();
-    drawReform();
     if (G.magnet > 0 && (G.magnet > 1.5 || Math.floor(G.t * 8) % 2)) { // the pull radius, spinning
       fbx.save(); fbx.strokeStyle = '#ff5a5a'; fbx.lineWidth = 0.08; fbx.setLineDash([0.4, 0.35]); fbx.lineDashOffset = -G.t * 3;
       fbx.beginPath(); fbx.arc(pac.x + 0.5, pac.y + 0.5, MAGNET_R, 0, Math.PI * 2); fbx.stroke(); fbx.restore();
@@ -9438,19 +9755,22 @@ function renderWorld() {
       const b = G.boss;
       if (b && b.state !== 'dead') b.kind === 'blob' ? shadowAt(b.x, b.y, blobR(b) * 1.6, blobR(b) * 0.72) : shadowAt(b.x, b.y, 2.6, 1.55);
     }
-    if (G.state === 'dying') {
-      if (G.timer < 1) pxPac(pac.x, pac.y, pac.face, 0.4);
-      else pxPacDeath(pac.x, pac.y, (G.timer - 1) / 1.4);
-    } else if (pacShown) {
-      const open = G.state === 'ready' || G.state === 'dialog' ? 0 : (1 - Math.cos(pac.anim * Math.PI * 2 * 0.8)) / 2;
-      pac.trail.forEach((t, i) => {
-        if (i % 2 || Math.abs(t.x - pac.x) > 5) return;
-        fbx.globalAlpha = 0.45 * (1 - i / pac.trail.length);
-        pxPac(t.x, t.y, pac.face, open);
-      });
-      fbx.globalAlpha = 1;
-      pxPac(pac.x, pac.y, pac.face, G.state === 'clear' ? 0 : open);
-    }
+    const drawPac = () => {
+      if (G.state === 'dying') {
+        if (G.timer < 1) pxPac(pac.x, pac.y, pac.face, 0.4);
+        else pxPacDeath(pac.x, pac.y, (G.timer - 1) / 1.4);
+      } else if (pacShown) {
+        const open = G.state === 'ready' || G.state === 'dialog' ? 0 : (1 - Math.cos(pac.anim * Math.PI * 2 * 0.8)) / 2;
+        pac.trail.forEach((t, i) => {
+          if (i % 2 || Math.abs(t.x - pac.x) > 5) return;
+          fbx.globalAlpha = 0.45 * (1 - i / pac.trail.length);
+          pxPac(t.x, t.y, pac.face, open);
+        });
+        fbx.globalAlpha = 1;
+        pxPac(pac.x, pac.y, pac.face, G.state === 'clear' ? 0 : open);
+      }
+    };
+    drawPac();
     if (showEnemies) for (const s of G.slimes) if (s.state === 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state === 'house') pxWraith(w);
     if (showEnemies) for (const g of G.ghosts) if (g !== G.eatenGhost) pxGhost(g);
@@ -9483,6 +9803,10 @@ function renderWorld() {
       for (const s of G.buddies) pxGhost({ ...s, dir: s.state === 'saved' ? U : s.dir, panic: true, frightened: false, eaten: s.state === 'saved' });
       for (const v of G.vents) drawSteam(v);
     }
+    if (G.reform.quads.length) { // the cloud banks go over everyone in them; Pac-Man stays in sight
+      worldTf(); drawReform(); idTf();
+      if (reformCover(pac.x + 0.5, pac.y + 0.5) > 0) drawPac();
+    }
   }
   if (theme.freezer) frzFog();
   if (theme.lab) labMist(theme);
@@ -9501,6 +9825,7 @@ function renderWorld() {
   if (theme.sewer) amb = sewAmbient(amb);
   if (theme.belfry) amb = belAmbient(amb);
   if (theme.attic) amb = attAmbient(amb);
+  if (theme.cloud) amb = cldAmbient(amb, theme);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
@@ -9514,6 +9839,8 @@ function renderWorld() {
   if (theme.sewer) sewPost();
   if (theme.belfry && !cast) belPost(dt, theme);
   if (G.webs.size && !cast) websPost();
+  if (theme.cloud && !cast) cldPost(dt, theme);
+  if (G.reform.quads.length && enemiesShown() && !cast) reformEyes(); // after the light, so the glare off the clouds doesn't wash them out
   if (G.cfg.dash) dashPost();
   if (enemiesShown()) labTaffy(); // after the light, so the goo glows even under the blacklight
   frostPost();
