@@ -985,6 +985,8 @@ const SFX = {
   squeak() { beep(2400, 3200, 0.05, 'square', 0.03); beep(2800, 2200, 0.05, 'square', 0.025, 0.07); },
   bong(f = 392, d = 0) { beep(f, f * 0.995, 2.4, 'triangle', 0.1, d); beep(f * 2.01, f * 2, 1.4, 'sine', 0.04, d); beep(f / 2, f / 2, 2.8, 'sine', 0.07, d); },
   flap() { for (let i = 0; i < 5; i++) beep(500 + (i % 2) * 250, 260, 0.04, 'triangle', 0.035, i * 0.045); },
+  creak() { beep(150, 110, 0.6, 'sawtooth', 0.035); beep(210, 150, 0.4, 'triangle', 0.05, 0.35); beep(120, 170, 0.5, 'sawtooth', 0.025, 0.7); },
+  skitter() { for (let i = 0; i < 8; i++) beep(2400 + (i % 3) * 400, 2000, 0.02, 'square', 0.018, i * 0.035); },
   grind() { beep(90, 60, 0.3, 'sawtooth', 0.06); beep(140, 80, 0.2, 'square', 0.03, 0.05); },
   blip(sp) { beep(sp.voice, sp.voice * 1.06, 0.035, sp.wave || 'square', 0.045); },
   life() { [0, 0.15, 0.3].forEach(d => beep(1300, 1300, 0.12, 'square', 0.08, d)); },
@@ -1093,7 +1095,7 @@ function resetActors() {
 }
 function loadLevel(i) {
   G.lvIndex = i;
-  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); // every attempt starts the stage effects afresh
+  frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); attReset(); // every attempt starts the stage effects afresh
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
@@ -2664,7 +2666,7 @@ function play(dt) {
     G.light += (want - G.light) * Math.min(1, dt * 3);
   }
   if (G.webs.size) {
-    if (dashing && G.webs.delete(webKey(pac.x, pac.y))) { SFX.tear(); popup('RIP!', pac.x, pac.y - 1, '#e6e9ff', 0.5); }
+    if (dashing && G.webs.delete(webKey(pac.x, pac.y))) { SFX.tear(); popup('RIP!', pac.x, pac.y - 1, '#e6e9ff', 0.5); webTear(Math.round(pac.x), Math.round(pac.y)); }
     for (const [k, t] of G.webs) { if (t <= dt) G.webs.delete(k); else G.webs.set(k, t - dt); }
   }
   if (G.reform.on) { reformUpdate(dt); if (G.state !== 'play') return; }
@@ -3420,19 +3422,6 @@ function drawDrop(d) {
   ctx.strokeStyle = 'rgba(230,233,255,0.6)'; ctx.lineWidth = 0.04;
   ctx.beginPath(); ctx.moveTo(x, -1); ctx.lineTo(x, sy + 0.2); ctx.stroke();
   drawSpider({ x: d.x, y: sy, dir: D, state: 'active', fresh: 0 });
-}
-function drawWebs() {
-  ctx.save();
-  ctx.strokeStyle = '#e6e9ff'; ctx.lineWidth = 0.05;
-  for (const [k, t] of G.webs) {
-    const c = k % W, r = (k - c) / W, cx = c + 0.5, cy = r + 0.5;
-    ctx.globalAlpha = 0.6 * Math.min(1, t / 3); // fading as it frays
-    ctx.beginPath();
-    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 4; ctx.moveTo(cx - Math.cos(a) * 0.5, cy - Math.sin(a) * 0.5); ctx.lineTo(cx + Math.cos(a) * 0.5, cy + Math.sin(a) * 0.5); }
-    for (const rr of [0.2, 0.4]) for (let i = 0; i <= 8; i++) { const a = i * Math.PI / 4; ctx[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
-    ctx.stroke();
-  }
-  ctx.restore();
 }
 // ---------- Basement sprites ----------
 // Your freshest scent: paw prints on the last few tiles of the trail, fading as they age (see pxScent).
@@ -5365,6 +5354,7 @@ const themeFor = (stage, lv = 0) => {
   if (lv && stage === 7) return THEMES[`7-${lv}`] || (THEMES[`7-${lv}`] = cryptTheme(lv));
   if (lv && stage === 8) return THEMES['8-1'] || (THEMES['8-1'] = sewerTheme());
   if (lv && stage === 9) return THEMES[`9-${lv}`] || (THEMES[`9-${lv}`] = belfryTheme(lv));
+  if (lv && stage === 10) return THEMES[`10-${lv}`] || (THEMES[`10-${lv}`] = atticTheme(lv));
   return THEMES[stage] || (THEMES[stage] = genericTheme(stage));
 };
 const curTheme = () => themeFor(G.cfg.stage, G.lvIndex >= ROOF ? 0 : G.cfg.lv);
@@ -8455,6 +8445,344 @@ function gargoyleFloor() { // claw marks scored into the floor, fading
   fbx.globalAlpha = 1;
 }
 
+// ---------- The Attic (stage 10) ----------
+// 14F-16F, where nobody has dusted since the tower was built: pine boards under a thick coat of dust,
+// stud walls stuffed with pink insulation, beams furred with grey. Trunks, labelled boxes, furniture
+// under dust sheets, a stopped clock, bare bulbs swinging on their cords and a round window letting in
+// the moon. Pac-Man sweeps a trail through the dust wherever he goes. Every so often the old house
+// settles: a creak, dust pouring off the rafters, the bulbs swinging and stuttering. The ghost house is
+// the attic hatch, its pull-down ladder going into the dark. 14F is the attic proper, 15F Cobweb
+// Corner (lath and plaster, a rocking chair that rocks when the Wraith goes by, a dressmaker's dummy,
+// Great-Grandpa Pac's portrait), 16F the Spider Nest (silk over everything, egg sacs that spill
+// spiderlings when you pass, and ghosts wrapped up and hung on the walls for later).
+const ATTIC_DUST = {
+  1: ['CLEAN ME', 'PAC WAS HERE', 'DO NOT OPEN'],
+  2: ['WASH ME', 'IS ANYONE UP HERE?', 'BOO'],
+  3: ['NO VACANCY', 'GUESTS: 8 LEGS ONLY', 'MIND THE EGGS'],
+};
+const BOX_LABELS = ['XMAS', 'JUNK', 'TOYS', 'MISC', 'PAC', 'OLD'];
+function atticTheme(lv) {
+  const corner = lv === 2, nest = lv === 3;
+  const P = Object.fromEntries(Object.entries({
+    pineA: '#5a4632', pineB: '#66503a', seam: '#241a10', nail: '#3a3028', dust: '#8a8274', dustHi: '#a29a8a', silk: '#d8d8e0',
+    drop: '#0a0806', dropLine: '#16100a',
+    stud: '#6a5238', studHi: '#86694a', studLo: '#3e2e1e', insul: '#c88e8e', insulHi: '#e0aaa8', insulLo: '#9a6668', board: '#3a2c1e',
+    plaster: '#8a8274', plasterHi: '#a29a8a', lath: '#5a4430', crack: '#2a2018', paper: '#6a5a6a', paperHi: '#8a7a8a',
+    lip: '#0e0a06', base: '#1e160e', beam: '#4a3a28', beamLine: '#2a2016',
+    rim: '#8a7458', rimF: '#a88e6a', rimR: '#5a4a36', ring2: '#3e3226', ring3: '#2e241a',
+  }).map(([k, v]) => [k, hex(v)]));
+  return {
+    id: 'attic' + lv, void: '#060402', map: '#b8783c', runner: false, decor: true, attic: true, dust: true, lv, corner, nest,
+    ambient: nest ? [0.42, 0.4, 0.44] : corner ? [0.48, 0.44, 0.42] : [0.52, 0.46, 0.4], vignette: 0.55,
+    grade: nest ? ['#8a7aa8', 0.1] : ['#c8a070', 0.12],
+    floor(x, y, t) {
+      if (t.house) return y % 8 === 0 ? P.dropLine : mulc(P.drop, 0.8 + vnoise(x / 5, y / 5) * 0.5); // down the hatch
+      // Wide pine boards, nailed at the ends, under dust that lies thickest where nobody walks.
+      const row = (y / 8) | 0, xs = x + ((hash2(row, 7) * 48) | 0), lx = xs % 48;
+      if (y % 8 === 0 || lx === 0) return mixc(P.seam, P.dust, 0.25);
+      let col = lx === 3 && y % 8 === 4 ? P.nail : mulc(mixc(P.pineA, P.pineB, hash2(xs / 48 | 0, row)), 0.86 + vnoise(x / 12, y / 1.5) * 0.22);
+      const edge = Math.min(t.u, T - 1 - t.u, t.v, T - 1 - t.v) / (T / 2); // 0 at the tile's rim, 1 in the middle
+      const k = 0.32 + (vnoise(x / 14 + 3, y / 14) - 0.5) * 0.5 + (1 - edge) * 0.12 + (nest ? 0.1 : 0);
+      col = mixc(col, hash2(x, y) > 0.9 ? P.dustHi : P.dust, Math.max(0, Math.min(0.75, k)));
+      if (nest && Math.abs(vnoise(x / 9 + 50, y / 3) - 0.5) < 0.012) col = P.silk; // stray threads of silk
+      return col;
+    },
+    face(x, y, v, F, edge) {
+      let col;
+      if (v === 0) col = P.lip;
+      else if (v === F - 1) col = P.base;
+      else if (v === 1) col = P.board; // the roof boards, showing over the top
+      else if (corner) { // lath and plaster, cracked, with the lath showing through where it's fallen away
+        const gone = vnoise(x / 7 + 11, y / 4) > 0.64;
+        if (gone) col = (v & 1) ? P.lath : P.crack;
+        else {
+          col = mulc(P.plaster, 0.88 + vnoise(x / 3, y / 3) * 0.2);
+          if (Math.abs(vnoise(x / 5, y / 5) - 0.5) < 0.02) col = P.crack;
+          if (hash2(x >> 2, 3) > 0.7 && v < F * 0.6) col = mixc(col, (x + v) % 4 ? P.paper : P.paperHi, 0.7); // a strip of old wallpaper
+        }
+      } else { // studs, and pink insulation fluffed out between them
+        const lx = x % 10;
+        if (lx <= 1) col = lx ? P.stud : P.studHi;
+        else if (lx === 2) col = P.studLo;
+        else { const n = vnoise(x / 2.5, y / 2.5); col = n > 0.62 ? P.insulHi : n < 0.36 ? P.insulLo : P.insul; }
+      }
+      if (nest && v > 1 && v < F - 1) { const s = vnoise(x / 6, y / 14); if (s > 0.5) col = mixc(col, P.silk, Math.min(0.75, (s - 0.5) * 3)); } // silk sheeted over the walls
+      return edge < 0 ? mulc(col, 0.8) : edge > 0 ? mulc(col, 0.62) : col;
+    },
+    cap(x, y, ring, side) { // beams furred with dust (and silk, in the nest)
+      if (ring === 1) return side === 'front' ? P.rimF : side === 'right' ? P.rimR : P.rim;
+      if (ring === 2) return P.ring2;
+      if (ring === 3) return P.ring3;
+      let col = y % 7 === 0 ? P.beamLine : mulc(P.beam, 0.86 + vnoise(x / 10, y / 1.5) * 0.24);
+      col = mixc(col, P.dust, 0.35 + vnoise(x / 6 + 5, y / 6) * 0.35);
+      if (nest) { const n = vnoise(x / 3 + 70, y / 12); if (n > 0.64) col = mixc(col, P.silk, Math.min(0.55, (n - 0.64) * 4)); } // silk draped over in sheets
+      return col;
+    },
+    pick(big, r, roll) {
+      if (!big) return nest && roll < 0.5 ? 'sac' : 'cobweb';
+      if (nest) return roll < 0.24 ? 'sac' : roll < 0.44 ? 'cocoon' : roll < 0.6 ? 'cobweb' : roll < 0.74 ? 'lamp' : roll < 0.88 ? 'boxes' : 'sheet';
+      if (corner) return roll < 0.18 ? 'cobweb' : roll < 0.32 ? 'rocker' : roll < 0.44 ? 'dummy' : roll < 0.56 ? 'portrait' : roll < 0.68 ? 'sheet' : roll < 0.8 ? 'lamp' : roll < 0.9 ? 'boxes' : 'oculus';
+      return roll < 0.16 ? 'trunk' : roll < 0.32 ? 'boxes' : roll < 0.46 ? 'sheet' : roll < 0.6 ? 'lamp' : roll < 0.7 ? 'oculus' : roll < 0.8 ? 'clock' : roll < 0.9 ? 'horse' : 'cobweb';
+    },
+    bake(L, g) {
+      // Words written with a finger in the dust on the widest beams.
+      const lines = ATTIC_DUST[lv], picked = [];
+      for (const s of wideTops(L)) {
+        if (picked.length >= lines.length) break;
+        const txt = lines[picked.length], w = tinyW(txt);
+        if (picked.some(q => Math.abs(q.r - s.r) < 2) || s.yBot - s.yTop < 10 || w > s.x1 - s.x0 - 10) continue;
+        picked.push(s);
+        tinyText(g, txt, s.xm - (w >> 1), s.yTop + ((s.yBot - s.yTop - 4) >> 1), '#3a2c1e');
+      }
+      // Odds and ends on the floor: dust bunnies, a lost marble, a button, bent nails; silk in the nest.
+      for (let r = 0; r < L.h; r++) for (let c = 0; c < L.w; c++) {
+        const i = r * L.w + c;
+        if (!L.reach[i] || L.house[i] || hash2(c * 7 + lv, r * 5) > 0.2 || Math.hypot(c - meta.pac.x, r - meta.pac.y) < 2) continue;
+        const x = c * L.T + 3 + ((hash2(c, r + 2) * (L.T - 8)) | 0), y = r * L.T + 3 + ((hash2(c + 2, r) * (L.T - 8)) | 0), k = hash2(c, r + 9);
+        if (k < 0.45) { g.fillStyle = '#a29a8a'; g.fillRect(x, y, 3, 2); g.fillRect(x + 1, y - 1, 2, 1); g.fillStyle = '#c8c0b0'; g.fillRect(x + 1, y, 1, 1); } // a dust bunny
+        else if (k < 0.6) { g.fillStyle = ['#3a8ad8', '#d84a4a', '#4ab84a'][(c + r) % 3]; g.fillRect(x, y, 2, 2); g.fillStyle = '#ffffff'; g.fillRect(x, y, 1, 1); } // a marble
+        else if (k < 0.75) { g.fillStyle = '#7a7470'; g.fillRect(x, y, 3, 1); g.fillRect(x + 2, y - 1, 1, 1); } // a bent nail
+        else if (nest) { g.fillStyle = '#d8d8e0'; g.fillRect(x, y, 4, 1); g.fillRect(x + 3, y + 1, 3, 1); }
+        else { g.fillStyle = '#8a3a3a'; g.fillRect(x, y, 2, 2); g.fillStyle = '#2a1010'; g.fillRect(x, y, 1, 1); } // a button
+      }
+    },
+  };
+}
+
+// Per-attempt state for the attic, reset with the level.
+const att = { settle: { next: 9, t: 0 }, streams: [], prints: [], last: null, creakT: 0 };
+function attReset() { Object.assign(att, { settle: { next: 9, t: 0 }, streams: [], prints: [], last: null, creakT: 0 }); }
+const SETTLE = 2.4;
+const settleK = () => att.settle.t > 0 ? Math.sin((1 - att.settle.t / SETTLE) * Math.PI) : 0;
+// How a bare bulb is doing: it stutters while the house settles.
+const bulbK = seed => settleK() > 0.3 && hash2(Math.floor(G.t * 14), seed * 997 | 0) > 0.6 ? 0.15 : 1;
+function attUpdate(dt, theme) {
+  if (!dt) return;
+  const S = att.settle, live = G.state === 'play';
+  if (S.t > 0) S.t = Math.max(0, S.t - dt);
+  if ((S.next -= dt) <= 0) { // the house settles: dust pours off a few of the beams in view
+    S.next = 13 + Math.random() * 6; S.t = SETTLE;
+    if (live) SFX.creak();
+    att.streams = [];
+    for (const d of art.decor) if (Math.random() < 0.5 && d.x > camX && d.x < camX + VIEW_W && d.y1 > camY && d.y1 < camY + VIEW_H) att.streams.push({ x: d.x / T + (Math.random() - 0.5) * 2, y: d.y1 / T, t: 1.2 + Math.random() });
+  }
+  for (const s of att.streams) {
+    s.t -= dt;
+    if (s.t > 0 && Math.random() < dt * 30) parts.push({ x: s.x + (Math.random() - 0.5) * 0.25, y: s.y, vx: (Math.random() - 0.5) * 0.2, vy: 1.2 + Math.random(), t: 0.9, t0: 0.9, col: Math.random() < 0.5 ? '#a29a8a' : '#c8c0b0', g: 1 });
+  }
+  att.streams = att.streams.filter(s => s.t > 0);
+  // Pac-Man sweeps a trail through the dust.
+  if (live) {
+    const l = att.last;
+    if (!l || Math.hypot(pac.x - l.x, pac.y - l.y) > 0.3) {
+      if (!l || Math.hypot(pac.x - l.x, pac.y - l.y) < 2) att.prints.push({ x: pac.x + 0.5, y: pac.y + 0.5, t: 0 });
+      att.last = { x: pac.x, y: pac.y };
+      if (att.prints.length > 260) att.prints.shift();
+    }
+  }
+  for (const p of att.prints) p.t += dt;
+  // The rocking chair and the rocking horse rock when the Wraith drifts by (and when the house settles).
+  const wraiths = G.wraiths.filter(w => w.state === 'active' || w.state === 'leave');
+  att.creakT = Math.max(0, att.creakT - dt);
+  for (const d of art.decor) {
+    if (d.kind === 'rocker' || d.kind === 'horse') {
+      const near = wraiths.some(w => Math.hypot(w.x + 0.5 - d.x / T, w.y + 0.5 - d.y1 / T) < 5);
+      d.rock = Math.max(near ? 1 : settleK() * 0.6, (d.rock || 0) - dt * 0.4);
+      if (near && live && !att.creakT && Math.abs(Math.sin(G.t * 2.4 + d.seed * 9)) < 0.05) { SFX.creak(); att.creakT = 2; }
+    } else if (d.kind === 'sac') { // spiderlings spill out of an egg sac when you brush past it
+      d.cool = Math.max(0, (d.cool || 0) - dt);
+      if (live && !d.cool && Math.hypot(pac.x + 0.5 - d.x / T, pac.y + 0.5 - d.y1 / T) < 1.6) {
+        d.cool = 8;
+        for (let i = 0; i < 9; i++) { const a = Math.PI * (0.15 + Math.random() * 0.7), s = 1.5 + Math.random() * 2.5, t = 0.7 + Math.random() * 0.6; parts.push({ x: d.x / T, y: (d.y1 - 3) / T, vx: Math.cos(a) * s * (Math.random() < 0.5 ? -1 : 1), vy: Math.sin(a) * s, t, t0: t, col: '#2a1a30', g: 0, drag: 1.2 }); }
+        SFX.skitter();
+      }
+    } else if (d.kind === 'cocoon') d.near = live && Math.hypot(pac.x + 0.5 - d.x / T, pac.y + 0.5 - d.y1 / T) < 2.5;
+  }
+}
+function attAmbient(amb) {
+  const k = settleK();
+  return k > 0.3 && hash2(Math.floor(G.t * 14), 5) > 0.6 ? mulc(amb, 0.85) : amb;
+}
+function attDecor(theme, dt, glow) {
+  for (const d of art.decor) {
+    const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
+    if (x < -60 || x > VIEW_W + 60 || y1 < -60 || y0 > VIEW_H + 60) continue;
+    if (d.kind === 'lamp') { // a bare bulb on its cord, swinging when the house settles
+      const k = bulbK(d.seed), sw = Math.sin(G.t * 2.2 + d.seed * 6) * (0.08 + settleK() * 0.5), len = 6;
+      const bx = Math.round(x + Math.sin(sw) * len), by = y0 + 1 + len;
+      if (!glow) {
+        for (let j = 0; j < len; j++) pr(Math.round(x + Math.sin(sw) * j), y0 + 1 + j, 1, 1, '#2a2420');
+        pr(bx - 1, by, 3, 1, '#5a5048');
+        pr(bx - 1, by + 1, 3, 3, k > 0.5 ? '#d8c888' : '#5a5040');
+        addLightPx(bx, by + 2 + T * 0.4, 3.6 * T, [1, 0.74, 0.42], 0.85 * k);
+      } else if (k > 0.5) { pr(bx - 1, by + 1, 3, 3, '#ffe8a0'); pr(bx, by + 2, 1, 1, '#fffbe0'); }
+    } else if (d.kind === 'oculus') { // a round window with the moon in it
+      const cy = y0 + (F >> 1);
+      for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) {
+        const r = Math.hypot(i, j);
+        if (r > 4.5) continue;
+        if (!glow) pr(x + i, cy + j, 1, 1, r > 3.4 ? '#5a4632' : i === 0 || j === 0 ? '#3a2c1e' : '#1a2440');
+        else if (r <= 3.4 && i && j) { fbx.globalAlpha = 0.5; pr(x + i, cy + j, 1, 1, '#a8b8e8'); fbx.globalAlpha = 1; }
+      }
+      if (!glow) addLightPx(x, y1 + T * 0.9, 3 * T, [0.55, 0.62, 1], 0.55);
+    } else if (glow) {
+      if (d.kind === 'sheet' && Math.floor(G.t / 2.5 + d.seed * 7) % 6 === 0) { // something under the sheet opens its eyes
+        pr(x - 2, y1 - 3, 1, 1, '#ffffff'); pr(x + 1, y1 - 3, 1, 1, '#ffffff');
+      } else if (d.kind === 'cobweb' && Math.floor(G.t * 1.5 + d.seed * 9) % 5 === 0) pr(x + (d.seed < 0.5 ? -4 : 4), y0 + 3, 1, 1, '#ffffff'); // dew catching the light
+      continue;
+    } else if (d.kind === 'trunk') { // a steamer trunk with brass bands, dust on the lid
+      pr(x - 6, y1 - 7, 12, 6, '#5a3a24'); pr(x - 6, y1 - 7, 12, 1, '#7a5234'); pr(x - 6, y1 - 8, 12, 1, '#8a8274');
+      pr(x - 4, y1 - 7, 1, 6, '#a8843a'); pr(x + 3, y1 - 7, 1, 6, '#a8843a'); pr(x - 1, y1 - 5, 2, 2, '#e8c060');
+    } else if (d.kind === 'boxes') { // cardboard boxes, labelled in marker
+      const word = BOX_LABELS[(d.seed * BOX_LABELS.length) | 0], w = tinyW(word);
+      pr(x - 8, y1 - 7, 16, 6, '#a8844a'); pr(x - 8, y1 - 7, 16, 1, '#c8a46a'); pr(x - 1, y1 - 7, 2, 1, '#d8c890');
+      pr(x - 5, y1 - 12, 10, 5, '#b8945a'); pr(x - 5, y1 - 12, 10, 1, '#d0ac72'); pr(x - 1, y1 - 12, 2, 5, '#d8c890');
+      tinyText(fbx, word, x - (w >> 1), y1 - 6, '#3a2a14');
+      if (theme.nest) { fbx.globalAlpha = 0.5; for (let i = 0; i < 16; i += 2) pr(x - 8 + i, y1 - 12 + ((i * 3) % 7), 1, 1, '#e8e8f0'); fbx.globalAlpha = 1; }
+    } else if (d.kind === 'sheet') { // furniture under a dust sheet (or is it?)
+      const sh = Math.floor(G.t / 2.5 + d.seed * 7) % 6 === 0 ? Math.round(Math.sin(G.t * 20)) : 0;
+      for (let j = 0; j < 9; j++) { const hw = j < 2 ? 3 + j : 5 + (j > 6 ? 1 : 0); pr(x - hw + sh, y1 - 10 + j, hw * 2 + 1, 1, j < 1 ? '#d8d4c8' : '#c4c0b4'); }
+      pr(x - 2 + sh, y1 - 7, 1, 6, '#a8a498'); pr(x + 3 + sh, y1 - 6, 1, 5, '#a8a498'); pr(x - 6 + sh, y1 - 1, 13, 1, '#a8a498');
+    } else if (d.kind === 'clock') { // a grandfather clock, stopped at midnight
+      pr(x - 3, y1 - 13, 7, 12, '#4a2e1c'); pr(x - 3, y1 - 13, 7, 1, '#6a4428'); pr(x - 2, y1 - 12, 5, 5, '#d8ccb0');
+      pr(x, y1 - 11, 1, 2, '#1a1008'); pr(x - 2, y1 - 6, 5, 4, '#2a1a10');
+      pr(x + Math.round(Math.sin(G.t * 1.2 + d.seed) * 1.4), y1 - 5, 1, 2, '#c8a040'); // its pendulum still swings
+    } else if (d.kind === 'horse' || d.kind === 'rocker') {
+      const a = Math.sin(G.t * 2.4 + d.seed * 9) * (d.rock || 0) * 1.6, lift = v => Math.round(a * v / 5); // tilt: each column rises or falls with its distance from the middle
+      if (d.kind === 'horse') { // a rocking horse with a red saddle
+        for (let i = -5; i <= 5; i++) pr(x + i, y1 - 2 - Math.round(Math.abs(i) * 0.3) + lift(i), 1, 1, '#6a4428');
+        pr(x - 4, y1 - 7 + lift(-3), 7, 3, '#c8a070'); pr(x - 1, y1 - 7 + lift(0), 3, 1, '#c83a3a');
+        pr(x + 3, y1 - 10 + lift(4), 2, 4, '#c8a070'); pr(x + 4, y1 - 10 + lift(4), 1, 1, '#2a1a10'); pr(x + 2, y1 - 10 + lift(3), 1, 3, '#5a3a24');
+        pr(x - 3, y1 - 4 + lift(-3), 1, 2, '#a88050'); pr(x + 2, y1 - 4 + lift(2), 1, 2, '#a88050');
+      } else { // a rocking chair, side on
+        for (let i = -4; i <= 4; i++) pr(x + i, y1 - 2 - Math.round(Math.abs(i) * 0.4) + lift(i), 1, 1, '#4a3020');
+        pr(x - 3, y1 - 6 + lift(-2), 6, 1, '#6a4428'); pr(x - 3, y1 - 5 + lift(-3), 1, 3, '#5a3a24'); pr(x + 2, y1 - 5 + lift(2), 1, 3, '#5a3a24');
+        pr(x - 3, y1 - 12 + lift(-3), 1, 6, '#6a4428'); pr(x - 2, y1 - 12 + lift(-2), 1, 1, '#6a4428');
+      }
+    } else if (d.kind === 'dummy') { // a dressmaker's dummy on its pole
+      pr(x - 3, y1 - 12, 7, 2, '#b89a7a'); pr(x - 2, y1 - 10, 5, 3, '#a88a6a'); pr(x - 3, y1 - 7, 7, 2, '#b89a7a');
+      pr(x, y1 - 5, 1, 4, '#3a2a1a'); pr(x - 2, y1 - 1, 5, 1, '#3a2a1a'); pr(x - 3, y1 - 12, 1, 2, '#d8bc9a');
+    } else if (d.kind === 'portrait') { // Great-Grandpa Pac, in a top hat and whiskers
+      const fx = x - 6, fy = y0 - 2, fh = F + 2;
+      pr(fx, fy, 13, fh, '#c89a40'); pr(fx, fy, 13, 1, '#e8c060'); pr(fx + 1, fy + 1, 11, fh - 2, '#4a3a5a'); pr(fx + 1, fy + fh - 4, 11, 2, '#2a2038');
+      const cx = x, cy = fy + fh - 4;
+      for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) if (i * i + j * j <= 10 && !(i > 0 && Math.abs(j) < i)) pr(cx + i, cy + j, 1, 1, j < -1 ? '#ffe680' : '#e8c830');
+      pr(cx - 3, cy - 6, 5, 3, '#141018'); pr(cx - 4, cy - 3, 7, 1, '#141018'); // the top hat
+      pr(cx - 1, cy - 2, 1, 1, '#141018'); pr(cx - 2, cy, 3, 1, '#6a5020'); // an eye and the whiskers
+    } else if (d.kind === 'cobweb') { // a web strung across the corner of the wall
+      fbx.globalAlpha = 0.65;
+      const side = d.seed < 0.5 ? -1 : 1, cx = x + side * 7, n = F > 6 ? 8 : 5;
+      for (let i = 0; i < n; i++) { pr(cx - side * i, y0 + 1, 1, 1, '#d8d8d0'); pr(cx, y0 + 1 + i, 1, 1, '#d8d8d0'); if (i < n - 1) pr(cx - side * i, y0 + 1 + i, 1, 1, '#b8b8b0'); }
+      for (const k of [2, 4, 6]) if (k < n) { for (let i = 0; i <= k; i++) pr(cx - side * i, y0 + 1 + k - Math.round(i * 0.3), 1, 1, '#b8b8b0'); }
+      fbx.globalAlpha = 1;
+    } else if (d.kind === 'sac') { // an egg sac stuck to the wall, squirming
+      const sq = Math.floor(G.t * 3 + d.seed * 9) % 4 === 0 ? 1 : 0, sx = x - 2, sy = y1 - 7;
+      pr(sx, sy + 1, 5, 5, '#d8d8d0'); pr(sx + 1, sy, 3, 1, '#e8e8e0'); pr(sx + 1, sy + 6, 3, 1, '#b8b8b0');
+      pr(sx + 1 + sq, sy + 2, 1, 1, '#a8a098'); pr(sx + 3 - sq, sy + 4, 1, 1, '#a8a098');
+      pr(x, sy - 3, 1, 3, '#c8c8c0');
+    } else if (d.kind === 'cocoon') { // a ghost wrapped up in silk and hung on the wall, saved for later
+      const col = ['#ff2a2a', '#ffb8ff', '#00f0ff', '#ffb852'][(d.seed * 4) | 0], wig = d.near ? Math.round(Math.sin(G.t * 18)) : 0;
+      const cx = x + wig, top = y0 - 3;
+      pr(x, top - 3, 1, 3, '#e8e8e0');
+      for (let j = 0; j < 15; j++) {
+        const hw = j < 1 ? 2 : j < 3 ? 3 : j > 12 ? 2 : 4;
+        pr(cx - hw, top + j, hw * 2 + 1, 1, '#f0f0e8');
+        pr(cx - hw + ((j * 3) % (hw * 2 + 1)), top + j, 2, 1, '#b8b8b0'); // the silk wound round and round
+        pr(cx + hw, top + j, 1, 1, '#a8a8a0');
+      }
+      pr(cx - 3, top + 3, 7, 4, col); pr(cx - 3, top + 3, 7, 1, '#ffffff'); // its face, peeking out
+      const lk = d.near ? Math.sign((pac.x + 0.5) * T - d.x) : 0, blink = Math.floor(G.t * 0.7 + d.seed * 5) % 7 === 0;
+      if (!blink) for (const ex of [-2, 1]) { pr(cx + ex, top + 4, 2, 2, '#ffffff'); pr(cx + ex + (lk > 0 ? 1 : 0), top + 5, 1, 1, '#2121ff'); }
+    }
+  }
+  if (glow) return;
+  attHatch(theme);
+  // The trail swept through the dust.
+  for (const p of att.prints) {
+    const x = Math.round(p.x * T - camX), y = Math.round(p.y * T - camY);
+    if (x < -10 || y < -10 || x > VIEW_W + 10 || y > VIEW_H + 10) continue;
+    fbx.globalAlpha = 0.22 * Math.max(0, 1 - p.t / 40);
+    const r = Math.round(T * 0.28);
+    pr(x - r, y - r + 2, r * 2, r * 2 - 3, '#3a2c1e');
+  }
+  fbx.globalAlpha = 1;
+}
+// The ghost house is the attic hatch: a pull-down ladder into the dark (webbed over in the nest).
+function attHatch(theme) {
+  const b = art.houseBox; if (!b) return;
+  const x0 = Math.round(b.c0 * T - camX), y0 = Math.round(b.r0 * T - camY), w = (b.c1 - b.c0 + 1) * T, h = (b.r1 - b.r0 + 1) * T;
+  if (x0 > VIEW_W || y0 > VIEW_H || x0 + w < 0 || y0 + h < 0) return;
+  const cx = x0 + (w >> 1);
+  pr(cx - 8, y0 + 2, 2, h - 4, '#6a5238'); pr(cx + 6, y0 + 2, 2, h - 4, '#6a5238');
+  for (let y = y0 + 5; y < y0 + h - 3; y += 6) { pr(cx - 6, y, 12, 2, '#86694a'); pr(cx - 6, y + 2, 12, 1, '#3e2e1e'); }
+  if (theme.nest) {
+    fbx.globalAlpha = 0.55;
+    for (let i = 0; i < w; i += 3) { pr(x0 + i, y0 + Math.round((i * 7) % h), 1, 1, '#e8e8f0'); pr(x0 + i, y0 + h - 1 - Math.round((i * 5) % h), 1, 1, '#d8d8e0'); }
+    for (let i = 0; i < 4; i++) { const sx = x0 + 6 + i * ((w - 12) / 3) | 0, sy = y0 + (i & 1 ? h - 9 : 3); pr(sx, sy, 4, 5, '#d8d8d0'); }
+    fbx.globalAlpha = 1;
+  }
+}
+// The house door is the hatch's lid: it flaps up when someone's climbing out.
+function attDoor() {
+  const y = Math.round((house.exitY + 1.3) * T) - camY, x0 = house.doorC * T - camX, hh = Math.max(4, Math.round(T * 0.3));
+  const busy = [...G.ghosts, ...G.hounds, ...G.wraiths, ...G.spiders].some(e => Math.abs(e.y - (house.exitY + 1)) < 1.4 && Math.abs(e.x - house.doorX) < 1.4);
+  if (busy) { pr(x0, y - 2, 2 * T, 2, '#86694a'); pr(x0, y, 2 * T, 1, '#3e2e1e'); return; } // flapped open, seen edge on
+  pr(x0, y, 2 * T, hh, '#6a5238');
+  for (let i = 0; i < 2 * T; i += 6) pr(x0 + i, y, 1, hh, '#3e2e1e');
+  pr(x0, y, 2 * T, 1, '#86694a'); pr(x0 + T - 1, y + (hh >> 1), 2, 1, '#a8a098'); // and its pull ring
+}
+
+// ---------- Webs (every floor with spiders) ----------
+// Webs in pixels: eight spokes and two rings of spiral, spun out from the middle when they're new and
+// losing strands as they fray. Dew on them catches the light; Pac-Man caught in one drags threads of it
+// with him, and a dash through one bursts it into fluff.
+const webSprite = (g, f, v) => spr(`web|${T}|${g}|${f}|${v}`, () => {
+  const S = T + 2, c = S / 2, R = T * 0.52 * g, rot = v * 0.21;
+  const rings = [0.2, 0.36].map(k => k * T);
+  return pixSprite(S, S, (x, y) => {
+    const dx = x - c, dy = y - c, d = Math.hypot(dx, dy);
+    if (d > R || d < 0.6) return null;
+    const a = ((Math.atan2(dy, dx) - rot) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2), seg = Math.round(a / (Math.PI / 4)), off = Math.abs(a - seg * Math.PI / 4) * d;
+    if (off < 0.55 && hash2(seg % 8 + v * 13, 7) >= f * 0.24) return [232, 234, 255, 190];
+    for (const [i, rr] of rings.entries()) if (rr <= R && Math.abs(d - rr * (1 + 0.08 * Math.cos(a * 8))) < 0.5 && hash2(((a * 3) | 0) + i * 31, v + 3) >= f * 0.26) return [220, 224, 248, 150];
+    return null;
+  }, 0);
+});
+function drawWebs() {
+  for (const [k, t] of G.webs) {
+    const c = k % W, r = (k - c) / W, sx = Math.round((c + 0.5) * T - camX), sy = Math.round((r + 0.5) * T - camY);
+    if (sx < -T || sy < -T || sx > VIEW_W + T || sy > VIEW_H + T) continue;
+    const age = WEB_LIFE - t, g = age < 0.5 ? Math.max(1, Math.ceil(age / 0.5 * 4)) / 4 : 1, f = t < 3 ? 3 - Math.floor(t) : 0;
+    const s = webSprite(g, f, k % 4);
+    fbx.globalAlpha = Math.min(1, t / 1.2);
+    fbx.drawImage(s, sx - (s.width >> 1), sy - (s.height >> 1));
+  }
+  fbx.globalAlpha = 1;
+}
+// A web torn by a dash: a burst of fluff and broken strands that drift down.
+function webTear(x, y) {
+  fxBurst(x + 0.5, y + 0.5, '#e8eaff', 12, 3.5, 0.5);
+  for (let i = 0; i < 8; i++) { const t = 1 + Math.random() * 0.6; parts.push({ x: x + 0.5 + (Math.random() - 0.5) * 0.8, y: y + 0.5 + (Math.random() - 0.5) * 0.8, vx: (Math.random() - 0.5) * 1.5, vy: -0.4 + Math.random() * 0.3, t, t0: t, col: '#c8ccdc', g: 0.6, drag: 2 }); }
+}
+// After the light: dew glinting on the webs, and threads stretched from Pac-Man to the web he's caught in.
+function websPost() {
+  const line = (ax, ay, bx, by, col) => { const n = Math.ceil(Math.hypot(bx - ax, by - ay)); for (let i = 0; i <= n; i++) pr(Math.round(ax + (bx - ax) * i / n), Math.round(ay + (by - ay) * i / n), 1, 1, col); };
+  for (const [k, t] of G.webs) {
+    if (t < 3) continue;
+    const c = k % W, r = (k - c) / W, a = Math.floor(G.t * 1.3 + k * 0.37) % 5;
+    if (a) continue;
+    const ang = (k % 8) * Math.PI / 4 + (k % 4) * 0.21, d = T * (0.2 + (k % 3) * 0.08);
+    fbx.globalAlpha = 0.9; pr(Math.round((c + 0.5) * T - camX + Math.cos(ang) * d), Math.round((r + 0.5) * T - camY + Math.sin(ang) * d), 1, 1, '#ffffff');
+  }
+  const k = webKey(pac.x, pac.y);
+  if (G.state === 'play' && !(pac.dash > 0) && G.webs.has(k)) {
+    const c = k % W, r = (k - c) / W, px_ = Math.round((pac.x + 0.5) * T - camX), py_ = Math.round((pac.y + 0.5) * T - camY);
+    fbx.globalAlpha = 0.55;
+    for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) line(px_, py_, Math.round((c + ox) * T - camX), Math.round((r + oy) * T - camY), '#e8eaff');
+  }
+  fbx.globalAlpha = 1;
+}
+
 // ---------- Frost (every floor) ----------
 // A frost berry sends a shockwave of ice out from Pac-Man and brings frost in at the screen's edge, and
 // the Wraith leaves frost on any wall he drifts through. The Freezer adds its own: walls that ice over
@@ -8789,6 +9117,7 @@ function drawDecor(theme, dt, glow) {
   if (theme.crypt) return cryDecor(theme, dt, glow);
   if (theme.sewer) return sewDecor(theme, dt, glow);
   if (theme.belfry) return belDecor(theme, dt, glow);
+  if (theme.attic) return attDecor(theme, dt, glow);
   const L = art, fl = flashLevel();
   for (const d of L.decor) {
     const x = d.x - camX, y0 = d.y0 - camY, y1 = d.y1 - camY, F = d.y1 - d.y0;
@@ -9009,7 +9338,7 @@ function renderWorld() {
   const dt = G.paused ? 0 : rdt, theme = curTheme();
   T = viewTile();
   const key = `${G.cfg.maze}|${meta.reform ? G.layoutGen : 0}|${T}|${theme.id}`;
-  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); }
+  if (key !== artKey) { art = bakeLevel(M, theme); artKey = key; parts = []; frzReset(); labReset(); thrReset(); blrReset(); fldReset(); cryReset(); sewReset(); belReset(); garReset(); attReset(); }
   moveCamera(dt);
   ctx = fbx; lights = []; lightK = theme.lightK || 1;
   idTf(); fbx.globalAlpha = 1; fbx.globalCompositeOperation = 'source-over'; fbx.imageSmoothingEnabled = false;
@@ -9025,6 +9354,7 @@ function renderWorld() {
   if (theme.crypt) cryUpdate(dt, theme);
   if (theme.sewer) sewUpdate(dt, theme);
   if (theme.belfry) belUpdate(dt, theme);
+  if (theme.attic) attUpdate(dt, theme);
   if (G.gargoyles.length) gargoyleFx(dt);
   if (G.cfg.dash) dashUpdate(dt, theme);
   frostUpdate(dt, theme);
@@ -9035,7 +9365,7 @@ function renderWorld() {
   if (G.vents.length && !theme.boiler && G.state !== 'cast') ventBoard();
   fbx.save();
   fbx.beginPath(); fbx.rect(-camX, -camY, W * T, H * T); fbx.clip();
-  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : theme.belfry ? belDoor() : drawDoor();
+  if (G.state !== 'clear' && M.some(r => r.includes('-'))) theme.freezer ? frzDoor() : theme.lab ? labDoor() : theme.boiler ? blrDoor() : theme.flood ? fldDoor(theme) : theme.crypt ? cryDoor() : theme.belfry ? belDoor() : theme.attic ? attDoor() : drawDoor();
   if (hasFlow && G.state !== 'cast') drawWater();
   if (theme.sewer && G.state !== 'cast') { sewWater(); sewRats(); }
   if ((theme.flood || hasFlow) && G.state !== 'cast') fldFloor(theme);
@@ -9050,9 +9380,7 @@ function renderWorld() {
   const showEnemies = enemiesShown();
   const pacShown = !cast && G.state !== 'over' && G.state !== 'eatpause' && !(G.state === 'dying' && G.timer >= 1);
   if (!cast) {
-    worldTf();
     if (G.webs.size) drawWebs();
-    idTf();
     if (G.fruit && !pxFruit(G.fruit.kind, meta.fruit.x, meta.fruit.y)) { vecBegin(); vec(drawFruit, G.fruit.kind, meta.fruit.x, meta.fruit.y); vecEnd(); }
     worldTf();
     drawReform();
@@ -9144,6 +9472,7 @@ function renderWorld() {
   if (theme.crypt) amb = cryAmbient(amb);
   if (theme.sewer) amb = sewAmbient(amb);
   if (theme.belfry) amb = belAmbient(amb);
+  if (theme.attic) amb = attAmbient(amb);
   applyLight(amb, theme.vignette);
   if (theme.decor) { fbx.save(); drawDecor(theme, 0, true); fbx.restore(); }
   if (showEnemies) for (const h of G.hounds) if (h.state !== 'eaten') pxHound(h, true);
@@ -9156,6 +9485,7 @@ function renderWorld() {
   if (theme.crypt) cryPost(dt, theme);
   if (theme.sewer) sewPost();
   if (theme.belfry && !cast) belPost(dt, theme);
+  if (G.webs.size && !cast) websPost();
   if (G.cfg.dash) dashPost();
   if (enemiesShown()) labTaffy(); // after the light, so the goo glows even under the blacklight
   frostPost();
