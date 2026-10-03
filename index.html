@@ -2736,11 +2736,13 @@ function play(dt) {
     let dx = Math.abs(g.x - pac.x);
     if (dx > W / 2) dx = W + 2 - dx;
     if (dx >= 0.6 || Math.abs(g.y - pac.y) >= 0.6) continue;
-    if (G.chill > 0) {
+    if (G.chill > 0) { // shattering a frozen ghost gets the same beat as eating a blue one
       g.eaten = true; g.frightened = false;
       addScore(300); SFX.shatter();
-      popup('300', g.x, g.y, '#bdf4ff');
-      continue;
+      G.eatenGhost = g;
+      popup('300', g.x, g.y, '#bdf4ff', 0.9, true);
+      G.state = 'eatpause'; G.timer = 0.9;
+      return;
     }
     if (g.frightened) {
       g.frightened = false; g.eaten = true;
@@ -2765,8 +2767,9 @@ function play(dt) {
       w.state = 'eaten';
       if (curTheme().freezer) frzShatter(w.x, w.y);
       addScore(500); SFX.shatter(); SFX.ghost();
-      popup('500', w.x, w.y, '#bdf4ff');
-      continue;
+      popup('500', w.x, w.y, '#bdf4ff', 0.9, true);
+      G.state = 'eatpause'; G.timer = 0.9;
+      return;
     }
     if (safe) continue;
     G.state = 'dying'; G.timer = 0;
