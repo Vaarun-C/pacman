@@ -1238,8 +1238,9 @@ function startLevel(i, prologue = false) {
   const ck = save.ck && save.ck[i], def = G.boss && BOSSES[G.boss.kind];
   if (def && ck > 0 && ck < def.hp) { // retrying a boss: pick up from the last phase reached
     G.boss.hp = ck;
-    G.boss.summon = 2.5;
     const ph = bossPhase(G.boss);
+    if (G.boss.kind === 'skull') skullSetup(ph); // the actors were set up for phase 1: swap in this phase's (no gargoyles after it)
+    G.boss.summon = 2.5;
     pre = [[def.speaker, def.retry(ph), ph === 3 ? 'angry' : undefined]];
   }
   const lines = [...(prologue ? STORY.prologue : []), ...pre];
