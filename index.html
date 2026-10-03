@@ -3167,36 +3167,67 @@ function scaredFace(cx, cy, w, flash) {
   for (let i = 0; i <= 6; i++) ctx.lineTo(cx - w * 0.5 + i * w / 6, cy + w * 0.25 + (i % 2 ? -w * 0.1 : 0));
   ctx.stroke();
 }
-// A crouching stone gargoyle with folded wings. Its eyes glow red only while it's moving.
-function drawGargoyle(g) {
-  if (g.state === 'rubble') {
-    ctx.fillStyle = '#5c6078';
-    for (const [dx, dy, s] of [[-0.35, 0.35, 0.36], [0.15, 0.42, 0.42], [0.45, 0.22, 0.26], [-0.1, 0.08, 0.28]]) ctx.fillRect(g.rx + 0.5 + dx - s / 2, g.ry + 0.5 + dy - s / 2, s, s * 0.75);
-    return;
-  }
+// The gargoyle, a horned brute: bull horns, tusks, huge shoulders, leaning on its fists like a gorilla.
+// Watched (or on its perch) it's a statue with its eyes shut; on the move it rears up and roars, fists
+// over its head, then brings them down. Drawn at 18 pixels to a tile and scaled with T. Left halves,
+// mirrored: H horn, S stone, K brow, E eye, M mouth, W tusks and claws, A fists and belly, D wing.
+const GARG_ART = (() => {
+  const mir = half => half.map(r => r + [...r].reverse().join(''));
+  return {
+    still: mir([
+      '................', '....H...........', '....HH..........', '.....HH.........', '......HHH..SSSSS', '.......HHSSSSSSS',
+      '......D.SSKKKKKK', '.....DD.SSSEESSS', '.....DDDSSSSSSSS', '.....DDDSSSSWSMM', '....DDDSSSSSWMMM', '...DDSSSSSSSSSSS',
+      '..SSSSSSSSSSSSSS', '.SSSSSSSSSSSSSSS', '.SSSSSKSSSSSSSSS', '.SSSS.SSSSSSSSSS', '.SSSS.SSSSAAAAAA', '.SSSS.SSSSAAAAAA',
+      'SSSS..SSSSSAAAAA', 'SSSS...SSSSSSSSS', 'AAAA...SSSS..SSS', 'WAWA..SSSS....SS', '......WSWS......',
+    ]),
+    move0: mir([
+      'AAA.............', 'WAWA............', '.SSSS...........', '..SSSH..........', '...SSHH.........', '...SSSHHH..SSSSS',
+      '....SSSHHSSSSSSS', '.....SSD.SKKKKKK', '.....SSDDSSEESSS', '......SDDSSSSSSS', '......SSDSSWMMMM', '.....SSSSSSWMMMM',
+      '....SSSSSSSSMMWM', '...SSSSSSSSSSSSS', '...SSSSSKSSSSSSS', '....SSSSSSSAAAAA', '.....SSSSSSAAAAA', '.....SSSSSSAAAAA',
+      '......SSSSSSSSSS', '......SSSS...SSS', '.....SSSS.......', '.....WSWS.......',
+    ]),
+    move1: mir([
+      '................', '................', '....H...........', 'AA...H..........', 'WAA..HHH...SSSSS', '.SSS..HHHSSSSSSS',
+      '..SSS.DD.SKKKKKK', '...SSSDDDSSEESSS', '....SSSDDSSSSSSS', '.....SSSDSSWMMMM', '.....SSSSSSWMMMM', '.....SSSSSSSMMWM',
+      '....SSSSSSSSSSSS', '...SSSSSKSSSSSSS', '....SSSSSSSAAAAA', '.....SSSSSSAAAAA', '.....SSSSSSAAAAA', '......SSSSSSSSSS',
+      '......SSSS...SSS', '.....SSSS.......', '.....SSSS.......', '.....WSWS.......',
+    ]),
+    rubble: [ // a broken horn either side, the head split open, a fist in the dust
+      '................................', '......H.................H.......', '.......HH.....SSS......HH.......', '........H...SSSSSS....SS........',
+      '...AA......SSKSSSSS..SSSS..AA...', '..WAWA..SSSSSSSSSSSSSSSSS.WAWA..', '.SSSSSSSSSSSSSSSSSKSSSSSSSSSSSS.',
+    ],
+  };
+})();
+const GARG_PAL = {
+  '': { S: '#9a9fb8', D: '#6e7390', H: '#c8ccdc', A: '#b0b5cc', W: '#d8dce8', K: '#4a4e66' },
+  ice: { S: '#bdf4ff', D: '#8fd6ec', H: '#e8fbff', A: '#d0f8ff', W: '#ffffff', K: '#6ab8d4' },
+};
+function gargoyleSprite(pose, mode) {
+  return spr(`garg|${T}|${pose}|${mode}`, () => {
+    const grid = GARG_ART[pose], GW = grid[0].length, GH = grid.length, k = T / 18;
+    const SW = Math.max(2, Math.round(GW * k)), SH = Math.max(2, Math.round(GH * k)), live = pose === 'move0' || pose === 'move1';
+    const at = (x, y) => x < 0 || y < 0 || x >= SW || y >= SH ? '.' : grid[Math.min(GH - 1, (y / k) | 0)][Math.min(GW - 1, (x / k) | 0)];
+    const P = GARG_PAL[mode] || GARG_PAL[''], R = {};
+    for (const c in P) R[c] = makeRamp(P[c]);
+    const s = pixSprite(SW, SH, (px_, py_) => {
+      const x = px_ | 0, y = py_ | 0, m = at(x, y);
+      if (m === '.') return null;
+      if (m === 'E') return hex(live ? '#ff3b3b' : mode === 'ice' ? '#5aa8c8' : '#24263a'); // shut while it's stone
+      if (m === 'M') return hex(mode === 'ice' ? '#4a7f99' : '#1a1020');
+      const top = at(x, y - 1) === '.', down = at(x, y + 1) === '.', left = at(x - 1, y) === '.';
+      let l = m === 'K' ? 0.3 : top ? 0.7 : down ? -0.2 : left ? 0.5 : 0.3;
+      if (m === 'S' && hash2(x * 7, y * 3) > 0.9) l -= 0.5; // pitted stone
+      return pickRamp(R[m] || R.S, l);
+    }, 0.3);
+    s.dy = Math.round(T * 0.72 - SH / 2); // feet a little below the tile centre
+    return s;
+  });
+}
+function pxGargoyle(g) {
   if (g.state === 'form' && Math.floor(G.t * 10) % 2 === 0) return;
-  const cx = g.x + 0.5, cy = g.y + 0.5, ice = iceOn(), live = g.moving, d = g.dir || D;
-  const stone = ice ? '#bdf4ff' : '#9a9fb8', dark = ice ? '#8fd6ec' : '#5c6078';
-  const flap = live && Math.floor(G.t * 10) % 2 ? 0.12 : 0;
-  ctx.fillStyle = dark;
-  for (const s of [-1, 1]) {
-    ctx.beginPath(); ctx.moveTo(cx + s * 0.3, cy - 0.3); ctx.lineTo(cx + s * (0.95 + flap), cy - 0.8 - flap); ctx.lineTo(cx + s * 0.88, cy + 0.1);
-    ctx.lineTo(cx + s * 0.68, cy - 0.02); ctx.lineTo(cx + s * 0.62, cy + 0.5); ctx.closePath(); ctx.fill();
-  }
-  ctx.fillStyle = stone;
-  ctx.beginPath(); ctx.moveTo(cx - 0.55, cy + 0.78); ctx.lineTo(cx - 0.42, cy - 0.05); ctx.lineTo(cx + 0.42, cy - 0.05); ctx.lineTo(cx + 0.55, cy + 0.78); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx, cy - 0.3, 0.45, 0, Math.PI * 2); ctx.fill();
-  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 0.14, cy - 0.66); ctx.lineTo(cx + s * 0.42, cy - 1.02); ctx.lineTo(cx + s * 0.38, cy - 0.56); ctx.fill(); }
-  ctx.fillStyle = dark;
-  ctx.fillRect(cx - 0.52, cy + 0.64, 0.3, 0.14); ctx.fillRect(cx + 0.22, cy + 0.64, 0.3, 0.14);
-  ctx.fillRect(cx - 0.16, cy - 0.1, 0.32, 0.07);
-  if (live) {
-    ctx.fillStyle = '#ff3b3b';
-    for (const s of [-1, 1]) ctx.fillRect(cx + s * 0.2 - 0.09 + d.x * 0.06, cy - 0.4 + d.y * 0.05, 0.18, 0.15);
-  } else {
-    ctx.fillStyle = '#2a2d3d';
-    for (const s of [-1, 1]) ctx.fillRect(cx + s * 0.2 - 0.1, cy - 0.34, 0.2, 0.06);
-  }
+  const rubble = g.state === 'rubble', pose = rubble ? 'rubble' : g.moving ? (Math.floor(G.t * 6) % 2 ? 'move1' : 'move0') : 'still';
+  const sp = gargoyleSprite(pose, !rubble && iceOn() ? 'ice' : '');
+  blit(sp, (rubble ? g.rx : g.x) + 0.5, (rubble ? g.ry : g.y) + 0.5, sp.dy);
 }
 // A purple spider: round body, eight scuttling legs, a cluster of red eyes.
 function drawSpider(s) {
@@ -4983,6 +5014,7 @@ function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
   if (who === 'WRAITH') return withT(t, () => wraithSprite(frame, face, ''));
   if (who === 'SLIME') return withT(t, () => slimeSprite(frame, face, scared ? 'fright' : '', false, scared));
   if (who === 'HOUND') return withT(t, () => houndSprite(frame, face === L, scared ? 'fright' : '', mood === 'sniff'));
+  if (who === 'GARGOYLE') return withT(t, () => gargoyleSprite(mood === 'angry' ? (frame ? 'move1' : 'move0') : 'still', ''));
   if (who === 'KING') {
     const ph = mood === 'angry' ? 3 : 1, li = face === L ? 4 : face === U ? 6 : face === D ? 2 : 0;
     return withT(Math.round(t * 0.5), () => kingSprite(ph, scared ? '#2121ff' : BOSS_COLORS[ph], frame, li, scared ? 'fright' : ''));
@@ -4992,12 +5024,10 @@ function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
   const size = Math.round(t * 2.4) + 2, key = `${who}|${size}`, c = vecChars[key] || (vecChars[key] = mkCanvas(size, size, true)), v = c.g;
   v.setTransform(1, 0, 0, 1, 0, 0); v.clearRect(0, 0, size, size);
   v.setTransform(t, 0, 0, t, size / 2, size / 2);
-  if (who === 'GARGOYLE') { v.scale(0.9, 0.9); v.translate(0, 0.2); }
-  else if (who === 'SKULL') { v.scale(0.5, 0.5); v.translate(0, 0.45); }
+  if (who === 'SKULL') { v.scale(0.5, 0.5); v.translate(0, 0.45); }
   const at = { x: -0.5, y: -0.5 }, o = ctx; ctx = v;
   withFright(scared, () => {
-    if (who === 'GARGOYLE') drawGargoyle({ ...at, dir: D, state: 'active', moving: mood === 'angry' });
-    else if (who === 'SPIDER') drawSpider({ ...at, dir: face, state: 'active', fresh: 0 });
+    if (who === 'SPIDER') drawSpider({ ...at, dir: face, state: 'active', fresh: 0 });
     else if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: scared ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
   });
   ctx = o;
@@ -9084,13 +9114,13 @@ function renderWorld() {
         for (const s of G.spiders) vec(drawSpider, s);
         for (const d of G.drops) vec(drawDrop, d);
         for (const cp of G.centipedes) vec(drawCentipede, cp);
-        for (const g of G.gargoyles) vec(drawGargoyle, g);
         for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
       }
       if (G.boss && (G.boss.kind === 'skull' || G.boss.state === 'dead')) vec(drawBoss, G.boss);
       if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
       vecEnd();
     }
+    if (showEnemies) for (const g of G.gargoyles) pxGargoyle(g);
     if (G.boss && G.boss.kind !== 'skull' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) (G.boss.kind === 'king' ? pxKing : pxBlob)(G.boss);
     if (showEnemies) {
       for (const m of G.minions) pxGhost({ ...m, frightened: true, eaten: false });
