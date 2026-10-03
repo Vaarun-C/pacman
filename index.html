@@ -2319,7 +2319,7 @@ function blobCrewUpdate(dt) {
 // of the crypt, rebuilding the pillars behind them, and his bones run off to hide in those quarters.
 const SKULL_BONES = 4, SKULL_BONE_HP = 1.5, SKULL_RISE = 0.9;
 const DROP_TIME = 1.1, DROP_EVERY = 4, SPIDER_MAX = 3;
-const SPELL_CHANT = 1.3, SPELL_EVERY = 6, CENTI_SPEED = 11, CENTI_LEN = 8, CENTI_GAP = 1.1, CENTI_R = 0.95, CENTI_BLOCK = 4;
+const SPELL_CHANT = 1.3, SPELL_EVERY = 6, CENTI_SPEED = 11, CENTI_LEN = 12, CENTI_GAP = 1.1, CENTI_R = 0.95, CENTI_BLOCK = 4;
 function skullSetup(ph) {
   G.gargoyles = ph === 1 ? meta.perches.map(makeGargoyle) : [];
   G.spiders = []; G.webs = new Map(); G.bones = []; G.drops = []; G.threads = []; G.centipedes = [];
@@ -2520,6 +2520,9 @@ function centipedeUpdate(cp, dt) {
   for (const k of [...G.webs.keys()]) if (tile(k % W, Math.floor(k / W)) === '#') G.webs.delete(k);
 }
 // Every body segment that's out of the ground: head first, then the rest trailing along the path.
+// How far each segment reaches: the head and body as before, the vertebrae narrowing toward the tail
+// the way they're drawn, the stinger smallest of all (so the thin tail can't kill from empty space).
+const centiHitR = i => i === 0 ? CENTI_R : i === CENTI_LEN - 1 ? 0.45 : Math.min(CENTI_R, 0.48 * (1 - i / CENTI_LEN * 0.3) * CENTI_K);
 function centiSegments(cp) {
   const out = [];
   for (let i = 0; i < CENTI_LEN; i++) { const d = cp.d - i * CENTI_GAP; if (d >= 0 && d <= cp.len) out.push({ ...centiAt(cp, d), i }); }
@@ -2870,7 +2873,7 @@ function play(dt) {
   }
   for (const o of G.orbs) if (o.web && Math.abs(o.x - pac.x) < 0.6 && Math.abs(o.y - pac.y) < 0.6) { splatWeb(Math.round(pac.x), Math.round(pac.y)); o.gone = true; } // webs you, doesn't hurt
   G.orbs = G.orbs.filter(o => !o.gone);
-  for (const cp of G.centipedes) if (!safe && centiSegments(cp).some(s => Math.hypot(s.x - pac.x, s.y - pac.y) < CENTI_R + 0.25)) { G.state = 'dying'; G.timer = 0; return; }
+  for (const cp of G.centipedes) if (!safe && centiSegments(cp).some(s => Math.hypot(s.x - pac.x, s.y - pac.y) < centiHitR(s.i) + 0.25)) { G.state = 'dying'; G.timer = 0; return; }
   if (!safe && G.orbs.some(o => !o.web && Math.abs(o.x - pac.x) < 0.55 && Math.abs(o.y - pac.y) < 0.55)) { G.state = 'dying'; G.timer = 0; }
 }
 
@@ -3478,43 +3481,50 @@ function drawReform() {
     ctx.restore();
   }
 }
-// A bone centipede: a crowned skull head with snapping mandibles, vertebrae behind, legs scuttling.
-function drawCentipede(cp) {
-  const segs = centiSegments(cp), frame = Math.floor(G.t * 12) % 2, ice = iceOn();
-  const bone = ice ? '#bdf4ff' : '#ece6cf', dark = ice ? '#4a7f99' : '#5a4a2a', k = CENTI_R / 0.55; // drawn at head size 0.55, scaled up
-  for (const f of cp.flashes) { // a block that just flipped to its new layout
+// A bone centipede: a crowned skull with snapping mandibles and black, empty sockets, on a chain of
+// vertebrae joined by a spinal cord, winding side to side and tapering to a stinger. Each piece is a
+// sprite turned to face its way along the path; the cord is drawn first, through all of them.
+const CENTI_K = 1.85; // drawing scale: a little bigger than the head's reach, so near misses are forgiven
+function centiPiece(i, ang, f, ice) {
+  return spr(`centi|${T}|${i}|${ang}|${f}|${ice}`, () => {
+    const bone = ice ? '#bdf4ff' : '#fbf6e8', boneLo = ice ? '#8fd6ec' : '#ece4cc', sock = ice ? '#4a7f99' : '#000000', p = []; // bleached bright: it's the deadliest thing in the room
+    if (i === 0) { // the head
+      const bite = f ? 0.34 : 0.14;
+      for (const sd of [-1, 1]) p.push(line([[0.4, sd * 0.25], [0.78, sd * 0.42], [0.95, sd * bite]], bone, Math.max(0.12, 1.1 / T / CENTI_K)));
+      p.push(ball(0, 0, 0.62, makeRamp(bone)));
+      for (const sd of [-1, 1]) p.push(ell(0.18, sd * 0.24, 0.14, 0.16, 0, Array(6).fill(hex(sock))));
+      for (let t = -2; t <= 2; t++) p.push(dot(0.48, t * 0.08, sock, 0.6));
+      p.push(poly([[-0.73, 0.15], [-0.76, -0.15], [-0.57, 0.03], [-0.42, -0.19], [-0.27, 0.03], [-0.08, -0.15], [-0.11, 0.15]], makeRamp(ice ? '#e6fbff' : '#ffd23f'))); // its crown
+    } else if (i === CENTI_LEN - 1) p.push(poly([[0.25, -0.22], [0.25, 0.22], [-0.7, 0]], makeRamp(bone)), line([[-0.6, 0], [-0.95, -0.25]], ice ? '#bdf4ff' : '#c8bca0', 0.08)); // the stinger
+    else {
+      const k = 1 - i / CENTI_LEN * 0.3;
+      p.push(ell(0, 0, 0.32 * k, 0.48 * k, 0, makeRamp(boneLo)), ell(0, 0, 0.16 * k, 0.24 * k, 0, makeRamp(bone)));
+      for (const sd of [-1, 1]) p.push(line([[0, sd * 0.44 * k], [-0.18, sd * 0.62 * k]], bone, 0.1 * k + 0.02));
+    }
+    return primSprite(turnPrims(p, ang * Math.PI / 8, CENTI_K), 2 * CENTI_K + 0.4);
+  });
+}
+const cordDot = (r, col) => spr(`cord|${r}|${col}`, () => pixSprite(r * 2 + 1, r * 2 + 1, (x, y) => Math.hypot(x - r - 0.5, y - r - 0.5) <= r + 0.3 ? hex(col) : null, 0));
+function pxCentipede(cp) {
+  const ice = iceOn(), f = G.chill > 0 ? 0 : Math.floor(G.t * 12) % 2;
+  const at = centiSegments(cp).map(s => { const w = s.i ? Math.sin(s.i * 1.1 + f * 0.6) * 0.22 : 0; return { ...s, x: s.x + 0.5 - s.dy * w, y: s.y + 0.5 + s.dx * w }; }); // winding side to side
+  // The spinal cord, through every vertebra, so it's one creature rather than a string of beads.
+  const outer = cordDot(Math.max(1, Math.round(T * 0.38)), ice ? '#8fd6ec' : '#c8bca0'), inner = cordDot(Math.max(1, Math.round(T * 0.2)), ice ? '#bdf4ff' : '#f0e8d4');
+  for (const dot_ of [outer, inner]) for (let i = 1; i < at.length; i++) {
+    const a = at[i - 1], b = at[i], n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * T);
+    for (let k = 0; k <= n; k++) blit(dot_, a.x + (b.x - a.x) * k / n, a.y + (b.y - a.y) * k / n);
+  }
+  for (let n = at.length - 1; n >= 0; n--) { const s = at[n]; blit(centiPiece(s.i, ANG16(Math.atan2(s.dy, s.dx)), n === 0 ? f : 0, ice), s.x, s.y); }
+  for (const s of at) if (s.i % 3 === 0) addLight(s.x, s.y, 1.8, [1, 0.94, 0.84], s.i ? 0.32 : 0.45); // a pale glow off the bone, so it stands out in the crypt's red
+}
+// Where it burst out of the floor, and the blocks of pillars it's just rebuilt, flashing.
+function drawCentiMarks(cp) {
+  for (const f of cp.flashes) {
     ctx.strokeStyle = '#ff5a5a'; ctx.globalAlpha = f.t / 0.35; ctx.lineWidth = 0.15;
     ctx.strokeRect(f.c0 + 0.05, f.r0 + 0.05, f.c1 - f.c0 + 0.9, f.r1 - f.r0 + 0.9); ctx.globalAlpha = 1;
   }
   const start = cp.pts[0];
-  if (cp.d < 4) { ctx.fillStyle = '#5c5038'; for (const [dx, dy] of [[-0.6, -0.9], [0.7, 0.5], [0, 1], [-0.9, 0.3], [0.5, -0.6]]) ctx.fillRect(start.x + 0.5 + dx - 0.25, start.y + 0.5 + dy - 0.25, 0.5, 0.5); } // rubble where it burst out
-  for (let n = segs.length - 1; n >= 0; n--) {
-    const s = segs[n], px = -s.dy, py = s.dx; // across the body
-    ctx.save(); ctx.translate(s.x + 0.5, s.y + 0.5); ctx.scale(k, k);
-    ctx.strokeStyle = bone; ctx.lineWidth = 0.1; ctx.lineCap = 'round';
-    for (const side of [-1, 1]) {
-      const kick = (s.i + frame) % 2 ? 0.18 : -0.12;
-      ctx.beginPath(); ctx.moveTo(px * side * 0.3, py * side * 0.3);
-      ctx.lineTo(px * side * 0.62 + s.dx * kick, py * side * 0.62 + s.dy * kick); ctx.lineTo(px * side * 0.8 + s.dx * kick * 1.6, py * side * 0.8 + s.dy * kick * 1.6); ctx.stroke();
-    }
-    if (s.i === 0) {
-      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(0, 0, 0.55, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#1a0010';
-      for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(s.dx * 0.15 + px * side * 0.22, s.dy * 0.15 + py * side * 0.22, 0.14, 0, Math.PI * 2); ctx.fill(); }
-      ctx.fillStyle = ice ? '#e6fbff' : '#ff3b3b';
-      for (const side of [-1, 1]) ctx.fillRect(s.dx * 0.15 + px * side * 0.22 - 0.055, s.dy * 0.15 + py * side * 0.22 - 0.055, 0.11, 0.11);
-      ctx.fillStyle = '#1a0010'; for (let t = -2; t <= 2; t++) ctx.fillRect(s.dx * 0.38 + px * t * 0.08 - 0.02, s.dy * 0.38 + py * t * 0.08 - 0.02, 0.04, 0.04); // teeth
-      ctx.strokeStyle = bone; ctx.lineWidth = 0.1; // mandibles
-      const bite = frame ? 0.32 : 0.12;
-      for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s.dx * 0.45 + px * side * 0.2, s.dy * 0.45 + py * side * 0.2); ctx.quadraticCurveTo(s.dx * 0.75 + px * side * 0.4, s.dy * 0.75 + py * side * 0.4, s.dx * 0.85 + px * side * bite, s.dy * 0.85 + py * side * bite); ctx.stroke(); }
-    } else {
-      ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(0, 0, 0.46, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = bone; ctx.beginPath(); ctx.arc(0, 0, 0.38, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = dark; ctx.fillRect(-0.07, -0.07, 0.14, 0.14);
-      ctx.fillRect(px * 0.2 - 0.03, py * 0.2 - 0.03, 0.06, 0.06); ctx.fillRect(-px * 0.2 - 0.03, -py * 0.2 - 0.03, 0.06, 0.06);
-    }
-    ctx.restore();
-  }
+  if (cp.d < 4) { ctx.fillStyle = '#5c5038'; for (const [dx, dy] of [[-0.6, -0.9], [0.7, 0.5], [0, 1], [-0.9, 0.3], [0.5, -0.6]]) ctx.fillRect(start.x + 0.5 + dx - 0.25, start.y + 0.5 + dy - 0.25, 0.5, 0.5); }
 }
 // A spider on its way down: the thread from above, the spider sliding down it, and a shadow that grows
 // where it'll land.
@@ -10013,14 +10023,14 @@ function renderWorld() {
       if (showEnemies) {
         for (const h of G.hounds) if (h.skid > 0 && h.state === 'hunt') vec(drawSkid, h);
         for (const d of G.drops) vec(drawDropRing, d);
-        for (const cp of G.centipedes) vec(drawCentipede, cp);
+        for (const cp of G.centipedes) vec(drawCentiMarks, cp);
         for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
       }
       if (G.boss && G.boss.state === 'dead' && G.boss.kind !== 'skull') vec(drawBoss, G.boss);
       if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
       vecEnd();
     }
-    if (showEnemies) { pxDrops(); for (const g of G.gargoyles) pxGargoyle(g); }
+    if (showEnemies) { pxDrops(); for (const g of G.gargoyles) pxGargoyle(g); for (const cp of G.centipedes) pxCentipede(cp); }
     if (G.boss && G.boss.kind === 'skull' && (showEnemies || G.state === 'clear')) (G.boss.state === 'dead' ? pxSkullDeath : pxSkull)(G.boss);
     if (G.boss && G.boss.kind !== 'skull' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) (G.boss.kind === 'king' ? pxKing : pxBlob)(G.boss);
     if (showEnemies) {
