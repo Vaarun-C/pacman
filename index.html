@@ -2139,6 +2139,10 @@ function hitBoss() {
   if (b.hp <= 0) { bossDie(); return; }
   SFX.bossHit();
   b.state = 'recoil';
+  // A grace period: your power's just run out and you're usually lined up with him, a tile or two away.
+  // He holds his fire a moment after recovering, and the hit knocks any shot near you out of the air.
+  b.fire = Math.max(b.fire, 2); b.burst = Math.max(b.burst, 2.5);
+  G.orbs = G.orbs.filter(o => { const near = Math.hypot(o.x - pac.x, o.y - pac.y) < 3; if (near) fxBurst(o.x + 0.5, o.y + 0.5, '#ffd86b', 6, 3, 0.3); return !near; });
   if (bossPhase(b) !== before) G.pendingPhase = bossPhase(b); // the phase cut-in starts once this frame settles
   else if (b.hp === 1) bossTalk(KING_LINES.last);
   else bossLine(KING_LINES.hit[before]);
