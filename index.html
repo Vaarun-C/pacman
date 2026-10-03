@@ -1028,7 +1028,7 @@ const G = {
   buddies: [], blobules: [], waveT: 0, slurpT: 0,
   gargoyles: [], spiders: [], webs: new Map(), bones: [], gargMoving: false,
   reform: { on: false, every: 8, t: 0, phase: 'idle', quads: [], done: false }, layoutGen: 0,
-  drops: [], centipedes: [], spell: { on: false, t: 0, phase: 'idle', quads: [] },
+  drops: [], threads: [], centipedes: [], spell: { on: false, t: 0, phase: 'idle', quads: [] },
 };
 const pac = { x: 13.5, y: 23, dir: L, face: L, anim: 0, dash: 0, grace: 0, trail: [] };
 const ghosts = [
@@ -1082,7 +1082,7 @@ function resetActors() {
   G.gargoyles = (G.cfg.gargoyles || []).map(makeGargoyle);
   G.spiders = [];
   for (let i = 0; i < (G.cfg.spiders || 0); i++) G.spiders.push(makeSpider(i));
-  G.webs = new Map(); G.bones = []; G.gargMoving = false; G.drops = []; G.centipedes = [];
+  G.webs = new Map(); G.bones = []; G.gargMoving = false; G.drops = []; G.threads = []; G.centipedes = [];
   G.spell = { on: false, t: 0, phase: 'idle', quads: [] };
   G.reform = { on: !!G.cfg.reform, every: G.cfg.reform || 7, t: 0, phase: 'idle', quads: [], done: false };
   if (G.cfg.boss) {
@@ -2123,7 +2123,7 @@ function bossDie() {
   b.state = 'dead'; b.dead = 0;
   G.orbs = []; G.minions = []; G.blobules = []; G.buddies = []; G.bossSay = null;
   G.bones = []; G.spiders = []; G.gargoyles = []; G.webs = new Map(); G.reform.on = false; G.reform.quads = [];
-  G.drops = []; G.centipedes = []; G.spell.on = false;
+  G.drops = []; G.threads = []; G.centipedes = []; G.spell.on = false;
   clearCheckpoint();
   addScore(10000); SFX.bossDie();
 }
@@ -2320,7 +2320,7 @@ const DROP_TIME = 1.1, DROP_EVERY = 4, SPIDER_MAX = 3;
 const SPELL_CHANT = 1.3, SPELL_EVERY = 6, CENTI_SPEED = 11, CENTI_LEN = 8, CENTI_GAP = 1.1, CENTI_R = 0.95, CENTI_BLOCK = 4;
 function skullSetup(ph) {
   G.gargoyles = ph === 1 ? meta.perches.map(makeGargoyle) : [];
-  G.spiders = []; G.webs = new Map(); G.bones = []; G.drops = []; G.centipedes = [];
+  G.spiders = []; G.webs = new Map(); G.bones = []; G.drops = []; G.threads = []; G.centipedes = [];
   G.spell = { on: ph === 3, t: SPELL_EVERY - 2, phase: 'idle', quads: [] }; // the first spell comes quickly
   if (ph === 2) { dropSpider(1.2); dropSpider(2.2); }
   if (G.boss) G.boss.summon = DROP_EVERY;
@@ -2344,13 +2344,17 @@ function dropSpider(t = DROP_TIME) {
   const spot = pool[(Math.random() * pool.length) | 0];
   G.drops.push({ ...spot, t, t0: t });
 }
+const THREAD_SNAP = 0.45;
 function dropsUpdate(dt) {
   for (const d of G.drops) if ((d.t -= dt) <= 0) {
     const s = makeSpider(G.spiders.length, d);
     s.fresh = 0.35; // a beat to land before it bites
     G.spiders.push(s); SFX.thud();
+    G.threads.push({ x: d.x, y: d.y, t: 0 });
   }
   G.drops = G.drops.filter(d => d.t > 0);
+  for (const th of G.threads) th.t += dt;
+  G.threads = G.threads.filter(th => th.t < THREAD_SNAP);
 }
 function skullUpdate(dt, sp) {
   const b = G.boss;
@@ -3231,34 +3235,44 @@ function pxGargoyle(g) {
   const sp = gargoyleSprite(pose, !rubble && iceOn() ? 'ice' : '');
   blit(sp, (rubble ? g.rx : g.x) + 0.5, (rubble ? g.ry : g.y) + 0.5, sp.dy);
 }
-// A purple spider: round body, eight scuttling legs, a cluster of red eyes.
-function drawSpider(s) {
-  const cx = s.x + 0.5, cy = s.y + 0.5, d = s.dir || D;
-  if (s.state === 'eaten') {
-    ctx.fillStyle = '#ff3b6b';
-    for (const k of [-1, 1]) ctx.fillRect(cx + k * 0.16 - 0.07, cy - 0.1, 0.14, 0.14);
-    return;
+// The spider, a black widow: a glossy black body with a red hourglass, long thin legs that lift in
+// turn as it walks, and a small head whose red eyes look where it's going. Blue with the ghosts' scared
+// face when it can be eaten (white and red as that wears off), ice when frozen, eyes alone when eaten.
+const SPIDER_MODES = {
+  fright: { body: '#2121ff', leg: '#1414a8', face: '#ffb8ae' },
+  flash: { body: '#f0f0ff', leg: '#c8c8e0', face: '#ff2a2a' },
+  ice: { body: '#bdf4ff', leg: '#8fd6ec' },
+};
+// The widow's own shading: glossy, so the light catches it in a cool lilac sheen rather than the usual warm one.
+let widowRamp = null;
+const WIDOW_RAMP = () => widowRamp || (widowRamp = ['#08050e', '#120a1e', '#1a1028', '#24183c', '#46386a', '#a898d0'].map(hex));
+function spiderPrims(frame, mode, d) {
+  const M = SPIDER_MODES[mode] || {}, leg = M.leg || '#1e1428', ramp = M.body ? makeRamp(M.body) : WIDOW_RAMP(), lw = Math.max(0.07, 1.1 / T), p = [];
+  for (const sd of [-1, 1]) for (let k = 0; k < 4; k++) { // a hip at the body, a knee up and out, a foot down and out
+    const y0 = -0.24 + k * 0.13, lift = (k + frame + (sd > 0 ? 1 : 0)) % 2 ? -0.1 : 0.06, fan = (k - 1.5) * 0.1;
+    const knee = [sd * 0.66, y0 - 0.38 + lift + fan];
+    p.push(line([[sd * 0.14, y0], knee, [sd * 1.0, y0 + 0.36 + lift * 0.5 + fan * 1.6]], leg, lw));
+    if (!mode) p.push(dot(knee[0], knee[1], '#5a3a7a', 1.1));
   }
+  p.push(ball(0, 0.2, 0.44, ramp), ball(0, -0.3, 0.2, ramp));
+  if (mode === 'fright' || mode === 'flash') {
+    const f = M.face;
+    return [...p, dot(-0.17, 0.1, f, 1.4), dot(0.17, 0.1, f, 1.4),
+      line([[-0.24, 0.3], [-0.14, 0.24], [-0.05, 0.3], [0.05, 0.24], [0.14, 0.3], [0.24, 0.24]], f, 0.06)];
+  }
+  if (!mode) { const hg = makeRamp('#e82a3a'); p.push(poly([[-0.13, 0.04], [0.13, 0.04], [0, 0.2]], hg), poly([[-0.13, 0.38], [0.13, 0.38], [0, 0.22]], hg)); }
+  const eye = mode === 'ice' ? '#e6fbff' : '#ff3b3b', ex = d.x * 0.05, ey = d.y * 0.04;
+  for (const [x, y, r] of [[-0.07, -0.36, 1.1], [0.07, -0.36, 1.1], [-0.13, -0.29, 0.8], [0.13, -0.29, 0.8]]) p.push(dot(x + ex, y + ey, eye, r));
+  return p;
+}
+const spiderSprite = (frame, mode, d) => spr(`spider|${T}|${frame}|${mode}|${d.x}|${d.y}`, () => primSprite(spiderPrims(frame, mode, d), 2.1));
+const spiderEyes = () => spr(`spidereyes|${T}`, () => primSprite([dot(-0.1, -0.36, '#ff3b6b', 1.6), dot(0.1, -0.36, '#ff3b6b', 1.6), dot(-0.18, -0.28, '#ff3b6b', 1), dot(0.18, -0.28, '#ff3b6b', 1)], 2.1));
+function pxSpider(s) {
+  if (s.state === 'eaten') { blit(spiderEyes(), s.x + 0.5, s.y + 0.5); return; }
   if (s.fresh > 0 && Math.floor(G.t * 12) % 2 === 0) return;
-  const fr = G.fright > 0 && s.state === 'active', ice = iceOn();
-  const flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
-  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 10) % 2;
-  const body = ice ? '#bdf4ff' : fr ? (flash ? '#ffffff' : '#2121ff') : '#9a5cd6', leg = ice ? '#8fd6ec' : fr ? '#1414a8' : '#6a38a8';
-  ctx.strokeStyle = leg; ctx.lineWidth = 0.1; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  for (const sd of [-1, 1]) for (let k = 0; k < 4; k++) {
-    const y0 = cy - 0.18 + k * 0.17, lift = (k + frame) % 2 ? -0.12 : 0.08;
-    ctx.beginPath(); ctx.moveTo(cx + sd * 0.25, y0); ctx.lineTo(cx + sd * 0.62, y0 - 0.26 + lift); ctx.lineTo(cx + sd * 0.88, y0 + 0.26 + lift * 0.5); ctx.stroke();
-  }
-  ctx.fillStyle = body;
-  ctx.beginPath(); ctx.ellipse(cx, cy + 0.14, 0.42, 0.46, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + d.x * 0.08, cy - 0.32 + d.y * 0.05, 0.3, 0, Math.PI * 2); ctx.fill();
-  if (fr) { scaredFace(cx, cy + 0.05, 0.7, flash); return; }
-  ctx.fillStyle = ice ? '#8fd6ec' : '#d9b3ff'; // hourglass marking
-  ctx.beginPath(); ctx.moveTo(cx - 0.12, cy + 0.02); ctx.lineTo(cx + 0.12, cy + 0.02); ctx.lineTo(cx - 0.12, cy + 0.36); ctx.lineTo(cx + 0.12, cy + 0.36); ctx.fill();
-  ctx.fillStyle = ice ? '#e6fbff' : '#ff3b3b';
-  for (const [ex, ey, r] of [[-0.11, -0.36, 0.075], [0.11, -0.36, 0.075], [-0.21, -0.27, 0.05], [0.21, -0.27, 0.05]]) {
-    ctx.beginPath(); ctx.arc(cx + ex + d.x * 0.1, cy + ey + d.y * 0.06, r, 0, Math.PI * 2); ctx.fill();
-  }
+  const fr = G.fright > 0 && s.state === 'active', flash = fr && G.fright < 2 && Math.floor(G.fright * 5) % 2 === 0;
+  const frame = G.chill > 0 ? 0 : Math.floor(G.t * 10) % 2, mode = iceOn() ? 'ice' : fr ? (flash ? 'flash' : 'fright') : '';
+  blit(spiderSprite(frame, mode, s.dir || D), s.x + 0.5, s.y + 0.5);
 }
 function drawBone(cx, cy, ang, s = 1, color = '#f2ecd6') {
   ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang); ctx.scale(s, s);
@@ -3413,15 +3427,28 @@ function drawCentipede(cp) {
 }
 // A spider on its way down: the thread from above, the spider sliding down it, and a shadow that grows
 // where it'll land.
-function drawDrop(d) {
-  const k = 1 - d.t / d.t0, x = d.x + 0.5, y = d.y + 0.5;
-  const blink = Math.floor(G.t * 10) % 2; // the landing mark: a purple ring (a plain shadow would vanish on the black floor)
+// Where a spider's going to land: a purple ring (a plain shadow would vanish on the black floor).
+function drawDropRing(d) {
+  const k = 1 - d.t / d.t0, x = d.x + 0.5, y = d.y + 0.5, blink = Math.floor(G.t * 10) % 2;
   ctx.fillStyle = `rgba(201,160,255,${0.15 + 0.3 * k})`; ctx.strokeStyle = blink ? '#ffffff' : '#c9a0ff'; ctx.lineWidth = 0.08;
   ctx.beginPath(); ctx.ellipse(x, y + 0.3, 0.3 + 0.45 * k, 0.15 + 0.2 * k, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  const sy = d.y - (1 - k) * 8;
-  ctx.strokeStyle = 'rgba(230,233,255,0.6)'; ctx.lineWidth = 0.04;
-  ctx.beginPath(); ctx.moveTo(x, -1); ctx.lineTo(x, sy + 0.2); ctx.stroke();
-  drawSpider({ x: d.x, y: sy, dir: D, state: 'active', fresh: 0 });
+}
+// A thread of silk from the ceiling down to screen row y1, a glint of light running down it.
+function dropThread(wx, y1, a) {
+  const x = Math.round(wx * T - camX);
+  if (y1 <= 0) return;
+  fbx.globalAlpha = a; pr(x, 0, 1, y1, '#e6e9ff');
+  fbx.globalAlpha = Math.min(1, a + 0.3); pr(x, Math.floor((G.t * 60) % y1), 1, 2, '#ffffff');
+  fbx.globalAlpha = 1;
+}
+// A spider lowering itself on its thread; once it lands, the thread snaps and whips back up.
+function pxDrops() {
+  for (const d of G.drops) {
+    const k = 1 - d.t / d.t0, sy = d.y - (1 - k) * 8;
+    dropThread(d.x + 0.5, Math.round((sy + 0.2) * T - camY), 0.7);
+    blit(spiderSprite(0, iceOn() ? 'ice' : '', D), d.x + 0.5, sy + 0.5);
+  }
+  for (const th of G.threads) dropThread(th.x + 0.5, Math.round((th.y + 0.2) * T * (1 - th.t / THREAD_SNAP) - camY), 0.7 * (1 - th.t / THREAD_SNAP));
 }
 // ---------- Basement sprites ----------
 // Your freshest scent: paw prints on the last few tiles of the trail, fading as they age (see pxScent).
@@ -5003,6 +5030,7 @@ function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
   if (who === 'WRAITH') return withT(t, () => wraithSprite(frame, face, ''));
   if (who === 'SLIME') return withT(t, () => slimeSprite(frame, face, scared ? 'fright' : '', false, scared));
   if (who === 'HOUND') return withT(t, () => houndSprite(frame, face === L, scared ? 'fright' : '', mood === 'sniff'));
+  if (who === 'SPIDER') return withT(t, () => spiderSprite(frame, scared ? 'fright' : '', face));
   if (who === 'GARGOYLE') return withT(t, () => gargoyleSprite(mood === 'angry' ? (frame ? 'move1' : 'move0') : 'still', ''));
   if (who === 'KING') {
     const ph = mood === 'angry' ? 3 : 1, li = face === L ? 4 : face === U ? 6 : face === D ? 2 : 0;
@@ -5016,8 +5044,7 @@ function charImg(who, mood, face = R, open = 0.4, t = UNIT) {
   if (who === 'SKULL') { v.scale(0.5, 0.5); v.translate(0, 0.45); }
   const at = { x: -0.5, y: -0.5 }, o = ctx; ctx = v;
   withFright(scared, () => {
-    if (who === 'SPIDER') drawSpider({ ...at, dir: face, state: 'active', fresh: 0 });
-    else if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: scared ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
+    if (who === 'SKULL') drawSkull({ ...at, kind: 'skull', state: scared ? 'pile' : 'chase', hp: BOSSES.skull.hp, look: mood === 'angry' ? 3 : 1, inv: 0 });
   });
   ctx = o;
   hardenCanvas(c);
@@ -9435,12 +9462,12 @@ function renderWorld() {
     if (showEnemies) for (const s of G.slimes) if (s.state !== 'house') pxSlime(s);
     if (showEnemies) for (const w of G.wraiths) if (w.state !== 'house') pxWraith(w);
     if (showEnemies) for (const s of G.blobules) pxSlime({ ...s, state: 'bit', blue: true });
+    if (showEnemies) for (const s of G.spiders) pxSpider(s);
     if (showEnemies || (G.boss && G.state === 'clear')) {
       vecBegin();
       if (showEnemies) {
         for (const h of G.hounds) if (h.skid > 0 && h.state === 'hunt') vec(drawSkid, h);
-        for (const s of G.spiders) vec(drawSpider, s);
-        for (const d of G.drops) vec(drawDrop, d);
+        for (const d of G.drops) vec(drawDropRing, d);
         for (const cp of G.centipedes) vec(drawCentipede, cp);
         for (const s of G.bones) if (!(s.fresh > 0 && Math.floor(G.t * 12) % 2)) vec(drawBone, s.x + 0.5, s.y + 0.5, s.spin + Math.sin(G.t * 9 + s.spin) * 0.5, 1.2);
       }
@@ -9448,7 +9475,7 @@ function renderWorld() {
       if (showEnemies) for (const o of G.orbs) vec(drawOrb, o);
       vecEnd();
     }
-    if (showEnemies) for (const g of G.gargoyles) pxGargoyle(g);
+    if (showEnemies) { pxDrops(); for (const g of G.gargoyles) pxGargoyle(g); }
     if (G.boss && G.boss.kind !== 'skull' && G.boss.state !== 'dead' && (showEnemies || G.state === 'clear')) (G.boss.kind === 'king' ? pxKing : pxBlob)(G.boss);
     if (showEnemies) {
       for (const m of G.minions) pxGhost({ ...m, frightened: true, eaten: false });
