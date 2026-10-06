@@ -1076,7 +1076,7 @@ function resetActors() {
   G.slimes = [];
   for (let i = 0; i < (G.cfg.slimes || 0); i++) G.slimes.push(makeSlime(i, 3 + i * 7));
   G.orbs = []; G.minions = []; G.buddies = []; G.blobules = []; G.waveT = 1.5;
-  G.ventT = 0; G.light = G.cfg.dark || 0; G.blackout = 0; G.blackT = 7;
+  G.light = G.cfg.dark || 0; G.blackout = 0; G.blackT = 7; // (the vents keep their rhythm through a lost life: see loadLevel)
   G.hounds = [];
   for (let i = 0; i < (G.cfg.hounds || 0); i++) G.hounds.push(makeHound(i));
   G.magnet = 0; G.flyDots = []; G.pacKey = -1;
@@ -1100,6 +1100,7 @@ function loadLevel(i) {
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
+  G.ventT = 0; // the vents start their cycle with the floor, not with each life (or you'd meet the same puff every time)
   if (G.cfg.reform) initLayout();
   buildFlow(); buildVents();
   resetDots(); resetActors();
