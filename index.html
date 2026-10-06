@@ -5344,6 +5344,20 @@ function bakeLevel(rows, theme) {
 }
 
 // Wall decorations hang on front faces at least three tiles wide; the left half is rolled and mirrored.
+// Where a sign w pixels wide hangs on decoration d's wall face (world x of its left edge): centred on d if
+// it fits, slid along the face if it would hang off an end, null if the face is too short for it.
+function signLeft(d, w) {
+  const lo = d.fx0 + 1, hi = d.fx1 - w;
+  return hi < lo ? null : Math.max(lo, Math.min(hi, d.x - (w >> 1)));
+}
+// The first of a sign's possible texts (starting from its own pick) that fits its face, and where; null if none does.
+function fitSign(d, options, pad, pick = Math.floor(d.seed * options.length)) {
+  for (let k = 0; k < options.length; k++) {
+    const o = options[(pick + k) % options.length], s = Array.isArray(o) ? o[0] : o, left = signLeft(d, tinyW(s) + pad);
+    if (left !== null) return { o, s, left };
+  }
+  return null;
+}
 function planDecor(L, theme) {
   const { w, h, PW } = L, out = [];
   let s = 1234567 + w * 31 + h * 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -5352,7 +5366,11 @@ function planDecor(L, theme) {
   const faceAt = (c, r) => {
     const x = c * T + (T >> 1); let y0 = -1, y1 = -1;
     for (let y = r * T; y < (r + 1) * T; y++) if (L.cls[y * PW + x] === 2) { if (y0 < 0) y0 = y; y1 = y + 1; }
-    return y0 < 0 ? null : { x, y0, y1 };
+    if (y0 < 0) return null;
+    const ym = (y0 + y1) >> 1; let fx0 = x, fx1 = x; // how far the face runs either way, for signs that mustn't hang off its ends
+    while (fx0 > 0 && L.cls[ym * PW + fx0 - 1] === 2) fx0--;
+    while (fx1 < PW - 1 && L.cls[ym * PW + fx1 + 1] === 2) fx1++;
+    return { x, y0, y1, fx0, fx1 };
   };
   for (let r = 0; r < h - 1; r++) {
     let last = -9;
@@ -5751,14 +5769,20 @@ function frzDecor(theme, dt, glow) {
       }
     } else if (d.kind === 'sign') {
       if (glow) continue;
-      const s = 'KEEP SHUT', w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      const s = 'KEEP SHUT', w = tinyW(s) + 4, left = signLeft(d, w);
+      if (left === null) continue;
+      const sx = left - camX, sy = y0 + ((F - 7) >> 1);
       pr(sx, sy, w, 7, '#e8c020'); pr(sx, sy, w, 1, '#fff0a0'); tinyText(fbx, s, sx + 2, sy + 1, '#b02020');
     } else if (d.kind === 'board') { // rink boards with goofy ads
       if (glow) continue;
-      const [s, col] = RINK_ADS[Math.floor(d.seed * RINK_ADS.length)], w = tinyW(s) + 6, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      const fit = fitSign(d, RINK_ADS, 6);
+      if (!fit) continue;
+      const [s, col] = fit.o, w = tinyW(s) + 6, sx = fit.left - camX, sy = y0 + ((F - 7) >> 1);
       pr(sx, sy, w, 7, '#eef4f8'); pr(sx, sy + 6, w, 1, '#9aaab8'); pr(sx, sy, 2, 7, col); tinyText(fbx, s, sx + 4, sy + 1, col);
     } else if (d.kind === 'scoreboard') { // the rink's scoreboard shows your score
-      const s = String(G.score).padStart(5, '0'), w = tinyW(s) + 6, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      const s = String(G.score).padStart(5, '0'), w = tinyW(s) + 6, left = signLeft(d, w + 2); // its frame is a pixel wider each side
+      if (left === null) continue;
+      const sx = left + 1 - camX, sy = y0 + ((F - 7) >> 1);
       if (!glow) { pr(sx - 1, sy - 1, w + 2, 9, '#5a6a7a'); pr(sx, sy, w, 7, '#0a0c10'); tinyText(fbx, s, sx + 3, sy + 1, '#6a4010'); addLightPx(x, sy + 4, T * 1.4, [1, 0.7, 0.3], 0.3); }
       else tinyText(fbx, s, sx + 3, sy + 1, '#ffb030');
     } else if (d.kind === 'crates') { // crates and tubs stacked against the wall, frosted on top
@@ -6203,9 +6227,11 @@ function labDecor(theme, dt, glow) {
       }
     } else if (d.kind === 'sign' || d.kind === 'relax' || d.kind === 'poster' || d.kind === 'throne') {
       if (glow) continue;
-      const kinds = { sign: [['DO NOT FEED', 'SPLITS!', 'BIOHAZARD'][Math.floor(d.seed * 3)], '#e8c020', '#18181a'], relax: ['RELAX', '#e8a8c8', '#6a2a4a'],
-        poster: ['ALL HANDS!', '#c83040', '#ffe8a0'], throne: ['THRONE ROOM ^', '#c8a040', '#2a1a08'] };
-      const [s, bg, ink] = kinds[d.kind], w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      const kinds = { sign: [['DO NOT FEED', '#e8c020', '#18181a'], ['SPLITS!', '#e8c020', '#18181a'], ['BIOHAZARD', '#e8c020', '#18181a']], relax: [['RELAX', '#e8a8c8', '#6a2a4a']],
+        poster: [['ALL HANDS!', '#c83040', '#ffe8a0']], throne: [['THRONE ROOM ^', '#c8a040', '#2a1a08'], ['THRONE ^', '#c8a040', '#2a1a08']] };
+      const fit = fitSign(d, kinds[d.kind], 4, d.kind === 'throne' ? 0 : undefined);
+      if (!fit) continue;
+      const [s, bg, ink] = fit.o, w = tinyW(s) + 4, sx = fit.left - camX, sy = y0 + ((F - 7) >> 1);
       pr(sx, sy, w, 7, bg); pr(sx, sy, w, 1, css(mixc(hex(bg), [255, 255, 255], 0.4))); tinyText(fbx, s, sx + 2, sy + 1, ink);
     } else if (d.kind === 'case') { // 7F: the display case the dashing shoes were taken from, empty but for their outline in the dust
       if (glow) continue;
@@ -6698,20 +6724,20 @@ TINY['↓'] = '010010010111010';
 // Where a line of tiny text w pixels wide (and m pixels of plate or margin round it) can sit on the wall
 // top s: the whole box must lie on the flat of the top, clear of its bevelled rim, or letters get cut off
 // where the top ends, narrows or meets another wall. Picks the spot nearest the middle; null if none fits.
-function fitTopText(L, s, w, m = 1) {
+function fitTopText(L, s, w, m = 1, rim = 4) { // rim: how far in from the edge it must keep (1: anywhere on the top, rim and all)
   const x0 = s.c0 * L.T, x1 = (s.c1 + 1) * L.T, y0 = s.r * L.T, y1 = Math.min(L.PH, (s.r + 2) * L.T), bw = x1 - x0, bh = y1 - y0;
   const BW = w + 2 * m, BH = 5 + 2 * m;
   if (BW > bw || BH > bh) return null;
   const I = new Int32Array((bw + 1) * (bh + 1)); // a summed table of the pixels that won't do
   for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
-    const i = (y0 + y) * L.PW + x0 + x, bad = L.cls[i] !== 1 || L.dist[i] < 4 ? 1 : 0;
+    const i = (y0 + y) * L.PW + x0 + x, bad = L.cls[i] !== 1 || L.dist[i] < rim ? 1 : 0;
     I[(y + 1) * (bw + 1) + x + 1] = bad + I[y * (bw + 1) + x + 1] + I[(y + 1) * (bw + 1) + x] - I[y * (bw + 1) + x];
   }
   const badIn = (x, y) => I[(y + BH) * (bw + 1) + x + BW] - I[y * (bw + 1) + x + BW] - I[(y + BH) * (bw + 1) + x] + I[y * (bw + 1) + x];
   let best = null, score = Infinity;
   const cx = (bw - BW) / 2;
   let fy0 = -1, fy1 = -1; // the flat of the top down the middle column, to centre on
-  for (let y = 0; y < bh; y++) { const i = (y0 + y) * L.PW + x0 + (bw >> 1); if (L.cls[i] === 1 && L.dist[i] >= 4) { if (fy0 < 0) fy0 = y; fy1 = y; } }
+  for (let y = 0; y < bh; y++) { const i = (y0 + y) * L.PW + x0 + (bw >> 1); if (L.cls[i] === 1 && L.dist[i] >= rim) { if (fy0 < 0) fy0 = y; fy1 = y; } }
   const cy = fy0 < 0 ? (bh - BH) / 2 : (fy0 + fy1 + 1 - BH) / 2;
   for (let y = 0; y + BH <= bh; y++) for (let x = 0; x + BW <= bw; x++) {
     const sc = Math.abs(y - cy) * 3 + Math.abs(x - cx);
@@ -7049,9 +7075,10 @@ function blrDecor(theme, dt, glow) {
         continue;
       }
       if (glow) continue;
-      const [s, bg, ink] = [['CAUTION HOT', '#e8c020', '#18181a'], ['NO GHOSTS', '#c83030', '#ffffff'], ['PSI', '#e8dcc0', '#2a1a10'],
-        ['HOT!', '#ff8a20', '#2a0a00'], ['DAYS SAFE:0', '#2a8a3a', '#ffffff']][Math.floor(d.seed * 5)];
-      const w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      const fit = fitSign(d, [['CAUTION HOT', '#e8c020', '#18181a'], ['NO GHOSTS', '#c83030', '#ffffff'], ['PSI', '#e8dcc0', '#2a1a10'],
+        ['HOT!', '#ff8a20', '#2a0a00'], ['DAYS SAFE:0', '#2a8a3a', '#ffffff']], 4);
+      if (!fit) continue;
+      const [s, bg, ink] = fit.o, w = tinyW(s) + 4, sx = fit.left - camX, sy = y0 + ((F - 7) >> 1);
       pr(sx, sy, w, 7, bg); pr(sx, sy, w, 1, css(mixc(hex(bg), [255, 255, 255], 0.4))); tinyText(fbx, s, sx + 2, sy + 1, ink);
     } else if (d.kind === 'boiler') { // B1: the big boiler, up over the top wall, its firebox roaring
       const bw = 48, bh = 17, bx = x - 24, by = y1 - bh;
@@ -7440,8 +7467,9 @@ function fldDecor(theme, dt, glow) {
       if (Math.floor(G.t * 8 + d.seed * 9) % 2) pr(gx + 3, gy + 6, 2, Math.max(1, F - 7 - ((F - 6) >> 1)), '#4aa8c8');
     } else if (d.kind === 'sign') {
       if (glow) continue;
-      const [s, bg, ink] = FLOOD_SIGNS[theme.lv][Math.floor(d.seed * 3)];
-      const w = tinyW(s) + 4, sx = x - (w >> 1), sy = y0 + ((F - 7) >> 1);
+      const fit = fitSign(d, FLOOD_SIGNS[theme.lv], 4);
+      if (!fit) continue;
+      const [s, bg, ink] = fit.o, w = tinyW(s) + 4, sx = fit.left - camX, sy = y0 + ((F - 7) >> 1);
       pr(sx, sy, w, 7, bg); pr(sx, sy, w, 1, css(mixc(hex(bg), [255, 255, 255], 0.4))); tinyText(fbx, s, sx + 2, sy + 1, ink);
     }
   }
@@ -7792,7 +7820,9 @@ function cryDecor(theme, dt, glow) {
       for (const ox of [-3, 3]) for (let j = 0; j < F - 2; j++) pr(Math.round(x + ox + Math.sin(sw) * j), y0 + 1 + j, 1, 1, j % 2 ? '#6a6460' : '#3a3634');
     } else if (d.kind === 'tomb') { // a plaque: R.I.P.
       if (glow) continue;
-      const w = tinyW('R.I.P.') + 4, tx = x - (w >> 1), ty = y0 + ((F - 7) >> 1);
+      const w = tinyW('R.I.P.') + 4, left = signLeft(d, w);
+      if (left === null) continue;
+      const tx = left - camX, ty = y0 + ((F - 7) >> 1);
       pr(tx, ty, w, 7, '#5a564e'); pr(tx, ty, w, 1, '#7a766c'); tinyText(fbx, 'R.I.P.', tx + 2, ty + 1, '#1a1814');
     } else if (d.kind === 'urn') {
       if (glow) continue;
@@ -7941,9 +7971,12 @@ function sewerTheme() {
       for (let r = 1; r < L.h - 2; r++) for (let c = 1; c < L.w - 2; c++) {
         if (!(L.solidT(c, r) && L.solidT(c + 1, r) && L.solidT(c, r + 1) && L.solidT(c + 1, r + 1)) || L.solidT(c - 1, r) || L.solidT(c, r - 1)) continue;
         if (hash2(c, r * 7) > 0.55) continue;
-        const word = SEWER_TAGS[n % SEWER_TAGS.length], ink = SEWER_INK[n % SEWER_INK.length], w = tinyW(word);
+        const ink = SEWER_INK[n % SEWER_INK.length];
+        let word = null, f = null; // the next tag that fits on the flat of this pillar's top (the longer ones don't, on a small one)
+        for (let k = 0; k < SEWER_TAGS.length && !f; k++) { word = SEWER_TAGS[(n + k) % SEWER_TAGS.length]; f = fitTopText(L, { c0: c, c1: c + 1, r }, tinyW(word), 0, 1); } // paint can go over the rim, but not off the top
         n++;
-        const x = (c + 1) * L.T - (w >> 1), y = r * L.T + 2;
+        if (!f) continue;
+        const w = tinyW(word), x = f.x, y = f.y;
         tinyText(g, word, x, y, ink);
         g.fillStyle = ink; g.fillRect(x + 1, y + 5, 1, 2); g.fillRect(x + w - 2, y + 5, 1, 1); // a drip of paint
       }
