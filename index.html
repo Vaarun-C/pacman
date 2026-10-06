@@ -423,6 +423,153 @@ const MAZES = {
 };
 // MAZES-END
 
+// ---------- Generated mazes ----------
+// Most floors get a maze of their own, built from a seed, so it's the same every time you play that
+// floor. Corridors run along a lattice of rows and columns spaced unevenly (3-5 tiles apart, so the walls
+// between them are 2-4 thick); then stretches of corridor are walled off at random, so long as no
+// junction is left a dead end and every corridor stays on a loop (no stretch is the only way between two
+// parts of the maze). The ghost house sits
+// anywhere, ringed by corridor; one or two rows open at both ends into tunnels; nothing is mirrored.
+// Sizes vary, keeping to about the classic maze's area so a floor takes about as long.
+const GEN_SIZES = [[28, 31], [30, 29], [26, 33], [32, 27], [30, 31], [28, 33], [32, 29], [26, 31]];
+function genMaze(seed) {
+  let s = (seed * 9301 + 49297) % 233280 + 1;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647, ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const [W_, H_] = GEN_SIZES[ri(0, GEN_SIZES.length - 1)];
+  // Split a run of d tiles into gaps of 3-5 (d must be 0 or at least 3).
+  const gaps = d => { const out = []; while (d > 0) { const ok = [3, 4, 5].filter(k => d - k === 0 || d - k >= 3); const k = ok[ri(0, ok.length - 1)]; out.push(k); d -= k; } return out; };
+  const lineSet = (lo, a, b, hi) => { // lines from lo to a, then from b to hi, none between a and b
+    const out = [lo]; for (const g of gaps(a - lo)) out.push(out[out.length - 1] + g);
+    out.push(b); for (const g of gaps(hi - b)) out.push(out[out.length - 1] + g);
+    return [...new Set(out)];
+  };
+  // The ghost house (8 x 5, its door on top), anywhere the lattice can be fitted round it.
+  const okX = hx => (hx - 2 === 0 || hx - 2 >= 3) && (W_ - 10 - hx === 0 || W_ - 10 - hx >= 3);
+  const okY = hy => (hy - 2 === 0 || hy - 2 >= 3) && (H_ - 7 - hy === 0 || H_ - 7 - hy >= 3);
+  const hxs = [], hys = [];
+  for (let x = 2; x <= W_ - 10; x++) if (okX(x)) hxs.push(x);
+  for (let y = 5; y <= H_ - 10; y++) if (okY(y)) hys.push(y); // never right against the top or bottom: Pac-Man starts below it
+  const hx0 = hxs[ri(0, hxs.length - 1)], hy0 = hys[ri(0, hys.length - 1)];
+  const xs = lineSet(1, hx0 - 1, hx0 + 8, W_ - 2), ys = lineSet(1, hy0 - 1, hy0 + 5, H_ - 2);
+  // The lattice: nodes where lines cross, edges between neighbours along a line.
+  const nx = xs.length, ny = ys.length, id = (i, j) => j * nx + i, edges = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i + 1 < nx; i++) edges.push({ a: id(i, j), b: id(i + 1, j), h: true, i, j, on: true });
+  for (let j = 0; j + 1 < ny; j++) for (let i = 0; i < nx; i++) edges.push({ a: id(i, j), b: id(i, j + 1), h: false, i, j, on: true });
+  const deg = new Array(nx * ny).fill(0);
+  for (const e of edges) { deg[e.a]++; deg[e.b]++; }
+  // Keep the ring round the house, and the row Pac-Man starts on, below it.
+  const hi = xs.indexOf(hx0 - 1), hj = ys.indexOf(hy0 - 1), pj = Math.min(ny - 1, hj + 2);
+  for (const e of edges) {
+    if (e.h && e.i === hi && (e.j === hj || e.j === hj + 1 || e.j === pj)) e.fixed = true;
+    if (!e.h && e.j === hj && (e.i === hi || e.i === hi + 1)) e.fixed = true;
+  }
+  // Every corridor must stay on a loop, like the arcade's: connected, and no bridge (a stretch that's the
+  // only way between two parts of the maze, where a ghost or a vent has you trapped with nowhere to go).
+  const loopy = () => {
+    const adj = Array.from({ length: nx * ny }, () => []);
+    edges.forEach((e, k) => { if (e.on) { adj[e.a].push([e.b, k]); adj[e.b].push([e.a, k]); } });
+    const start = edges.find(e => e.on).a, tin = new Array(nx * ny).fill(-1), low = new Array(nx * ny).fill(0);
+    let t = 0, bridge = false;
+    const dfs = (v, via) => { // Tarjan's bridge-finding, iterative-enough for a lattice this size
+      tin[v] = low[v] = t++;
+      for (const [u, k] of adj[v]) {
+        if (k === via) continue;
+        if (tin[u] >= 0) low[v] = Math.min(low[v], tin[u]);
+        else { dfs(u, k); low[v] = Math.min(low[v], low[u]); if (low[u] > tin[v]) bridge = true; }
+      }
+    };
+    dfs(start, -1);
+    return !bridge && deg.every((d, v) => d === 0 || tin[v] >= 0);
+  };
+  // Wall off stretches at random: a third to a half of them, never leaving a dead end or a cut-off corridor.
+  const order = edges.filter(e => !e.fixed);
+  for (let k = order.length - 1; k > 0; k--) { const j = ri(0, k); [order[k], order[j]] = [order[j], order[k]]; }
+  const want = Math.round(order.length * (0.33 + rnd() * 0.17));
+  let removed = 0;
+  // A junction walled down to two ways must be a corner, not a straight pass-through: runs of those make
+  // long halls with no turn off, where the hound (fast in a straight line) and the gargoyles run you down.
+  const straightThrough = v => { const on = edges.filter(e => e.on && (e.a === v || e.b === v)); return on.length === 2 && on[0].h === on[1].h; };
+  for (const e of order) {
+    if (removed >= want) break;
+    if (deg[e.a] < 3 || deg[e.b] < 3) continue;
+    e.on = false; deg[e.a]--; deg[e.b]--;
+    if (!straightThrough(e.a) && !straightThrough(e.b) && loopy()) removed++; else { e.on = true; deg[e.a]++; deg[e.b]++; }
+  }
+  // Draw it.
+  const g = Array.from({ length: H_ }, () => Array(W_).fill('#'));
+  for (const e of edges) if (e.on) {
+    const x0 = xs[e.i], y0 = ys[e.j], x1 = e.h ? xs[e.i + 1] : x0, y1 = e.h ? y0 : ys[e.j + 1];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = '.';
+  }
+  ['###--###', '#      #', '#      #', '#      #', '########'].forEach((row, j) => [...row].forEach((ch, i) => { g[hy0 + j][hx0 + i] = ch; }));
+  // Tunnels: one or two rows open at both ends (where both ends of the row are corridor).
+  const rows = ys.filter(y => y > 2 && y < H_ - 3 && g[y][1] === '.' && g[y][W_ - 2] === '.');
+  for (let k = 0, n = Math.min(rows.length, ri(1, 2)); k < n; k++) { const y = rows.splice(ri(0, rows.length - 1), 1)[0]; g[y][0] = ' '; g[y][W_ - 1] = ' '; }
+  // Pac-Man starts below the house (no dots under him); the fruit shows just under its bottom wall.
+  const py = ys[pj], pxL = hx0 + 3;
+  g[py][pxL] = ' '; g[py][pxL + 1] = ' ';
+  // Power pellets near the four corners, frost berries either side of the middle.
+  const nodes = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (deg[id(i, j)] > 0 && g[ys[j]][xs[i]] === '.') nodes.push([xs[i], ys[j]]);
+  const nearest = (tx, ty) => nodes.filter(([x, y]) => g[y][x] === '.').sort((p, q) => Math.hypot(p[0] - tx, p[1] - ty) - Math.hypot(q[0] - tx, q[1] - ty))[0];
+  for (const [tx, ty] of [[0, 0], [W_, 0], [0, H_], [W_, H_]]) { const p = nearest(tx, ty); if (p) g[p[1]][p[0]] = 'o'; }
+  for (const tx of [W_ * 0.25, W_ * 0.75]) { const p = nearest(tx, H_ / 2); if (p) g[p[1]][p[0]] = '*'; }
+  return { rows: g.map(r => r.join('')), pac: { x: pxL + 0.5, y: py }, fruit: { x: pxL + 0.5, y: ys[hj + 1] }, gen: true };
+}
+// A generated maze's own spots for a floor's vents, currents, magnets and gargoyles: as many of each as
+// the floor's config lists, spread out and kept away from where Pac-Man starts.
+function genMechanics(cfg, seed) {
+  let s = (seed * 7919 + 104729) % 233280 + 1;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const open = (c, r) => r >= 0 && r < H && c >= 0 && c < W && M[r][c] !== '#' && M[r][c] !== '-' && openMask[r * W + c];
+  const dist = new Map(), q = [[Math.floor(meta.pac.x), meta.pac.y]]; dist.set(q[0][1] * W + q[0][0], 0);
+  for (let k = 0; k < q.length; k++) { const [c, r] = q[k], d = dist.get(r * W + c); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nc = c + dx, nr = r + dy; if (open(nc, nr) && !dist.has(nr * W + nc)) { dist.set(nr * W + nc, d + 1); q.push([nc, nr]); } } }
+  const tiles = [...dist.entries()].map(([k, d]) => ({ c: k % W, r: (k / W) | 0, d })).filter(t => t.c > 0 && t.c < W - 1);
+  for (let k = tiles.length - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); [tiles[k], tiles[j]] = [tiles[j], tiles[k]]; }
+  const straight = ({ c, r }) => (open(c - 1, r) && open(c + 1, r) && !open(c, r - 1) && !open(c, r + 1)) || (open(c, r - 1) && open(c, r + 1) && !open(c - 1, r) && !open(c + 1, r));
+  // Far from the start both ways: by the corridors (d), and as the crow flies (a spot can be a long walk
+  // round but right the other side of a wall, and steam doesn't care about walls).
+  const px = meta.pac.x, py = meta.pac.y, away = (t, k) => Math.abs(t.c + 0.5 - (px + 0.5)) + Math.abs(t.r - py) >= k;
+  const spread = (n, minD, ok, gap) => {
+    const out = [];
+    for (const t of tiles) { if (out.length >= n) break; if (t.d >= minD && away(t, minD) && ok(t) && out.every(([c, r]) => Math.abs(c - t.c) + Math.abs(r - t.r) >= gap)) out.push([t.c, t.r]); }
+    return out;
+  };
+  // Vents go a step or two from a junction, never mid-corridor: when one starts to hiss there's a corner
+  // to duck round, rather than a long run to the end of the corridor with the steam coming.
+  const junction = (c, r) => open(c, r) && [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => open(c + dx, r + dy)).length >= 3;
+  const nearCorner = t => [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dy]) => junction(t.c + dx, t.r + dy) && (dx === 0 || dy === 0) && open(t.c + Math.sign(dx), t.r + Math.sign(dy)));
+  const out = { ...cfg };
+  const mouths = [...tunnelRows.keys()].flatMap(r => [[0, r], [W - 1, r]]); // tunnels slow you down: no steam at their mouths
+  const clearOfTunnels = t => mouths.every(([c, r]) => Math.abs(c - t.c) + Math.abs(r - t.r) > 3);
+  if (cfg.vents) { // as many as fit well apart (closer than 5 and two can pin a junction in steam): a few short is fine
+    const n = cfg.vents.spots.length, ok = t => straight(t) && nearCorner(t) && clearOfTunnels(t);
+    let spots = []; for (const gap of [6, 5]) if ((spots = spread(n, 5, ok, gap)).length >= n) break;
+    out.vents = { ...cfg.vents, spots };
+  }
+  if (cfg.magnets) out.magnets = spread(cfg.magnets.length, 6, t => M[t.r][t.c] === '.', 6);
+  if (cfg.gargoyles) { // perched as far from the start as the maze goes, like the arcade floors' corner perches
+    const far = tiles.slice().sort((a, b) => b.d - a.d), out_ = [];
+    const items = []; for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (M[r][c] === 'o' || M[r][c] === '*') items.push([c, r]);
+    for (const t of far) { // never on or beside a power pellet or frost berry: the statue would sit guarding it
+      if (out_.length >= cfg.gargoyles.length) break;
+      if (items.every(([c, r]) => Math.abs(c - t.c) + Math.abs(r - t.r) >= 3) && out_.every(([c, r]) => Math.abs(c - t.c) + Math.abs(r - t.r) >= 8)) out_.push([t.c, t.r]);
+    }
+    out.gargoyles = out_;
+  }
+  if (cfg.currents) { // the longest straight runs of corridor, flowing whichever way
+    const runs = [];
+    for (let r = 1; r < H - 1; r++) for (let c = 1; c < W - 1;) { if (!open(c, r)) { c++; continue; } let e = c; while (open(e + 1, r)) e++; if (e - c >= 5) runs.push([c, r, e, r, rnd() < 0.5 ? 'L' : 'R']); c = e + 1; }
+    for (let c = 1; c < W - 1; c++) for (let r = 1; r < H - 1;) { if (!open(c, r)) { r++; continue; } let e = r; while (open(c, e + 1)) e++; if (e - r >= 5) runs.push([c, r, c, e, rnd() < 0.5 ? 'U' : 'D']); r = e + 1; }
+    runs.sort((a, b) => (b[2] - b[0] + b[3] - b[1]) - (a[2] - a[0] + a[3] - a[1]) || rnd() - 0.5);
+    const py = meta.pac.y, px = Math.floor(meta.pac.x);
+    out.currents = runs.filter(([c0, r0, c1, r1]) => !(r0 <= py && py <= r1 && c0 <= px + 1 && px <= c1)).slice(0, cfg.currents.length); // never under Pac-Man's feet at the start
+  }
+  return out;
+}
+// The classic mazes most floors shared: those floors get generated ones instead.
+const GEN_FROM = new Set(['B', 'C', 'D', 'E']);
+
 const SCREEN_COLS = 28, SCREEN_MAZE_ROWS = 31, TOP = 3, BOTTOM = 2, TOTAL_ROWS = SCREEN_MAZE_ROWS + TOP + BOTTOM;
 const BASE = 9.5; // tiles per second at 100% speed
 
@@ -504,7 +651,7 @@ const LEVELS = [
 ];
 const KING_FLOOR = LEVELS.findIndex(l => l.boss === 'king'), BLOB_FLOOR = LEVELS.findIndex(l => l.boss === 'blob'), SKULL_FLOOR = LEVELS.findIndex(l => l.boss === 'skull');
 function levelConfig(i) {
-  if (i < LEVELS.length) return LEVELS[i];
+  if (i < LEVELS.length) return GEN_FROM.has(LEVELS[i].maze) ? { ...LEVELS[i], maze: 'gen' + i } : LEVELS[i]; // a maze of its own
   // Roof rounds alternate between the 3-3 free-for-all and the 5-3 steam maze, speeding up as they go.
   const n = i - LEVELS.length + 1, base = LEVELS[n % 2 ? 8 : 12];
   return { ...base, stage: 3, lv: n, fright: Math.max(1, base.fright - n), wraithBoost: Math.min(0.12, n * 0.02),
@@ -848,6 +995,7 @@ const house = { doorC: 13, doorX: 13.5, exitY: 11, homeY: 14 };
 let tunnelRows = new Map(), openMask = new Uint8Array(0);
 
 function setMaze(key) {
+  if (!MAZES[key] && key.startsWith('gen')) MAZES[key] = genMaze(+key.slice(3) * 131 + 17);
   meta = MAZES[key]; M = meta.reform ? meta.rows.slice() : meta.rows; W = M[0].length; H = M.length; // rebuildable mazes get their own copy
   for (let r = 0; r < H; r++) {
     const c = M[r].indexOf('-');
@@ -1100,6 +1248,7 @@ function loadLevel(i) {
   G.cfg = levelConfig(i);
   G.boss = null; G.respawns = []; G.bossSay = null; G.pendingPhase = 0;
   setMaze(G.cfg.maze);
+  if (meta.gen) G.cfg = genMechanics(G.cfg, i); // its vents, currents, magnets and gargoyles, placed for this layout
   G.ventT = 0; // the vents start their cycle with the floor, not with each life (or you'd meet the same puff every time)
   if (G.cfg.reform) initLayout();
   buildFlow(); buildVents();
